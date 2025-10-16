@@ -1,122 +1,168 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 void main() {
+  // Flutter'a, runApp çalışmadan önce temel servisleri
+  // hazır hale getirmesi gerektiğini söylüyoruz.
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Access Token'ı uygulama başlamadan önce burada global olarak ayarlıyoruz.
+  MapboxOptions.setAccessToken(
+    "pk.eyJ1IjoiZ3JrbmlzbWV0YSIsImEiOiJjbWdzODB4YmgyNTNrMmlzYTl4NmZxbnZpIn0.Ocbt8oI-AN4H5PedVops7A",
+  );
+
   runApp(const MyApp());
 }
 
+// Uygulamanın ana başlangıç widget'ı
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+    return const MaterialApp(
+      debugShowCheckedModeBanner:
+          false, // Sağ üstteki "debug" yazısını kaldırır
+      title: 'Mapbox Prototipi',
+      home: MapScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+// Haritayı gösterecek olan ana ekran widget'ı (Stateful)
+class MapScreen extends StatefulWidget {
+  const MapScreen({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _MapScreenState extends State<MapScreen> {
+  MapboxMap? mapboxMap;
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  _onMapCreated(MapboxMap mapboxMap) {
+    this.mapboxMap = mapboxMap;
+    print("Mapbox haritası başarıyla oluşturuldu!");
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      appBar: AppBar(title: const Text('Akıllı Kaynak Planlayıcı')),
+      // Stack widget'ı, çocuklarını (children) üst üste yığmamızı sağlar.
+      body: Stack(
+        children: [
+          // 1. Katman (En Altta): Harita
+          MapWidget(
+            onMapCreated: _onMapCreated,
+            cameraOptions: CameraOptions(
+              center: Point(coordinates: Position(27.4289, 38.6191)),
+              zoom: 10.0,
             ),
-          ],
-        ),
+            styleUri: MapboxStyles.MAPBOX_STREETS,
+          ),
+
+          // 2. Katman (Üstte): Kontrol Butonları Paneli
+          // Positioned widget'ı, bir Stack içinde çocuğunun konumunu belirlememizi sağlar.
+          Positioned(
+            top: 10.0, // Yukarıdan 10 piksel boşluk
+            right: 10.0, // Sağdan 10 piksel boşluk
+            child: Column(
+              // Butonları alt alta dizmek için Column
+              children: [
+                // Buton 1: Enerji Türü Seçimi
+                FloatingActionButton(
+                  heroTag: 'btn1', // Her butona farklı bir tag vermek önemlidir
+                  mini: true, // Butonu küçültür
+                  onPressed: () {
+                    print("Enerji Türü Seçimi butonuna basıldı!");
+                    // TODO: Enerji türü seçim menüsünü aç
+                  },
+                  child: const Icon(Icons.energy_savings_leaf),
+                ),
+                const SizedBox(height: 8), // Butonlar arası boşluk
+                // Buton 2: Yerleşim Aracı
+                FloatingActionButton(
+                  heroTag: 'btn2',
+                  mini: true,
+                  onPressed: () {
+                    print("Yerleşim Aracı butonuna basıldı!");
+                    // TODO: Alan seçim modunu değiştir
+                  },
+                  child: const Icon(Icons.add_location_alt),
+                ),
+                const SizedBox(height: 8),
+
+                // Buton 3: Harita Katmanı
+                FloatingActionButton(
+                  heroTag: 'btn3',
+                  mini: true,
+                  onPressed: () {
+                    print("Harita Katmanı butonuna basıldı!");
+                    // TODO: Harita katmanını değiştir
+                  },
+                  child: const Icon(Icons.layers),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }
+//```eof
+
+//### Sonuç
+
+//Bu kodu kaydedip uygulamayı telefonunda yeniden başlattığında, Manisa haritasının sağ üst köşesinde, alt alta duran üç tane yuvarlak buton göreceksin. Bu butonlara bastığında, VS Code'daki **DEBUG CONSOLE**'da ilgili `print` mesajlarını göreceksin.
+
+//**Tebrikler!** Artık sadece çalışan bir haritan yok, aynı zamanda vizyonundaki interaktif kullanıcı arayüzünün ilk parçasını da inşa ettin. Buradan sonra bu butonların içini doldurmak, yeni paneller eklemek ve projeni adım adım büyütmek kalıyor.
+
+/*
+// MapScreen widget'ının state'ini (durumunu) yöneten class
+class _MapScreenState extends State<MapScreen> {
+  // Harita kontrolcüsünü tutmak için bir değişken
+  MapboxMap? mapboxMap;
+
+  // Harita oluşturulduğunda çağrılacak olan fonksiyon
+  _onMapCreated(MapboxMap mapboxMap) {
+    this.mapboxMap = mapboxMap;
+    print("Mapbox haritası başarıyla oluşturuldu!");
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Akıllı Kaynak Planlayıcı')),
+      body: kIsWeb
+          // UYGULAMA WEB'DE ÇALIŞIYORSA:
+          // Ekrana bir uyarı mesajı bas.
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Harita özelliği web platformunda henüz desteklenmemektedir.\nLütfen mobil cihazınızda test ediniz.',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          // UYGULAMA MOBİLDE ÇALIŞIYORSA (Android/iOS):
+          // Haritayı normal şekilde göster.
+          : MapWidget(
+              onMapCreated: _onMapCreated,
+              cameraOptions: CameraOptions(
+                center: Point(
+                  coordinates: Position(27.4289, 38.6191),
+                ), // Manisa
+                zoom: 10.0,
+              ),
+              styleUri:
+                  MapboxStyles.MAPBOX_STREETS, // Daha modern bir harita stili
+            ),
+    );
+  }
+}
+*/
