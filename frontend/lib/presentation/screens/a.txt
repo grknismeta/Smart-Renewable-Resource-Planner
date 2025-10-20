@@ -1,0 +1,374 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:provider/provider.dart';
+
+import '../../data/models/pin_model.dart';
+import '../../providers/map_provider.dart';
+import '../widgets/control_buttons.dart';
+// Hesaplama sonucu diyalogunu göstermek için bir yardımcı fonksiyon tanımlıyoruz.
+// Normalde bu fonksiyon ControlButtons veya Utilities içinde olmalıdır, 
+// ancak şimdilik burada tanımlıyoruz.
+void showCalculationResultDialog(BuildContext context, PinResult result) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Hesaplama Sonucu'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Yıllık Enerji (kWh): ${result.potentialKwhAnnual.toStringAsFixed(2)}'),
+            Text('Tahmini Maliyet: \$${result.estimatedCost.toStringAsFixed(2)}'),
+            Text('ROI Süresi (Yıl): ${result.roiYears.toStringAsFixed(2)}'),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Tamam'),
+        ),
+      ],
+    ),
+  );
+}
+
+
+class MapScreen extends StatefulWidget {
+  const MapScreen({super.key});
+
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen> {
+  // Harita üzerindeki etkileşim durumu
+  bool _isPlacingMarker = false;
+  
+  // Harita API Anahtarları (Burada sabit tutulur)
+  final String myMapboxAccessToken =
+      "pk.eyJ1IjoiZ3JrbmlzbWV0YSIsImEiOiJjbWdzODB4YmhyNTNrMmlzYTl4NmZxbnZpIn0.Ocbt8oI-AN4H5PedVops7A"; 
+  final String myOpenWeatherApiKey = "b525f47f8adb6ddfceea1bc14bc72633";
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // MapProvider'daki layer durumunu başlangıçta sıfırlıyoruz
+      Provider.of<MapProvider>(context, listen: false).changeMapLayer(MapLayer.none);
+      Provider.of<MapProvider>(context, listen: false).fetchPins();
+    });
+  }
+
+  // Pin Ekleme Modunu Değiştirme
+  void _togglePlacingMarkerMode() {
+    setState(() => _isPlacingMarker = !_isPlacingMarker);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _isPlacingMarker ? 'Pin Ekleme Modu: Aktif' : 'Pin Ekleme Modu: Kapalı',
+        ),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  // Harita Katmanını Değiştirme (MapProvider'ı kullanacak şekilde güncellendi)
+  void _changeMapLayer() {
+    final mapProvider = Provider.of<MapProvider>(context, listen: false);
+    
+    // HATA DÜZELTME 1: changeMapLayer metodu artık argüman almayacak.
+    // MapProvider'ın içerideki currentLayer durumunu kendisinin değiştirmesi beklenir.
+    mapProvider.changeMapLayer();
+    
+    // Eski mantık:
+    // MapLayer nextLayer;
+    // switch (mapProvider.currentLayer) {
+    //     case MapLayer.none:
+    //         nextLayer = MapLayer.wind;
+    //         break;
+    //     case MapLayer.wind:
+    //         nextLayer = MapLayer.temp;
+    //         break;
+    //     case MapLayer.temp:
+    //         nextLayer = MapLayer.none;
+    //         break;
+    // }
+    // mapProvider.changeMapLayer(nextLayer); // Bu satır kaldırıldı.
+  }
+
+  // Harita Tıklama Olayı (DÜZELTME: async/await ekleniyor)
+  void _handleMapTap(TapPosition tapPosition, LatLng point) async { 
+    if (_isPlacingMarker) {
+      // Pin Ekleme modundaysak
+      await _showPinCreationDialog(point); 
+    }
+  }
+
+  // --- UI Diyalogları ---
+  
+  // Pin Oluşturma/Düzenleme Diyaloğu
+  void _showPinCreationDialog(LatLng point, {Pin? existingPin}) {
+    // ... (Metot içeriği aynı kalır) ...
+    final TextEditingController nameController =
+        TextController(text: existingPin?.name ?? 'Yeni Kaynak');
+    final TextEditingController capacityController = TextEditingController(
+        text: existingPin?.capacityMw.toString() ?? '1.0');
+    String selectedType = existingPin?.type ?? 'Güneş Paneli';
+    
+    // Geçici olarak seçenekleri alıyoruz. Backend'deki tiplerle uyumlu olmalı.
+    const List<String> resourceTypes = ['Güneş Paneli', 'Rüzgar Türbini', 'Hidroelektrik'];
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: Text(existingPin != null ? 'Kaynağı Düzenle' : 'Yeni Pin Ekle'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Konum: Lat ${point.latitude.toStringAsFixed(4)}, Lon ${point.longitude.toStringAsFixed(4)}'),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Kaynak Adı'),
+                  ),
+                  TextField(
+                    controller: capacityController,
+                    decoration: const InputDecoration(labelText: 'Kapasite (MW)'),
+                    keyboardType: TextInputType.number,
+                  ),
+                  DropdownButtonFormField<String>(
+                    value: selectedType,
+                    decoration: const InputDecoration(labelText: 'Kaynak Tipi'),
+                    items: resourceTypes
+                        .map((type) =>
+                            DropdownMenuItem(value: type, child: Text(type)))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          selectedType = value;
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('İptal'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  final mapProvider = Provider.of<MapProvider>(context, listen: false);
+                  try {
+                    // Sayısal değeri doğru parse ettiğimizden emin ol
+                    final capacity = double.parse(capacityController.text.replaceAll(',', '.'));
+                    
+                    if (existingPin != null) {
+                      // Düzenleme mantığı (Backend'de update endpoint'i eklenirse burası kullanılacak)
+                    } else {
+                      // HATA DÜZELTME 2: addPin metodu adlandırılmış parametreleri bekliyor
+                      await mapProvider.addPin(
+                        point: point,
+                        name: nameController.text,
+                        type: selectedType,
+                        capacityMw: capacity,
+                      );
+                    }
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Pin başarıyla eklendi!')));
+                  } catch (e) {
+                     ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Hata: ${e.toString()}')),
+                     );
+                  }
+                },
+                child: Text(existingPin != null ? 'Kaydet' : 'Ekle'),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
+
+  // Pin İşlemleri Diyaloğu (Silme ve Hesaplama)
+  void _showPinActionsDialog(Pin pin, BuildContext ctx) {
+    showDialog(
+      context: ctx,
+      builder: (context) => AlertDialog(
+        title: Text('Kaynak: ${pin.name}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Tip: ${pin.type}'),
+            Text('Kapasite: ${pin.capacityMw} MW'),
+            Text('Konum: ${pin.latitude.toStringAsFixed(4)}, ${pin.longitude.toStringAsFixed(4)}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Kapat'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              // Hesaplama işlemini başlat
+              await _performCalculation(context, pin);
+            },
+            child: const Text('Enerji Hesapla', style: TextStyle(color: Colors.blue)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final mapProvider = Provider.of<MapProvider>(context, listen: false);
+              try {
+                await mapProvider.deletePin(pin.id);
+                // NOT: Silme başarılıysa, diyalog kutusunu kapatmak için sadece bir kez pop() çağırıyoruz.
+                Navigator.of(context).pop(); 
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Pin başarıyla silindi.')));
+              } catch (e) {
+                // Hata durumunda sadece mesaj gösteriyoruz, diyalog kapalı kalmalı.
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Silme Hatası: ${e.toString()}')),
+                 );
+              }
+            },
+            child: const Text('Sil', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Hesaplama İşlemini Yürütme ve Sonucu Gösterme
+  Future<void> _performCalculation(BuildContext context, Pin pin) async {
+    final mapProvider = Provider.of<MapProvider>(context, listen: false);
+    
+    // Loading SnackBar göster
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Enerji potansiyeli hesaplanıyor...'), duration: Duration(seconds: 5)),
+    );
+
+    try {
+      final result = await mapProvider.calculatePotential(
+        lat: pin.latitude,
+        lon: pin.longitude,
+        type: pin.type,
+        capacityMw: pin.capacityMw,
+      );
+      
+      // Loading SnackBar'ı kapat ve yeni SnackBar göster
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Hesaplama tamamlandı!')),
+      );
+
+      // Başarılı sonuç diyalogunu göster (En başta tanımladığımız fonksiyon)
+      showCalculationResultDialog(context, result);
+    } catch (e) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Hesaplama Hatası: ${e.toString()}')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // MapProvider'ı dinliyoruz
+    return Consumer<MapProvider>(
+      builder: (context, mapProvider, child) {
+        // Pin listesini Marker listesine dönüştür
+        final markers = mapProvider.pins.map((pin) {
+          return Marker(
+            width: 80.0,
+            height: 80.0,
+            point: LatLng(pin.latitude, pin.longitude),
+            child: GestureDetector(
+              onTap: () => _showPinActionsDialog(pin, context),
+              child: const Icon(Icons.location_pin, color: Colors.red, size: 40.0),
+            ),
+          );
+        }).toList();
+
+        return Scaffold(
+          appBar: AppBar(title: const Text('SRRP - Akıllı Kaynak Planlayıcı')),
+          body: mapProvider.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Stack(
+                  children: [
+                    FlutterMap(
+                      options: MapOptions(
+                        initialCenter: const LatLng(38.6191, 27.4289), 
+                        initialZoom: 10.0,
+                        onTap: _handleMapTap, // <-- Burası artık doğru metodu çağırıyor
+                      ),
+                      children: [
+                        // 1. MAPBOX URL (Temel Katman)
+                        TileLayer(
+                          urlTemplate:
+                              'https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}',
+                          additionalOptions: {
+                            'accessToken': myMapboxAccessToken,
+                            'id': 'mapbox/streets-v11',
+                          },
+                          // UAgent ve subdomains eklendi
+                          userAgentPackageName: 'com.srrp.planner',
+                          subdomains: const ['a', 'b', 'c', 'd'],
+                        ),
+                        
+                        // 2. RÜZGAR KATMANI (Düzeltme: mapProvider state'ini kullanıyoruz)
+                        if (mapProvider.currentLayer == MapLayer.wind)
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openweathermap.org/map/wind_new/{z}/{x}/{y}.png?appid={apiKey}',
+                            additionalOptions: {'apiKey': myOpenWeatherApiKey},
+                            userAgentPackageName: 'com.srrp.planner',
+                            subdomains: const ['a', 'b', 'c', 'd'],
+                          ),
+                          
+                        // 3. SICAKLIK KATMANI
+                        if (mapProvider.currentLayer == MapLayer.temp)
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid={apiKey}',
+                            additionalOptions: {'apiKey': myOpenWeatherApiKey},
+                            userAgentPackageName: 'com.srrp.planner',
+                            subdomains: const ['a', 'b', 'c', 'd'],
+                          ),
+                        
+                        // İşaretçiler
+                        MarkerLayer(markers: markers),
+                      ],
+                    ),
+
+                    // KONTROL BUTONLARI
+                    Positioned(
+                      top: 10.0,
+                      right: 10.0,
+                      child: ControlButtons(
+                        currentLayer: mapProvider.currentLayer, // Layer durumunu provider'dan al
+                        isPlacingMarker: _isPlacingMarker,
+                        onToggleMarkerMode: _togglePlacingMarkerMode,
+                        onChangeMapLayer: _changeMapLayer,
+                      ),
+                    ),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
