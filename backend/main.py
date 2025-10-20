@@ -1,16 +1,24 @@
-from fastapi import FastAPI, Depends
-from sqlalchemy.orm import Session
-from fastapi.middleware.cors import CORSMiddleware
+# main.py
 
-import models
-import schemas
-from database import SessionLocal, engine
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+# from sqlalchemy.orm import Session 
+
+# Düzeltildi: .models yerine direkt models import edildi.
+import models 
+from database import engine 
+from routers import users, pins 
+
 
 # 1. Veritabanı tabloları oluşturulur.
 models.Base.metadata.create_all(bind=engine)
 
-# 2. FastAPI uygulaması SADECE BİR KERE burada oluşturulur.
-app = FastAPI()
+# 2. FastAPI uygulaması oluşturulur.
+app = FastAPI(
+    title="SRRP Backend API",
+    description="Smart Renewable Resources Project - Yenilenebilir Kaynak Planlama API'si",
+    version="1.0.0",
+)
 
 # 3. CORS ayarları oluşturulan app'e eklenir.
 origins = ["*"]
@@ -22,51 +30,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 4. Veri ekleme bloğu çalışır.
-db = None
-try:
-    db = SessionLocal()
-    if db.query(models.Resource).count() == 0:
-        print("Veritabanı boş, başlangıç verileri ekleniyor...")
-        db.add_all([
-            models.Resource(name="Manisa Rüzgar Enerji Santrali", type="Rüzgar Türbini", capacity_mw=250.5),
-            models.Resource(name="Gediz Güneş Tarlası", type="Güneş Paneli", capacity_mw=120.0),
-            models.Resource(name="Demirköprü Barajı", type="Hidroelektrik", capacity_mw=69.0)
-        ])
-        db.commit()
-        print("Başlangıç verileri eklendi.")
-finally:
-    if db:
-        db.close()
+# 4. Router'lar uygulamaya dahil edilir.
+app.include_router(users.router)
+app.include_router(pins.router)
 
-# Dependency
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-# --- API ENDPOINT'LERİ ---
-
+# 5. Kök Uç Nokta
 @app.get("/")
 def read_root():
-    return {"message": "SRRP Backend'i çalışıyor!"}
+    return {"message": "SRRP Backend çalışıyor! /docs adresini ziyaret edin."}
 
-@app.get("/api/resources")
-def get_resources(db: Session = Depends(get_db)):
-    resources = db.query(models.Resource).all()
-    return resources
-
-@app.post("/api/resources")
-def create_resource(resource: schemas.ResourceCreate, db: Session = Depends(get_db)):
-    # Bu fonksiyon artık veritabanına gerçekten kayıt yapıyor.
-    new_resource = models.Resource(
-        name=resource.name,
-        type=resource.type,
-        capacity_mw=resource.capacity_mw
-    )
-    db.add(new_resource)
-    db.commit()
-    db.refresh(new_resource)
-    return new_resource
+# NOT: Eski SessionLocal import'u main.py'den kaldırıldı.
+# database dependency'si router'lar içinde tanımlanmıştır.
