@@ -37,6 +37,10 @@ dependencies:
   http: ^1.5.0
   google_maps_flutter: ^2.13.1
   mapbox_maps_flutter: ^2.11.0
+  latlong2: ^0.9.1
+  flutter_map: ^8.2.2
+  flutter_secure_storage: ^9.2.4
+  provider: ^6.1.5+1
 
 dev_dependencies:
   flutter_test:
