@@ -18,9 +18,12 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordController = TextEditingController();
   AuthMode _authMode = AuthMode.login;
   bool _isLoading = false;
-  
-  String get _buttonText => _authMode == AuthMode.login ? 'Giriş Yap' : 'Kayıt Ol';
-  String get _switchText => _authMode == AuthMode.login ? 'Hesabınız yok mu? Kayıt Olun' : 'Zaten hesabınız var mı? Giriş Yapın';
+
+  String get _buttonText =>
+      _authMode == AuthMode.login ? 'Giriş Yap' : 'Kayıt Ol';
+  String get _switchText => _authMode == AuthMode.login
+      ? 'Hesabınız yok mu? Kayıt Olun'
+      : 'Zaten hesabınız var mı? Giriş Yapın';
 
   void _showErrorDialog(String message) {
     showDialog(
@@ -32,7 +35,7 @@ class _AuthScreenState extends State<AuthScreen> {
           TextButton(
             child: const Text('Tamam'),
             onPressed: () => Navigator.of(ctx).pop(),
-          )
+          ),
         ],
       ),
     );
@@ -43,15 +46,27 @@ class _AuthScreenState extends State<AuthScreen> {
       _showErrorDialog('Lütfen tüm alanları doldurun.');
       return;
     }
-    
+
+    // YENİ EKLENDİ: Backend limitini UI'da kontrol et
+    if (_authMode == AuthMode.signup && _passwordController.text.length > 72) {
+      _showErrorDialog('Parola en fazla 72 karakter olabilir.');
+      return;
+    }
+
     setState(() => _isLoading = true);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
     try {
       if (_authMode == AuthMode.login) {
-        await authProvider.login(_emailController.text, _passwordController.text);
+        await authProvider.login(
+          _emailController.text,
+          _passwordController.text,
+        );
       } else {
-        await authProvider.register(_emailController.text, _passwordController.text);
+        await authProvider.register(
+          _emailController.text,
+          _passwordController.text,
+        );
         _showErrorDialog('Kayıt başarılı! Şimdi lütfen giriş yapın.');
         setState(() => _authMode = AuthMode.login);
       }
@@ -71,17 +86,32 @@ class _AuthScreenState extends State<AuthScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              const Text('SRRP', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue)),
+              const Text(
+                'SRRP',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue,
+                ),
+              ),
               const SizedBox(height: 30),
               TextField(
                 controller: _emailController,
-                decoration: const InputDecoration(labelText: 'E-posta (Kullanıcı Adı)'),
+                decoration: const InputDecoration(
+                  labelText: 'E-posta (Kullanıcı Adı)',
+                ),
                 keyboardType: TextInputType.emailAddress,
               ),
               TextField(
                 controller: _passwordController,
-                decoration: const InputDecoration(labelText: 'Parola'),
+                decoration: const InputDecoration(
+                  labelText: 'Parola',
+                  // YENİ EKLENDİ: Karakter sayacını gizler
+                  counterText: "",
+                ),
                 obscureText: true,
+                // YENİ EKLENDİ: Fiziksel olarak yazmayı 72 karakterle sınırlar
+                maxLength: 72,
               ),
               const SizedBox(height: 20),
               _isLoading
@@ -94,7 +124,9 @@ class _AuthScreenState extends State<AuthScreen> {
               TextButton(
                 onPressed: () {
                   setState(() {
-                    _authMode = _authMode == AuthMode.login ? AuthMode.signup : AuthMode.login;
+                    _authMode = _authMode == AuthMode.login
+                        ? AuthMode.signup
+                        : AuthMode.login;
                   });
                 },
                 child: Text(_switchText),
