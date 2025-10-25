@@ -13,7 +13,7 @@ from .database import SessionLocal
 from .database import get_db
 
 # --- Security Constants and Settings ---
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 2880
 SECRET_KEY = "Sakin_Burayi_Degistirmeyi_Unutma_SRRP_Gizli_Anahtari"
 ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
@@ -77,6 +77,15 @@ def get_current_user(
     (HATA DÜZELTMESİ)
     Token'ı doğrular ve ilgili User modelini döndürür.
     """
+    
+    # --- YENİ DEBUG KODU ---
+    # Bu print, 401 hatasından hemen önce çalışacak
+    print("\n--- AUTH.PY DEBUG ---")
+    print(f"Token doğrulama fonksiyonu tetiklendi.")
+    print(f"Gelen Token: {token}")
+    print("---------------------\n")
+    # --- DEBUG KODU SONU ---
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Kimlik bilgileri doğrulanamadı",

@@ -1,7 +1,7 @@
 # routers/pins.py
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
-from typing import List, Union, cast
+from typing import List, Union, cast, Optional # <-- Optional'ı buraya ekle
 
 from .. import crud, schemas, auth, models, wind_calculations, solar_calculations
 from ..database import SessionLocal
@@ -18,11 +18,21 @@ router = APIRouter(
 def create_pin(
     pin: schemas.PinCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_active_user)
+    current_user: models.User = Depends(auth.get_current_active_user),
+    
+    # 2. YENİ PARAMETRE: Gelen 'Authorization' başlığını yakala
+    authorization: Optional[str] = Header(None) 
 ):
     """
     Kimliği doğrulanmış kullanıcı için yeni bir harita pini (kaynak) oluşturur.
     """
+    
+    # 3. YENİ KOD: Gelen token'ı terminale yazdır
+    print("--- POST /pins/ GELEN TOKEN ---")
+    print(f"Authorization Header: {authorization}")
+    print("-------------------------------")
+    
+    # Kalan kod aynı
     user_id = cast(int, current_user.id)
     return crud.create_pin_for_user(db=db, pin=pin, user_id=user_id)
 

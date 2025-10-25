@@ -29,7 +29,23 @@ class _AuthScreenState extends State<AuthScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Hata Oluştu'),
+        title: const Text('Hata Oluştu'), //
+        content: Text(message),
+        actions: <Widget>[
+          TextButton(
+            child: const Text('Tamam'),
+            onPressed: () => Navigator.of(ctx).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSuccessDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Başarılı'),
         content: Text(message),
         actions: <Widget>[
           TextButton(
@@ -67,7 +83,10 @@ class _AuthScreenState extends State<AuthScreen> {
           _emailController.text,
           _passwordController.text,
         );
-        _showErrorDialog('Kayıt başarılı! Şimdi lütfen giriş yapın.');
+
+        // DEĞİŞTİ: Artık doğru diyalog çağrılıyor
+        _showSuccessDialog('Kayıt başarılı! Şimdi lütfen giriş yapın.');
+
         setState(() => _authMode = AuthMode.login);
       }
     } catch (e) {
