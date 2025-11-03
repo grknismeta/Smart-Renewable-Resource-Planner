@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from typing import Optional, List
 
 from . import models, schemas, auth, solar_calculations
-
+from .solar_calculations import get_annual_average_solar_potential
 # --- Kullanıcı (User) İşlemleri (DÜZELTİLDİ) ---
 
 def get_user_by_email(db: Session, email: str):
@@ -50,13 +50,39 @@ def get_pins_by_owner(db: Session, owner_id: int, skip: int = 0, limit: int = 10
     """Belirli bir kullanıcıya ait tüm pinleri döndürür."""
     return db.query(models.Pin).filter(models.Pin.owner_id == owner_id).offset(skip).limit(limit).all()
 
+# backend/crud.py
+
 def create_pin_for_user(db: Session, pin: schemas.PinCreate, user_id: int):
-    """
-    Belirli bir kullanıcı için yeni bir pin oluşturur.
-    (turbine_model_id desteği eklendi)
-    """
-    db_pin = models.Pin(**pin.model_dump(), owner_id=user_id)
-    
+
+    # 1. Open-Meteo'dan *ham potansiyel* verisini çek
+    print(f"CRUD: {pin.latitude}, {pin.longitude} için yıllık güneş potansiyeli çekiliyor...")
+
+    # DİKKAT: Yeni fonksiyonu çağırıyoruz
+    solar_potential_data = get_annual_average_solar_potential(
+        latitude=pin.latitude, 
+        longitude=pin.longitude
+    )
+
+    if solar_potential_data:
+        print(f"Potansiyel verisi çekildi: {solar_potential_data:.2f} kWh/m²/gün")
+    else:
+        print("Uyarı: Güneş potansiyel verisi çekilemedi, pin 'None' olarak kaydedilecek.")
+
+    # 2. Veritabanı modelini, pin verileri VE hesaplanan potansiyel veri ile oluştur
+    # --- YENİ VE DOĞRU KISIM ---
+    # 1. Client'tan gelen veriyi bir sözlüğe al
+    pin_data = pin.model_dump()
+
+    # 2. owner_id'yi (eğer varsa) token'dan gelenle güvenli bir şekilde üzerine yaz
+    pin_data["owner_id"] = user_id
+
+    # 3. Hesaplanan güneş verisini de sözlüğe ekle
+    pin_data["avg_solar_irradiance"] = solar_potential_data
+
+    # 4. Modeli, hazırladığımız bu tek, temiz sözlükle oluştur
+    db_pin = models.Pin(**pin_data)
+    # --- DÜZELTME BİTTİ ---
+
     db.add(db_pin)
     db.commit()
     db.refresh(db_pin)

@@ -49,8 +49,11 @@ class Pin(Base):
     __tablename__ = "pins"
 
     id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
     latitude = Column(Float)
     longitude = Column(Float)
+    
+    avg_solar_irradiance = Column(Float, nullable=True)
     
     name = Column(String, index=True, default="Yeni Kaynak")
     # "Rüzgar Türbini" veya "Güneş Paneli"

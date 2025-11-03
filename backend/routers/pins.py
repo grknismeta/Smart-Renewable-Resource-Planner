@@ -6,6 +6,9 @@ from typing import List, Union, cast, Optional # <-- Optional'ı buraya ekle
 from .. import crud, schemas, auth, models, wind_calculations, solar_calculations
 from ..database import SessionLocal
 from ..database import get_db
+from ..import solar_calculations, wind_calculations
+from ..schemas import PinCalculationResponse, WindCalculationResponse, SolarCalculationResponse, PinBase 
+
 
 router = APIRouter(
     prefix="/pins",
@@ -49,6 +52,91 @@ def read_pins_for_user(
     user_id = cast(int, current_user.id)
     pins = crud.get_pins_by_owner(db, owner_id=user_id, skip=skip, limit=limit)
     return pins
+
+# ... (create_pin ve read_pins_for_user fonksiyonlarınızın ALTINA) ...
+
+
+@router.post(
+    "/calculate", 
+    response_model=PinCalculationResponse,
+    summary="Bir pinin potansiyelini, kaydetmeden hesaplar"
+)
+def calculate_pin_potential(
+    # Flutter'dan gelen geçici pin verisini PinBase şemasıyla yakalıyoruz
+    pin_data: PinBase, 
+    # Bu endpoint'i kullanmak için de giriş yapmış olmak zorunlu
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Bu endpoint veritabanına HİÇBİR ŞEY KAYDETMEZ.
+    Sadece Flutter'dan gelen 'pin_data' gövdesini alır,
+    gerekli hesaplama fonksiyonlarını (solar/wind) çağırır
+    ve sonucu bir PinCalculationResponse olarak döndürür.
+    """
+    
+    print(f"Hesaplama isteği alındı: {pin_data.type}")
+
+    if pin_data.type == "Güneş Paneli":
+        # --- Güneş Enerjisi Hesaplama ---
+        
+        # Flutter'dan 'panel_area' (panel alanı) göndermeniz gerekiyor.
+        # Eğer göndermezseniz, varsayılan olarak 0 kullanılır.
+        panel_area = pin_data.panel_area or 0.0 
+        
+        if panel_area == 0.0:
+            print("Uyarı: Panel alanı 0 olduğu için güç çıkışı 0 olacaktır.")
+
+        # solar_calculations.py dosyanızdaki fonksiyonu çağır
+        calc_results = solar_calculations.calculate_solar_power(
+            latitude=pin_data.latitude,
+            longitude=pin_data.longitude,
+            panel_area=panel_area,
+            tilt_angle=pin_data.panel_tilt or 35.0,
+            azimuth_angle=pin_data.panel_azimuth or 180.0
+        )
+        
+        # schemas.py'deki yanıt modelini doldur
+        solar_response = SolarCalculationResponse(
+            **calc_results,
+            panel_model="Standart Model" # TODO: Bunu da modelden al
+        )
+        
+        return PinCalculationResponse(
+            resource_type="Güneş Paneli",
+            solar_calculation=solar_response
+        )
+
+    elif pin_data.type == "Rüzgar Türbini":
+        # --- Rüzgar Enerjisi Hesaplama ---
+        
+        # 1. Koordinatlara göre (simüle edilmiş) rüzgar hızını al
+        wind_speed = wind_calculations.get_current_wind_speed(
+            pin_data.latitude, pin_data.longitude
+        )
+        
+        # 2. Şimdilik örnek güç eğrisini kullan
+        # TODO: Bunu pin_data.turbine_model_id'ye göre veritabanından çek
+        power_curve = wind_calculations.EXAMPLE_TURBINE_POWER_CURVE
+        
+        # 3. Anlık gücü hesapla
+        power_kw = wind_calculations.get_power_from_curve(
+            wind_speed, power_curve
+        )
+        
+        wind_response = WindCalculationResponse(
+            wind_speed_m_s=wind_speed,
+            power_output_kw=power_kw,
+            turbine_model="Standart Türbin" # TODO: Bunu da modelden al
+        )
+        
+        return PinCalculationResponse(
+            resource_type="Rüzgar Türbini",
+            wind_calculation=wind_response
+        )
+    
+    else:
+        # Eğer tip "Güneş Paneli" veya "Rüzgar Türbini" değilse hata ver
+        raise HTTPException(status_code=400, detail="Geçersiz kaynak tipi.")
 
 @router.delete("/{pin_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_pin(
@@ -118,7 +206,7 @@ def calculate_wind_power(db: Session, pin: models.Pin) -> schemas.PinCalculation
 
     try:
         # Rüzgar hızını hesapla
-        wind_speed = wind_calculations.get_wind_speed_from_coordinates(
+        wind_speed = wind_calculations.get_current_wind_speed(
             float(pin_data.latitude),
             float(pin_data.longitude)
         )

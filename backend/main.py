@@ -6,7 +6,9 @@ from contextlib import asynccontextmanager
 from .database import SessionLocal, engine
 from . import models, crud, test_data
 from .routers import users, pins, turbines, solar_panels
-
+from . import models, schemas, auth, database
+from .solar_calculations import calculate_panel_efficiency
+from .wind_calculations import get_power_from_curve  
 # 1. Veritabanı tabloları oluşturulur (yeni Turbine tablosu dahil).
 models.Base.metadata.create_all(bind=engine)
 

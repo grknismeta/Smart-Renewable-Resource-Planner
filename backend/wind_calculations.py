@@ -4,6 +4,7 @@
 
 import math
 from typing import Dict
+import requests
 
 def get_power_from_curve(wind_speed: float, power_curve: Dict[float, float]) -> float:
     """
@@ -70,29 +71,30 @@ def get_power_from_curve(wind_speed: float, power_curve: Dict[float, float]) -> 
         return lower_power
 
     # Interpolasyon
-    interpolated_power = lower_power + (wind_speed - lower_speed) * \
-                         (upper_power - lower_power) / (upper_speed - lower_speed)
+    interpolated_power = lower_power + (wind_speed - lower_speed) * (upper_power - lower_power) / (upper_speed - lower_speed)
     
     return interpolated_power
 
-def get_wind_speed_from_coordinates(lat: float, lon: float) -> float:
+def get_current_wind_speed(latitude: float, longitude: float, height: int = 100) -> float:
     """
-    Belirtilen koordinatlardaki rüzgar hızını (m/s) döndürür.
-    
-    !!! ÖNEMLİ !!!
-    BU FONKSİYON ŞU ANDA SİMÜLASYONDUR (PLACEHOLDER).
-    Bir sonraki adımda burayı Global Wind Atlas (GWA) verisini 
-    sorgulayacak şekilde (örn: rasterio kütüphanesi ile) 
-    güncellememiz gerekecek.
+    Open-Meteo'dan anlık rüzgar hızını (m/s) çeker.
+    Türbinler için 100m yükseklik varsayılanıdır.
     """
-    print(f"Rüzgar hızı verisi {lat}, {lon} koordinatları için çekiliyor (simülasyon)...")
-    
-    # Şimdilik simülasyon/placeholder değeri:
-    # Gerçekte, bu değer lat/lon'a göre değişmeli.
-    # Örn: (lat * lon) % 20 # Basit bir değişiklik olması için
-    simulated_speed = 8.5 
-    
-    return simulated_speed
+    API_URL = "[https://api.open-meteo.com/v1/forecast](https://api.open-meteo.com/v1/forecast)"
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "current": f"wind_speed_{height}m", # Örn: wind_speed_100m
+        "timezone": "auto"
+    }
+    try:
+        response = requests.get(API_URL, params=params)
+        response.raise_for_status()
+        data = response.json().get("current", {})
+        return data.get(f"wind_speed_{height}m", 8.5) # Hata olursa 8.5 döner
+    except Exception as e:
+        print(f"Hata: Anlık rüzgar verisi çekilemedi: {e}")
+        return 8.5 # Simülasyon
 
 
 # --- ÖRNEK STANDART GÜÇ EĞRİSİ ---

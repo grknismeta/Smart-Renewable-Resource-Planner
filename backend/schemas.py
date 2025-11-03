@@ -25,12 +25,10 @@ class SolarPanelResponse(SolarPanelBase):
         from_attributes = True
 
 # --- Kimlik Doğrulama Şemaları ---
-# (Gönderdiğiniz dosyayla aynı, değişiklik yok)
 class UserBase(BaseModel):
     email: str
 
 class UserCreate(UserBase):
-# DÜZELTME: Bcrypt limitine (72) uyması için maksimum uzunluk ekliyoruz.
     password: str = Field(..., max_length=1024)
     
 class UserResponse(UserBase):
@@ -45,12 +43,11 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
 
-# --- Türbin Şemaları (YENİ) ---
+# --- Türbin Şemaları ---
 class TurbineBase(BaseModel):
     model_name: str
     rated_power_kw: float
     is_default: bool = False
-    # Güç eğrisi: {hız: güç}
     power_curve_data: Dict[float, float]
 
 class TurbineCreate(TurbineBase):
@@ -62,7 +59,7 @@ class TurbineResponse(TurbineBase):
         from_attributes = True
 
 
-# --- Pin (Kaynak) Şemaları (Güncellendi) ---
+# --- Pin (Kaynak) Şemaları ---
 
 class PinBase(BaseModel):
     latitude: float
@@ -71,14 +68,12 @@ class PinBase(BaseModel):
     type: Literal["Rüzgar Türbini", "Güneş Paneli"] = Field(default="Rüzgar Türbini")
     capacity_mw: Optional[float] = Field(default=1.0)
     
-    # Rüzgar türbini için
     turbine_model_id: Optional[int] = None
     
-    # Güneş paneli için yeni alanlar
     panel_model_id: Optional[int] = None
-    panel_tilt: Optional[float] = Field(default=35.0)  # Varsayılan 35 derece
-    panel_azimuth: Optional[float] = Field(default=180.0)  # Varsayılan güney yönü
-    panel_area: Optional[float] = None  # m²
+    panel_tilt: Optional[float] = Field(default=35.0)
+    panel_azimuth: Optional[float] = Field(default=180.0)
+    panel_area: Optional[float] = None
 
 class PinCreate(PinBase):
     pass
@@ -86,20 +81,22 @@ class PinCreate(PinBase):
 class PinResponse(PinBase):
     id: int
     owner_id: int
+    avg_solar_irradiance: Optional[float] = None
     turbine_model_id: Optional[int] = None
     
     class Config:
         from_attributes = True
 
-# --- Enerji Hesaplama Şemaları ---
+# --- Enerji Hesaplama Şemaları (DÜZELTİLDİ) ---
 class WindCalculationResponse(BaseModel):
     """Rüzgar enerjisi hesaplama sonuçları"""
     wind_speed_m_s: float
     power_output_kw: float
     turbine_model: str
-    # İleride eklenecek
-    # potential_kwh_annual: float
-    # capacity_factor: float
+    
+    # DÜZELTME: Bu alanları 'Optional' (seçenekli) yaptık
+    potential_kwh_annual: Optional[float] = None
+    capacity_factor: Optional[float] = None
 
 class SolarCalculationResponse(BaseModel):
     """Güneş enerjisi hesaplama sonuçları"""
@@ -108,9 +105,10 @@ class SolarCalculationResponse(BaseModel):
     panel_efficiency: float
     power_output_kw: float
     panel_model: str
-    # İleride eklenecek
-    # potential_kwh_annual: float
-    # performance_ratio: float
+
+    # DÜZELTME: Bu alanları 'Optional' (seçenekli) yaptık
+    potential_kwh_annual: Optional[float] = None
+    performance_ratio: Optional[float] = None
 
 class PinCalculationResponse(BaseModel):
     """
@@ -120,8 +118,3 @@ class PinCalculationResponse(BaseModel):
     resource_type: Literal["Rüzgar Türbini", "Güneş Paneli"]
     wind_calculation: Optional[WindCalculationResponse] = None
     solar_calculation: Optional[SolarCalculationResponse] = None
-    
-    # Ortak finansal hesaplamalar (İleride eklenecek)
-    # estimated_cost: float
-    # roi_years: float
-    # lcoe: float  # Levelized Cost of Energy

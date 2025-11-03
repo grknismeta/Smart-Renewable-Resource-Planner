@@ -11,24 +11,33 @@ enum MapLayer { none, wind, temp }
 class MapProvider extends ChangeNotifier {
   final ApiService _apiService;
   final AuthProvider _authProvider;
-  
+
   List<Pin> _pins = [];
   bool _isLoading = false;
   bool _isPlacingMarker = false;
   MapLayer _currentLayer = MapLayer.none;
-  PinResult? _latestCalculationResult;
+
+  // --- DÜZELTME 1: YANLIŞ TİP ---
+  // PinResult? _latestCalculationResult;
+  // --- DOĞRU TİP ---
+  // Backend'den (schemas.py) dönen 'PinCalculationResponse' modelini kullanıyoruz.
+  // Bu sınıfı 'pin_model.dart' dosyana eklemen gerekecek.
+  PinCalculationResponse? _latestCalculationResult;
 
   List<Pin> get pins => _pins;
   bool get isLoading => _isLoading;
   bool get isPlacingMarker => _isPlacingMarker;
   MapLayer get currentLayer => _currentLayer;
-  PinResult? get latestCalculationResult => _latestCalculationResult;
+
+  // --- DÜZELTME 2: DÖNÜŞ TİPİNİ GÜNCELLE ---
+  PinCalculationResponse? get latestCalculationResult =>
+      _latestCalculationResult;
 
   MapProvider(this._apiService, this._authProvider) {
     // AuthProvider'ın giriş durumu değiştiğinde pinleri yenile
     _authProvider.addListener(_handleAuthChange);
   }
-  
+
   void _handleAuthChange() {
     if (_authProvider.isLoggedIn == true) {
       fetchPins();
@@ -58,7 +67,7 @@ class MapProvider extends ChangeNotifier {
     }
     notifyListeners();
   }
-  
+
   void clearCalculationResult() {
     _latestCalculationResult = null;
     notifyListeners();
@@ -99,22 +108,30 @@ class MapProvider extends ChangeNotifier {
       throw Exception('Pin silinemedi. Lütfen tekrar deneyin.');
     }
   }
-  
+
+  // Bu fonksiyon artık UI'dan 'panelArea' parametresini alıyor
   Future<void> calculatePotential({
     required double lat,
     required double lon,
     required String type,
     required double capacityMw,
+    double? panelArea,
   }) async {
     _isLoading = true;
     _latestCalculationResult = null;
     notifyListeners();
     try {
+      // --- DÜZELTME 3: api_service'in doğru tipi döndürdüğünü varsay ---
+      // 'api_service.dart' dosyasındaki 'calculateEnergyPotential'
+      // fonksiyonunun da 'Future<PinCalculationResponse>' döndürmesi
+      // için güncellenmesi GEREKİR.
       _latestCalculationResult = await _apiService.calculateEnergyPotential(
         lat: lat,
         lon: lon,
         type: type,
         capacityMw: capacityMw,
+        // Ve 'panelArea'yı api_service'e iletiyor
+        panelArea: panelArea ?? 0.0,
       );
     } catch (e) {
       print('Hesaplama hatası: $e');
