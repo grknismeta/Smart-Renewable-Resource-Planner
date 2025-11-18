@@ -40,7 +40,7 @@ class ApiService {
   }
 
   // --- Kimlik Doğrulama İşlemleri ---
-
+  // ... (login ve register fonksiyonları - değişiklik yok) ...
   Future<String> login(String email, String password) async {
     final response = await http.post(
       Uri.parse('$_apiBaseUrl/users/token'),
@@ -74,6 +74,7 @@ class ApiService {
   // --- Pin (Kaynak) Yönetimi İşlemleri ---
 
   Future<List<Pin>> fetchPins() async {
+    // ... (değişiklik yok) ...
     final response = await http.get(
       Uri.parse('$_apiBaseUrl/pins/'),
       headers: await _getHeaders(),
@@ -90,35 +91,34 @@ class ApiService {
     }
   }
 
-  // --- BU FONKSİYON DÜZELTİLDİ ---
-  Future<void> addPin(LatLng point) async {
-    // Hatanın nedeni 'Pin' constructor'ını çağırmaktı.
-    // 'PinCreate' şeması 'id' veya 'ownerId' beklemez.
-    // Bu yüzden backend'in beklediği Map'i manuel olarak oluşturuyoruz:
+  // --- 1. GÜNCELLEME: 'addPin' fonksiyonu artık tüm verileri alıyor ---
+  Future<void> addPin(
+    LatLng point,
+    String name,
+    String type,
+    double capacityMw,
+  ) async {
+    // 'Pin' constructor'ı yerine 'Map' oluştur
     final Map<String, dynamic> pinData = {
       'latitude': point.latitude,
       'longitude': point.longitude,
-      'name': 'Yeni Kaynak', // Varsayılan değer
-      'type': 'Güneş Paneli', // Varsayılan değer
-      'capacity_mw': 1.0, // Varsayılan değer
-      // Backend'deki PinBase'de olan diğer tüm alanlar (panel_area vb.)
-      // 'null' veya varsayılan değerlerini alacak.
+      'name': name, // <-- Artık dinamik
+      'type': type, // <-- Artık dinamik
+      'capacity_mw': capacityMw, // <-- Artık dinamik
     };
 
     final response = await http.post(
       Uri.parse('$_apiBaseUrl/pins/'),
       headers: await _getHeaders(),
-      // 'pinData.toJson()' yerine doğrudan 'pinData' Map'ini encode ediyoruz
       body: json.encode(pinData),
     );
     if (response.statusCode != 201) {
-      // 422 hatası alırsanız, bu Map'in backend'deki
-      // PinCreate şemasıyla eşleşmediği anlamına gelir.
       throw Exception('Pin eklenemedi (Status code: ${response.statusCode})');
     }
   }
 
   Future<void> deletePin(int pinId) async {
+    // ... (değişiklik yok) ...
     final response = await http.delete(
       Uri.parse('$_apiBaseUrl/pins/$pinId'),
       headers: await _getHeaders(),
@@ -129,39 +129,31 @@ class ApiService {
   }
 
   // --- Enerji Hesaplama İşlemi ---
-
-  // --- 1. DÜZELTME: Fonksiyonun dönüş tipini 'PinResult'tan 'PinCalculationResponse'a değiştir
   Future<PinCalculationResponse> calculateEnergyPotential({
+    // ... (değişiklik yok) ...
     required double lat,
     required double lon,
     required String type,
     required double capacityMw,
     required double panelArea,
   }) async {
-    // --- 3. DÜZELTME: 'Pin' constructor'ı yerine 'Map' oluştur ---
-    // Bu, 'missing ownerId' hatasını çözer.
-    // Backend'in /pins/calculate endpoint'i PinBase şemasını bekler.
     final Map<String, dynamic> pinData = {
       'latitude': lat,
       'longitude': lon,
-      'name': "Hesaplanacak", // Bu alan PinBase'de var, gönderilmeli
+      'name': "Hesaplanacak",
       'type': type,
       'capacity_mw': capacityMw,
-      'panel_area': panelArea, // Backend'e gönderilecek
-      // PinBase'deki diğer alanlar (tilt, azimuth vb.) varsayılan değerlerini alacak
+      'panel_area': panelArea,
     };
 
     final response = await http.post(
       Uri.parse('$_apiBaseUrl/pins/calculate'),
       headers: await _getHeaders(),
-      // 'pinForCalculation.toJson()' yerine 'pinData' Map'ini encode et
       body: json.encode(pinData),
     );
 
     if (response.statusCode == 200) {
       final jsonResponse = json.decode(utf8.decode(response.bodyBytes));
-
-      // --- 2. DÜZELTME: Dönen JSON'ı 'PinResult' yerine 'PinCalculationResponse' ile parse et
       return PinCalculationResponse.fromJson(jsonResponse);
     } else {
       throw Exception(

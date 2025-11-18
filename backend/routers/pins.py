@@ -110,7 +110,7 @@ def calculate_pin_potential(
         # --- Rüzgar Enerjisi Hesaplama ---
         
         # 1. Koordinatlara göre (simüle edilmiş) rüzgar hızını al
-        wind_speed = wind_calculations.get_current_wind_speed(
+        wind_speed = wind_calculations.get_wind_speed_from_coordinates(
             pin_data.latitude, pin_data.longitude
         )
         
@@ -206,7 +206,7 @@ def calculate_wind_power(db: Session, pin: models.Pin) -> schemas.PinCalculation
 
     try:
         # Rüzgar hızını hesapla
-        wind_speed = wind_calculations.get_current_wind_speed(
+        wind_speed = wind_calculations.get_wind_speed_from_coordinates(
             float(pin_data.latitude),
             float(pin_data.longitude)
         )

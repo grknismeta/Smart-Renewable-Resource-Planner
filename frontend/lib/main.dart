@@ -40,8 +40,12 @@ class MyApp extends StatelessWidget {
         ),
         // MapProvider, ApiService ve AuthProvider'a ihtiyaç duyar
         ChangeNotifierProxyProvider<AuthProvider, MapProvider>(
-          create: (context) => MapProvider(apiService, Provider.of<AuthProvider>(context, listen: false)),
-          update: (context, auth, map) => map!, // MapProvider'ın tek seferlik oluşturulması yeterli
+          create: (context) => MapProvider(
+            apiService,
+            Provider.of<AuthProvider>(context, listen: false),
+          ),
+          update: (context, auth, map) =>
+              map!, // MapProvider'ın tek seferlik oluşturulması yeterli
         ),
       ],
       child: MaterialApp(
@@ -49,7 +53,9 @@ class MyApp extends StatelessWidget {
         title: 'Akıllı Kaynak Planlayıcı (SRRP)',
         theme: ThemeData(
           primarySwatch: Colors.blue,
-          colorScheme: ColorScheme.fromSwatch(primarySwatch: Colors.blue).copyWith(secondary: Colors.red),
+          colorScheme: ColorScheme.fromSwatch(
+            primarySwatch: Colors.blue,
+          ).copyWith(secondary: Colors.red),
         ),
         home: Consumer<AuthProvider>(
           builder: (ctx, auth, _) {

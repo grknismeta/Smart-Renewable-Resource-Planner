@@ -71,30 +71,42 @@ def get_power_from_curve(wind_speed: float, power_curve: Dict[float, float]) -> 
         return lower_power
 
     # Interpolasyon
-    interpolated_power = lower_power + (wind_speed - lower_speed) * (upper_power - lower_power) / (upper_speed - lower_speed)
+    interpolated_power = lower_power + (wind_speed - lower_speed) * \
+                         (upper_power - lower_power) / (upper_speed - lower_speed)
     
     return interpolated_power
 
-def get_current_wind_speed(latitude: float, longitude: float, height: int = 100) -> float:
+def get_wind_speed_from_coordinates(lat: float, lon: float) -> float:
     """
-    Open-Meteo'dan anlık rüzgar hızını (m/s) çeker.
-    Türbinler için 100m yükseklik varsayılanıdır.
+    Belirtilen koordinatlardaki ANLIK rüzgar hızını (m/s) Open-Meteo'dan çeker.
+    Türbin yüksekliği için 100m rüzgar hızı verisini kullanır.
     """
-    API_URL = "[https://api.open-meteo.com/v1/forecast](https://api.open-meteo.com/v1/forecast)"
+    print(f"ANLIK rüzgar hızı verisi {lat}, {lon} koordinatları için çekiliyor (GERÇEK API)...")
+    
+    API_URL = "https://api.open-meteo.com/v1/forecast"
+    
     params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "current": f"wind_speed_{height}m", # Örn: wind_speed_100m
+        "latitude": lat,
+        "longitude": lon,
+        "current": "wind_speed_100m", # 100 metre yükseklikteki rüzgar hızı
+        "wind_speed_unit": "ms", # m/s birimi
         "timezone": "auto"
     }
+
     try:
         response = requests.get(API_URL, params=params)
         response.raise_for_status()
         data = response.json().get("current", {})
-        return data.get(f"wind_speed_{height}m", 8.5) # Hata olursa 8.5 döner
+        
+        # Rüzgar hızını al (m/s)
+        wind_speed = data.get("wind_speed_100m", 0.0)
+        
+        return wind_speed
+        
     except Exception as e:
         print(f"Hata: Anlık rüzgar verisi çekilemedi: {e}")
-        return 8.5 # Simülasyon
+        # Hata durumunda güvenli bir değer veya 0 döndür
+        return 0.0
 
 
 # --- ÖRNEK STANDART GÜÇ EĞRİSİ ---

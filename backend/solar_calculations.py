@@ -12,24 +12,48 @@ def get_current_solar_data(
     azimuth_angle: float
 ) -> Dict[str, float]:
     """
-    Belirli bir konumdaki ANLIK güneş verilerini hesaplar/çeker.
+    Belirli bir konumdaki ANLIK güneş verilerini (ışınım ve sıcaklık)
+    Open-Meteo Forecast API'sinden çeker.
     
-    !!! ÖNEMLİ !!!
-    BU FONKSİYON ŞU ANDA SİMÜLASYONDUR (PLACEHOLDER).
-    (Hareket Planı Faz 1 - Gerçek API ile değiştirilecek)
-    
-    :return: Işınım (kW/m²) ve Sıcaklık (°C) içeren bir sözlük
+    (Simülasyon kaldırıldı, artık GERÇEK veri çekiyor)
     """
-    print(f"ANLIK güneş ve sıcaklık verisi {latitude}, {longitude} için çekiliyor (simülasyon)...")
-    
-    # Şimdilik simülasyon değerleri:
-    simulated_irradiance = 0.8  # kW/m²
-    simulated_temp = 25.0       # °C
-    
-    return {
-        "irradiance": simulated_irradiance,
-        "temperature": simulated_temp
+    print(f"ANLIK güneş ve sıcaklık verisi {latitude}, {longitude} için çekiliyor (GERÇEK API)...")
+
+    API_URL = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "current": "temperature_2m,shortwave_radiation", # Anlık sıcaklık ve ışınımı istiyoruz
+        "timezone": "auto"
     }
+
+    try:
+        response = requests.get(API_URL, params=params)
+        response.raise_for_status()
+        data = response.json().get("current", {})
+        
+        # 1. Sıcaklığı al (°C)
+        current_temp = data.get("temperature_2m", 25.0) # Hata olursa 25 döner
+
+        # 2. Işınımı al (API'den W/m² olarak gelir)
+        irradiance_wm2 = data.get("shortwave_radiation", 800.0) # Hata olursa 800 döner
+        
+        # 3. Birimi W/m² -> kW/m²'ye çevir (1000'e böl)
+        current_irradiance_kwm2 = irradiance_wm2 / 1000.0
+        
+        return {
+            "irradiance": current_irradiance_kwm2,
+            "temperature": current_temp
+        }
+        
+    except Exception as e:
+        print(f"Hata: Anlık güneş verisi çekilemedi, simülasyon kullanılıyor: {e}")
+        # API isteği başarısız olursa eski simülasyon değerlerine dön
+        return {
+            "irradiance": 0.8, # kW/m²
+            "temperature": 25.0 # °C
+        }
+
 
 def calculate_panel_efficiency(
     temperature: float,
@@ -55,7 +79,7 @@ def calculate_solar_power(
 ) -> Dict[str, float]:
     """
     Güneş enerjisi sisteminin anlık güç üretimini hesaplar.
-    (Artık simülasyon yerine 'get_current_solar_data'yı çağırıyor)
+    (Artık GERÇEK API verisini çağıran 'get_current_solar_data'yı çağırıyor)
     """
     
     # 1. ANLIK verileri (ışınım ve sıcaklık) al

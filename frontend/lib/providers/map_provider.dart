@@ -8,37 +8,36 @@ import 'auth_provider.dart';
 
 enum MapLayer { none, wind, temp }
 
+// --- 1. GÜNCELLEME: Pin ekleme modunu String olarak tanımla ---
+// 'isPlacingMarker' boolean'ı yerine, ne eklediğimizi tutan bir String kullanıyoruz.
+// null = pin ekleme modu kapalı.
+typedef PinType = String;
+
 class MapProvider extends ChangeNotifier {
   final ApiService _apiService;
   final AuthProvider _authProvider;
 
   List<Pin> _pins = [];
   bool _isLoading = false;
-  bool _isPlacingMarker = false;
+  // bool _isPlacingMarker = false; // <-- ESKİ
+  PinType? _placingPinType; // <-- YENİ
   MapLayer _currentLayer = MapLayer.none;
-
-  // --- DÜZELTME 1: YANLIŞ TİP ---
-  // PinResult? _latestCalculationResult;
-  // --- DOĞRU TİP ---
-  // Backend'den (schemas.py) dönen 'PinCalculationResponse' modelini kullanıyoruz.
-  // Bu sınıfı 'pin_model.dart' dosyana eklemen gerekecek.
   PinCalculationResponse? _latestCalculationResult;
 
   List<Pin> get pins => _pins;
   bool get isLoading => _isLoading;
-  bool get isPlacingMarker => _isPlacingMarker;
+  // bool get isPlacingMarker => _isPlacingMarker; // <-- ESKİ
+  PinType? get placingPinType => _placingPinType; // <-- YENİ
   MapLayer get currentLayer => _currentLayer;
-
-  // --- DÜZELTME 2: DÖNÜŞ TİPİNİ GÜNCELLE ---
   PinCalculationResponse? get latestCalculationResult =>
       _latestCalculationResult;
 
   MapProvider(this._apiService, this._authProvider) {
-    // AuthProvider'ın giriş durumu değiştiğinde pinleri yenile
     _authProvider.addListener(_handleAuthChange);
   }
 
   void _handleAuthChange() {
+    // ... (değişiklik yok) ...
     if (_authProvider.isLoggedIn == true) {
       fetchPins();
     } else if (_authProvider.isLoggedIn == false) {
@@ -48,10 +47,23 @@ class MapProvider extends ChangeNotifier {
   }
 
   // --- UI İşlemleri ---
-  void togglePlacingMarkerMode() {
-    _isPlacingMarker = !_isPlacingMarker;
+  // ... (togglePlacingMarkerMode, changeMapLayer, clearCalculationResult - değişiklik yok) ...
+  // --- 2. GÜNCELLEME: 'toggle' yerine iki ayrı fonksiyon ---
+  void startPlacingMarker(PinType type) {
+    // Eğer zaten o tipte ekleme modundaysa, modu kapat
+    if (_placingPinType == type) {
+      _placingPinType = null;
+    } else {
+      _placingPinType = type;
+    }
     notifyListeners();
   }
+
+  void stopPlacingMarker() {
+    _placingPinType = null;
+    notifyListeners();
+  }
+  // --- GÜNCELLEME SONU ---
 
   void changeMapLayer() {
     switch (_currentLayer) {
@@ -75,13 +87,13 @@ class MapProvider extends ChangeNotifier {
 
   // --- API İşlemleri ---
   Future<void> fetchPins() async {
+    // ... (değişiklik yok) ...
     if (_authProvider.isLoggedIn != true) return;
     _isLoading = true;
     notifyListeners();
     try {
       _pins = await _apiService.fetchPins();
     } catch (e) {
-      // Hata yönetimi AuthProvider'a bırakılabilir (logout) veya sadece loglanabilir.
       print('Pin yüklenirken hata: $e');
     } finally {
       _isLoading = false;
@@ -89,9 +101,16 @@ class MapProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> addPin(LatLng point) async {
+  // --- 2. GÜNCELLEME: 'addPin' fonksiyonu artık tüm verileri alıyor ---
+  Future<void> addPin(
+    LatLng point,
+    String name,
+    String type,
+    double capacityMw,
+  ) async {
     try {
-      await _apiService.addPin(point);
+      // Aldığı parametreleri 'api_service'e iletiyor
+      await _apiService.addPin(point, name, type, capacityMw);
       await fetchPins(); // Yeni pini çekmek için listeyi yenile
     } catch (e) {
       print('Pin eklenirken hata: $e');
@@ -100,6 +119,7 @@ class MapProvider extends ChangeNotifier {
   }
 
   Future<void> deletePin(int pinId) async {
+    // ... (değişiklik yok) ...
     try {
       await _apiService.deletePin(pinId);
       await fetchPins(); // Silme sonrası listeyi yenile
@@ -109,8 +129,8 @@ class MapProvider extends ChangeNotifier {
     }
   }
 
-  // Bu fonksiyon artık UI'dan 'panelArea' parametresini alıyor
   Future<void> calculatePotential({
+    // ... (değişiklik yok) ...
     required double lat,
     required double lon,
     required String type,
@@ -121,16 +141,11 @@ class MapProvider extends ChangeNotifier {
     _latestCalculationResult = null;
     notifyListeners();
     try {
-      // --- DÜZELTME 3: api_service'in doğru tipi döndürdüğünü varsay ---
-      // 'api_service.dart' dosyasındaki 'calculateEnergyPotential'
-      // fonksiyonunun da 'Future<PinCalculationResponse>' döndürmesi
-      // için güncellenmesi GEREKİR.
       _latestCalculationResult = await _apiService.calculateEnergyPotential(
         lat: lat,
         lon: lon,
         type: type,
         capacityMw: capacityMw,
-        // Ve 'panelArea'yı api_service'e iletiyor
         panelArea: panelArea ?? 0.0,
       );
     } catch (e) {

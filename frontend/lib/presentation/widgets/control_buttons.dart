@@ -11,53 +11,60 @@ class ControlButtons extends StatelessWidget {
   Widget build(BuildContext context) {
     final mapProvider = Provider.of<MapProvider>(context);
 
+    // --- HATA DÜZELTMESİ: Eksik değişken tanımlamaları eklendi ---
+    // Bu değişkenler, butonların rengini belirlemek ve
+    // iptal butonunu gösterip göstermemek için kullanılır.
+    final placingSolar = mapProvider.placingPinType == 'Güneş Paneli';
+    final placingWind = mapProvider.placingPinType == 'Rüzgar Türbini';
+    final isPlacing = placingSolar || placingWind;
+    // --- DÜZELTME SONU ---
     return Column(
       children: [
-        // Harita Katmanı Değiştirme Butonu
+        // --- 1. GÜNCELLEME: Katman (Layer) Değiştirme Butonu ---
         FloatingActionButton(
-          heroTag: 'btn3',
-          mini: true,
+          heroTag: 'btn_layer',
           onPressed: mapProvider.changeMapLayer,
-          child: const Icon(Icons.layers),
+          tooltip: 'Katman Değiştir',
+          child: Icon(
+            mapProvider.currentLayer == MapLayer.none
+                ? Icons.layers
+                : mapProvider.currentLayer == MapLayer.wind
+                ? Icons.air
+                : Icons.wb_sunny,
+          ),
         ),
-        const SizedBox(height: 8),
-        // Pin Ekleme Modu Butonu
+        const SizedBox(height: 10),
+
+        // --- 2. GÜNCELLEME: Güneş Paneli Ekle Butonu ---
         FloatingActionButton(
-          heroTag: 'btn2',
-          mini: true,
-          backgroundColor: mapProvider.isPlacingMarker
-              ? Colors.blue[800]
-              : Theme.of(context).primaryColor,
-          onPressed: () {
-            mapProvider.togglePlacingMarkerMode();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  mapProvider.isPlacingMarker
-                      ? 'Pin Ekleme Modu: Aktif'
-                      : 'Pin Ekleme Modu: Kapalı',
-                ),
-                duration: const Duration(milliseconds: 800),
-              ),
-            );
-          },
-          child: const Icon(Icons.add_location_alt),
+          heroTag: 'btn_solar',
+          onPressed: () => mapProvider.startPlacingMarker('Güneş Paneli'),
+          tooltip: 'Güneş Paneli Ekle',
+          backgroundColor: placingSolar ? Colors.amber : Colors.blueGrey,
+          child: const Icon(Icons.solar_power),
         ),
-        const SizedBox(height: 8),
-        // Hesaplama Başlatma Butonu (şimdilik boş)
+        const SizedBox(height: 10),
+
+        // --- 3. GÜNCELLEME: Rüzgar Türbini Ekle Butonu ---
         FloatingActionButton(
-          heroTag: 'btn1',
-          mini: true,
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Hesaplama modülü yakında!'),
-                duration: Duration(milliseconds: 800),
-              ),
-            );
-          },
-          child: const Icon(Icons.energy_savings_leaf),
+          heroTag: 'btn_wind',
+          onPressed: () => mapProvider.startPlacingMarker('Rüzgar Türbini'),
+          tooltip: 'Rüzgar Türbini Ekle',
+          backgroundColor: placingWind ? Colors.blue : Colors.blueGrey,
+          child: const Icon(Icons.wind_power),
         ),
+
+        // --- 4. GÜNCELLEME: Ekleme Modu Aktifse "İptal" Butonu Göster ---
+        if (isPlacing) ...[
+          const SizedBox(height: 10),
+          FloatingActionButton(
+            heroTag: 'btn_cancel',
+            onPressed: mapProvider.stopPlacingMarker,
+            tooltip: 'Ekleme Modunu Kapat',
+            backgroundColor: Colors.red,
+            child: const Icon(Icons.close),
+          ),
+        ],
       ],
     );
   }
