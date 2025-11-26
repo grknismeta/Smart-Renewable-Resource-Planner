@@ -1,17 +1,34 @@
 # main.py
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-# from sqlalchemy.orm import Session 
 
-# Düzeltildi: .models yerine direkt models import edildi.
-import models 
-from database import engine 
-from routers import users, pins 
-
-
-# 1. Veritabanı tabloları oluşturulur.
+from contextlib import asynccontextmanager
+from .database import SessionLocal, engine
+from . import models, crud, test_data
+from .routers import users, pins, turbines, solar_panels
+from . import models, schemas, auth, database
+from .solar_calculations import calculate_panel_efficiency
+from .wind_calculations import get_power_from_curve  
+# 1. Veritabanı tabloları oluşturulur (yeni Turbine tablosu dahil).
 models.Base.metadata.create_all(bind=engine)
+
+# YENİ STARTUP EVENT'İ
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Uygulama başladığında
+    db = SessionLocal()
+    try:
+        # Standart türbin ve panellerin olduğundan emin ol
+        if not crud.get_default_turbine(db) and not crud.get_default_solar_panel(db):
+            print("Varsayılan türbin ve panel modelleri oluşturuluyor...")
+            test_data.create_test_data(db)
+        else:
+            print("Varsayılan modeller zaten mevcut.")
+    finally:
+        db.close()
+
+    yield
+    # Uygulama kapandığında (gerekirse buraya kod eklenebilir)
 
 # 2. FastAPI uygulaması oluşturulur.
 app = FastAPI(
@@ -31,13 +48,17 @@ app.add_middleware(
 )
 
 # 4. Router'lar uygulamaya dahil edilir.
-app.include_router(users.router)
+# (Kullanıcı giriş/kayıt işlemleri)
+app.include_router(users.router) 
+# (Pin oluşturma, listeleme ve HESAPLAMA işlemleri)
 app.include_router(pins.router)
+# (Türbin modellerini yönetmek için router)
+app.include_router(turbines.router)
+# (Güneş paneli modellerini yönetmek için YENİ router)
+app.include_router(solar_panels.router)
 
 # 5. Kök Uç Nokta
 @app.get("/")
 def read_root():
     return {"message": "SRRP Backend çalışıyor! /docs adresini ziyaret edin."}
 
-# NOT: Eski SessionLocal import'u main.py'den kaldırıldı.
-# database dependency'si router'lar içinde tanımlanmıştır.

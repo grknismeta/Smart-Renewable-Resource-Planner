@@ -3,14 +3,27 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
-import '../data/models/pin_model.dart';
+import '../data/models/pin_model.dart'; // Bu dosya PinCalculationResponse'u içeriyor
 import 'secure_storage_service.dart';
 
-// Yerel makinede çalışan back-end adresi
-// Android emülatör için: '[http://10.0.2.2:8000](http://10.0.2.2:8000)'
-// Web ve iOS simülatör için: '[http://127.0.0.1:8000](http://127.0.0.1:8000)'
-const String _apiBaseUrl = 'http://10.0.2.2:8000'; // Web ve iOS simülatör
-// const String _apiBaseUrlEmulator = 'http://10.0.2.2:8000'; // Android emülatör
+//
+import 'dart:io' show Platform; // Platform tespiti için eklendi
+import 'package:flutter/foundation.dart'
+    show kIsWeb; // Web tespiti için eklendi
+
+String get _apiBaseUrl {
+  if (kIsWeb) {
+    // Web'de çalışıyorsa
+    return 'http://127.0.0.1:8000';
+  } else if (Platform.isAndroid) {
+    // Android emülatörde çalışıyorsa
+    return 'http://10.0.2.2:8000';
+  } else {
+    // iOS simülatörü veya diğer platformlar (macOS, Windows vb.)
+    return 'http://127.0.0.1:8000';
+  }
+}
+//
 
 class ApiService {
   final SecureStorageService _storageService;
@@ -25,9 +38,9 @@ class ApiService {
       if (t != null) 'Authorization': 'Bearer $t',
     };
   }
-  
+
   // --- Kimlik Doğrulama İşlemleri ---
-  
+  // ... (login ve register fonksiyonları - değişiklik yok) ...
   Future<String> login(String email, String password) async {
     final response = await http.post(
       Uri.parse('$_apiBaseUrl/users/token'),
@@ -59,8 +72,9 @@ class ApiService {
   }
 
   // --- Pin (Kaynak) Yönetimi İşlemleri ---
-  
+
   Future<List<Pin>> fetchPins() async {
+    // ... (değişiklik yok) ...
     final response = await http.get(
       Uri.parse('$_apiBaseUrl/pins/'),
       headers: await _getHeaders(),
@@ -71,24 +85,32 @@ class ApiService {
     } else if (response.statusCode == 401) {
       throw Exception('Yetki hatası. Lütfen tekrar giriş yapın.');
     } else {
-      throw Exception('Kaynaklar yüklenemedi (Status code: ${response.statusCode})');
+      throw Exception(
+        'Kaynaklar yüklenemedi (Status code: ${response.statusCode})',
+      );
     }
   }
 
-  Future<void> addPin(LatLng point) async {
-    final pinData = Pin(
-      id: 0, 
-      name: 'Yeni Kaynak', 
-      type: 'Güneş Paneli', // Varsayılan değer
-      capacityMw: 1.0,      // Varsayılan değer
-      latitude: point.latitude,
-      longitude: point.longitude,
-    );
-    
+  // --- 1. GÜNCELLEME: 'addPin' fonksiyonu artık tüm verileri alıyor ---
+  Future<void> addPin(
+    LatLng point,
+    String name,
+    String type,
+    double capacityMw,
+  ) async {
+    // 'Pin' constructor'ı yerine 'Map' oluştur
+    final Map<String, dynamic> pinData = {
+      'latitude': point.latitude,
+      'longitude': point.longitude,
+      'name': name, // <-- Artık dinamik
+      'type': type, // <-- Artık dinamik
+      'capacity_mw': capacityMw, // <-- Artık dinamik
+    };
+
     final response = await http.post(
       Uri.parse('$_apiBaseUrl/pins/'),
       headers: await _getHeaders(),
-      body: json.encode(pinData.toJson()),
+      body: json.encode(pinData),
     );
     if (response.statusCode != 201) {
       throw Exception('Pin eklenemedi (Status code: ${response.statusCode})');
@@ -96,6 +118,7 @@ class ApiService {
   }
 
   Future<void> deletePin(int pinId) async {
+    // ... (değişiklik yok) ...
     final response = await http.delete(
       Uri.parse('$_apiBaseUrl/pins/$pinId'),
       headers: await _getHeaders(),
@@ -106,32 +129,36 @@ class ApiService {
   }
 
   // --- Enerji Hesaplama İşlemi ---
-  Future<PinResult> calculateEnergyPotential({
+  Future<PinCalculationResponse> calculateEnergyPotential({
+    // ... (değişiklik yok) ...
     required double lat,
     required double lon,
     required String type,
     required double capacityMw,
+    required double panelArea,
   }) async {
-    final Pin pinForCalculation = Pin(
-      id: 0,
-      name: "Hesaplanacak",
-      type: type,
-      capacityMw: capacityMw,
-      latitude: lat,
-      longitude: lon,
-    );
-    
+    final Map<String, dynamic> pinData = {
+      'latitude': lat,
+      'longitude': lon,
+      'name': "Hesaplanacak",
+      'type': type,
+      'capacity_mw': capacityMw,
+      'panel_area': panelArea,
+    };
+
     final response = await http.post(
       Uri.parse('$_apiBaseUrl/pins/calculate'),
       headers: await _getHeaders(),
-      body: json.encode(pinForCalculation.toJson()),
+      body: json.encode(pinData),
     );
-    
+
     if (response.statusCode == 200) {
       final jsonResponse = json.decode(utf8.decode(response.bodyBytes));
-      return PinResult.fromJson(jsonResponse);
+      return PinCalculationResponse.fromJson(jsonResponse);
     } else {
-      throw Exception('Hesaplama başarısız (Status code: ${response.statusCode})');
+      throw Exception(
+        'Hesaplama başarısız (Status code: ${response.statusCode})',
+      );
     }
   }
 }
