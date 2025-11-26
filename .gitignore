@@ -9,3 +9,6 @@ venv/
 # IDE files
 .idea/
 .vscode/
+
+# Geçici veritabanı dosyalarını görmezden gel
+backend/database.db
