@@ -118,3 +118,6 @@ class PinCalculationResponse(BaseModel):
     resource_type: Literal["Rüzgar Türbini", "Güneş Paneli"]
     wind_calculation: Optional[WindCalculationResponse] = None
     solar_calculation: Optional[SolarCalculationResponse] = None
+
+
+    
