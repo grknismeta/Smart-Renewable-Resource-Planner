@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart'; // <-- PERFORMANS İÇİN YENİ PAKET
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
@@ -22,6 +23,12 @@ class _MapScreenState extends State<MapScreen> {
   final String myMapboxAccessToken =
       "pk.eyJ1IjoiZ3JrbmlzbWV0YSIsImEiOiJjbWdzODB4YmgyNTNrMmlzYTl4NmZxbnZpIn0.Ocbt8oI-AN4H5PedVops7A";
   final String myOpenWeatherApiKey = "b525f47f8adb6ddfceea1bc14bc72633";
+  // --- TÜRKİYE SINIRLARI (Bounding Box) ---
+  // Güneybatı (Ege/Akdeniz açıkları) ve Kuzeydoğu (Kafkaslar) köşeleri
+  final LatLngBounds turkeyBounds = LatLngBounds(
+    const LatLng(34.0, 24.0), // Güneybatı (Girit açıkları)
+    const LatLng(44.0, 46.0), // Kuzeydoğu (Kafkaslar)
+  );
 
   void _showErrorDialog(BuildContext context, String message) {
     if (!context.mounted) return;
@@ -448,13 +455,44 @@ class _MapScreenState extends State<MapScreen> {
   }
   // --- YENİ FONKSİYON SONU ---
 
+  Widget _buildLayerButton(MapProvider mapProvider) {
+    IconData icon;
+    Color color;
+    String tooltip;
+
+    switch (mapProvider.currentLayer) {
+      case MapLayer.none:
+        icon = Icons.layers_clear;
+        color = Colors.grey[800]!;
+        tooltip = "Katman Yok";
+        break;
+      case MapLayer.wind:
+        icon = Icons.air;
+        color = Colors.blue;
+        tooltip = "Rüzgar Haritası";
+        break;
+      case MapLayer.temp:
+        icon = Icons.thermostat;
+        color = Colors.orange;
+        tooltip = "Sıcaklık Haritası";
+        break;
+    }
+
+    return FloatingActionButton.small(
+      heroTag: "layer_btn",
+      onPressed: mapProvider.changeMapLayer,
+      backgroundColor: Colors.white,
+      tooltip: tooltip,
+      child: Icon(icon, color: color),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // ... (build metodunda değişiklik yok) ...
     final authProvider = Provider.of<AuthProvider>(context);
     final mapProvider = Provider.of<MapProvider>(context);
 
-    // --- 6. GÜNCELLEME: 'markers' listesi artık dinamik ikonu çağırıyor ---
+    // Pinleri Marker'a çevirirken _buildPinIcon kullanıyoruz
     List<Marker> markers = mapProvider.pins.map((pin) {
       return Marker(
         width: 80.0,
@@ -462,12 +500,10 @@ class _MapScreenState extends State<MapScreen> {
         point: LatLng(pin.latitude, pin.longitude),
         child: GestureDetector(
           onTap: () => _showPinActionsDialog(context, pin),
-          // 'const Icon(...)' yerine yeni fonksiyonumuzu çağırıyoruz
           child: _buildPinIcon(pin),
         ),
       );
     }).toList();
-    // --- GÜNCELLEME SONU ---
 
     return Scaffold(
       appBar: AppBar(
@@ -480,49 +516,119 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ],
       ),
-      body: mapProvider.isLoading && mapProvider.pins.isEmpty
-          ? const Center(child: CircularProgressIndicator(value: null))
-          : Stack(
-              children: [
-                FlutterMap(
-                  options: MapOptions(
-                    initialCenter: const LatLng(38.6191, 27.4289),
-                    initialZoom: 10.0,
-                    onTap: _handleMapTap,
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}',
-                      additionalOptions: {
-                        'accessToken': myMapboxAccessToken,
-                        'id': 'mapbox/streets-v11',
-                      },
-                    ),
-                    if (mapProvider.currentLayer == MapLayer.wind)
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openweathermap.org/map/wind_new/{z}/{x}/{y}.png?appid={apiKey}',
-                        additionalOptions: {'apiKey': myOpenWeatherApiKey},
-                      ),
-                    if (mapProvider.currentLayer == MapLayer.temp)
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid={apiKey}',
-                        additionalOptions: {'apiKey': myOpenWeatherApiKey},
-                      ),
-                    MarkerLayer(markers: markers),
-                  ],
-                ),
-                Positioned(top: 10.0, right: 10.0, child: ControlButtons()),
-                if (mapProvider.isLoading && mapProvider.pins.isNotEmpty)
-                  const Positioned(
-                    top: 10,
-                    left: 10,
-                    child: CircularProgressIndicator(),
-                  ),
-              ],
+      body: Stack(
+        children: [
+          FlutterMap(
+            options: MapOptions(
+              initialCenter: const LatLng(
+                39.0,
+                35.5,
+              ), // 38.6191,27.4289 Manisa Koordinatları
+              initialZoom: 6.0,
+              minZoom: 3.0,
+              maxZoom: 18.0,
+              // SINIRLAMA (Constraints)
+              // Kullanıcı haritayı kaydırsa bile bu kutunun dışına çıkamaz
+              cameraConstraint: CameraConstraint.contain(bounds: turkeyBounds),
+              // ETKİLEŞİM AYARLARI (İsteğe bağlı)
+              // Haritanın dönmesini istemiyorsan (Kuzey hep yukarıda kalsın):
+              interactionOptions: const InteractionOptions(
+                flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+              ),
+              onTap: _handleMapTap,
             ),
+            children: [
+              // --- KATMAN 1: TABAN HARİTASI (MAPBOX) ---
+              TileLayer(
+                // Performans için CancellableProvider
+                tileProvider: CancellableNetworkTileProvider(),
+                urlTemplate:
+                    'https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}',
+                additionalOptions: {
+                  'accessToken': myMapboxAccessToken,
+                  'id': 'mapbox/streets-v11',
+                },
+              ),
+
+              // --- KATMAN 2: HAVA DURUMU KAPLAMALARI (OVERLAYS) ---
+              // Bu katmanlar, tabanın ÜSTÜNE biner ama şeffaftır
+              if (mapProvider.currentLayer == MapLayer.wind)
+                TileLayer(
+                  tileProvider: CancellableNetworkTileProvider(),
+                  // backgroundColor SATIRINI SİLİYORUZ
+                  urlTemplate:
+                      'https://tile.openweathermap.org/map/wind_new/{z}/{x}/{y}.png?appid={apiKey}',
+                  additionalOptions: {'apiKey': myOpenWeatherApiKey},
+                ),
+
+              if (mapProvider.currentLayer == MapLayer.temp)
+                TileLayer(
+                  tileProvider: CancellableNetworkTileProvider(),
+                  // backgroundColor SATIRINI SİLİYORUZ
+                  urlTemplate:
+                      'https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid={apiKey}',
+                  additionalOptions: {'apiKey': myOpenWeatherApiKey},
+                ),
+              // --- KATMAN 3: SINIR ÇİZGİSİ (YENİ EKLENDİ) ---
+              // Kullanıcının çıkamayacağı alanı görsel olarak gösteren kırmızı çerçeve
+              PolygonLayer(
+                polygons: [
+                  Polygon(
+                    points: [
+                      // turkeyBounds'un 4 köşesini kullanarak dikdörtgen çiziyoruz
+                      LatLng(
+                        turkeyBounds.southWest.latitude,
+                        turkeyBounds.southWest.longitude,
+                      ), // Sol Alt
+                      LatLng(
+                        turkeyBounds.northEast.latitude,
+                        turkeyBounds.southWest.longitude,
+                      ), // Sol Üst
+                      LatLng(
+                        turkeyBounds.northEast.latitude,
+                        turkeyBounds.northEast.longitude,
+                      ), // Sağ Üst
+                      LatLng(
+                        turkeyBounds.southWest.latitude,
+                        turkeyBounds.northEast.longitude,
+                      ), // Sağ Alt
+                    ],
+                    // İçini boş bırakıyoruz ki harita görünsün
+                    color: Colors.transparent,
+                    // Sınırları belirgin kırmızı yapıyoruz
+                    borderStrokeWidth: 3.0,
+                    borderColor: Colors.red.withOpacity(0.7),
+                  ),
+                ],
+              ),
+              // --- KATMAN 3: İŞARETÇİLER (EN ÜSTTE) ---
+              MarkerLayer(markers: markers),
+            ],
+          ),
+
+          // --- KONTROL BUTONLARI ---
+
+          // 1. Sol Üst: Pin Ekleme Butonları (Senin Widget'ın)
+          Positioned(top: 10.0, left: 10.0, child: ControlButtons()),
+          Positioned(
+            top: 10.0,
+            right: 10.0,
+            child: _buildLayerButton(
+              mapProvider,
+            ), // _buildLayerButton metodunun tanımlı olduğundan emin olun.
+          ),
+          // 2. Loading Göstergesi (Ortada)
+          if (mapProvider.isLoading)
+            const Center(
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
