@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from typing import Optional, List
 
 from . import models, schemas, auth, solar_calculations
-from .solar_calculations import get_annual_average_solar_potential
+from .solar_calculations import calculate_solar_power_production
 # --- Kullanıcı (User) İşlemleri (DÜZELTİLDİ) ---
 
 def get_user_by_email(db: Session, email: str):
@@ -56,17 +56,28 @@ def create_pin_for_user(db: Session, pin: schemas.PinCreate, user_id: int):
 
     # 1. Open-Meteo'dan *ham potansiyel* verisini çek
     print(f"CRUD: {pin.latitude}, {pin.longitude} için yıllık güneş potansiyeli çekiliyor...")
-
-    # DİKKAT: Yeni fonksiyonu çağırıyoruz
-    solar_potential_data = get_annual_average_solar_potential(
-        latitude=pin.latitude, 
-        longitude=pin.longitude
+    
+    # Yeni ve güçlü fonksiyonumuzu çağırıyoruz.
+    # Pin ekleme anında sadece *potansiyel* (1m²'lik ham verim) lazımdır, 
+    # bu yüzden panel_area=1.0 gibi küçük bir değerle çağırıyoruz.
+    
+    # Not: Panel alanını 1.0 m² farz ediyoruz ki, sonuç kWh/m² cinsinden gelsin.
+    # Bu, 'avg_solar_irradiance' kolonunu doldurmak için gereken ham potansiyeldir.
+    
+    calculated_data = calculate_solar_power_production(
+        latitude=pin.latitude,
+        longitude=pin.longitude,
+        panel_area=1.0, 
     )
 
-    if solar_potential_data:
-        print(f"Potansiyel verisi çekildi: {solar_potential_data:.2f} kWh/m²/gün")
+    if "error" in calculated_data:
+        # Eğer API'den hata gelirse (örn: 500)
+        print(f"UYARI: API Hatası nedeniyle pin potansiyeli NULL kaydedildi: {calculated_data['error']}")
+        solar_data = None
     else:
-        print("Uyarı: Güneş potansiyel verisi çekilemedi, pin 'None' olarak kaydedilecek.")
+        # daily_avg_kwh (kWh/m²/gün) değerini alıyoruz
+        solar_data = calculated_data["daily_avg_potential_kwh_m2"]
+        print(f"Potansiyel verisi çekildi: {solar_data:.2f} kWh/m²/gün")
 
     # 2. Veritabanı modelini, pin verileri VE hesaplanan potansiyel veri ile oluştur
     # --- YENİ VE DOĞRU KISIM ---
@@ -77,7 +88,7 @@ def create_pin_for_user(db: Session, pin: schemas.PinCreate, user_id: int):
     pin_data["owner_id"] = user_id
 
     # 3. Hesaplanan güneş verisini de sözlüğe ekle
-    pin_data["avg_solar_irradiance"] = solar_potential_data
+    pin_data["avg_solar_irradiance"] = solar_data
 
     # 4. Modeli, hazırladığımız bu tek, temiz sözlükle oluştur
     db_pin = models.Pin(**pin_data)

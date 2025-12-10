@@ -41,7 +41,7 @@ app = FastAPI(
 origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -49,9 +49,9 @@ app.add_middleware(
 
 # 4. Router'lar uygulamaya dahil edilir.
 # (Kullanıcı giriş/kayıt işlemleri)
-app.include_router(users.router) 
+app.include_router(users.router, prefix="/users", tags=["Users"]) 
 # (Pin oluşturma, listeleme ve HESAPLAMA işlemleri)
-app.include_router(pins.router)
+app.include_router(pins.router, prefix="/pins", tags=["Pins"])
 # (Türbin modellerini yönetmek için router)
 app.include_router(turbines.router)
 # (Güneş paneli modellerini yönetmek için YENİ router)

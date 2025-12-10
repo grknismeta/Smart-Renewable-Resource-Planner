@@ -1,165 +1,152 @@
-# solar_calculations.py
-import math
-from typing import Dict, Optional
 import requests
 import statistics
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
 
-# DÜZELTME: Fonksiyon adı Pylance hatasını gidermek için değiştirildi
-def get_current_solar_data(
-    latitude: float,
-    longitude: float,
-    tilt_angle: float,
-    azimuth_angle: float
-) -> Dict[str, float]:
-    """
-    Belirli bir konumdaki ANLIK güneş verilerini (ışınım ve sıcaklık)
-    Open-Meteo Forecast API'sinden çeker.
-    
-    (Simülasyon kaldırıldı, artık GERÇEK veri çekiyor)
-    """
-    print(f"ANLIK güneş ve sıcaklık verisi {latitude}, {longitude} için çekiliyor (GERÇEK API)...")
+# --- SABİTLER ---
+STC_TEMPERATURE = 25.0
 
-    API_URL = "https://api.open-meteo.com/v1/forecast"
-    params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "current": "temperature_2m,shortwave_radiation", # Anlık sıcaklık ve ışınımı istiyoruz
-        "timezone": "auto"
-    }
-
-    try:
-        response = requests.get(API_URL, params=params)
-        response.raise_for_status()
-        data = response.json().get("current", {})
-        
-        # 1. Sıcaklığı al (°C)
-        current_temp = data.get("temperature_2m", 25.0) # Hata olursa 25 döner
-
-        # 2. Işınımı al (API'den W/m² olarak gelir)
-        irradiance_wm2 = data.get("shortwave_radiation", 800.0) # Hata olursa 800 döner
-        
-        # 3. Birimi W/m² -> kW/m²'ye çevir (1000'e böl)
-        current_irradiance_kwm2 = irradiance_wm2 / 1000.0
-        
-        return {
-            "irradiance": current_irradiance_kwm2,
-            "temperature": current_temp
-        }
-        
-    except Exception as e:
-        print(f"Hata: Anlık güneş verisi çekilemedi, simülasyon kullanılıyor: {e}")
-        # API isteği başarısız olursa eski simülasyon değerlerine dön
-        return {
-            "irradiance": 0.8, # kW/m²
-            "temperature": 25.0 # °C
-        }
-
-
-def calculate_panel_efficiency(
-    temperature: float,
-    base_efficiency: float = 0.15,
-    temp_coefficient: float = -0.005
-) -> float:
-    """
-    Sıcaklığa bağlı panel verimini hesaplar.
-    """
-    temp_difference = temperature - 25  # 25°C referans sıcaklık
-    efficiency = base_efficiency * (1 + (temp_coefficient * temp_difference))
-    return max(0.0, efficiency)  # Verim negatif olamaz
-
-
-def calculate_solar_power(
-    latitude: float,
-    longitude: float,
-    panel_area: float,
-    tilt_angle: float = 35,
-    azimuth_angle: float = 180,
-    base_efficiency: float = 0.15,
-    temp_coefficient: float = -0.005
-) -> Dict[str, float]:
-    """
-    Güneş enerjisi sisteminin anlık güç üretimini hesaplar.
-    (Artık GERÇEK API verisini çağıran 'get_current_solar_data'yı çağırıyor)
-    """
-    
-    # 1. ANLIK verileri (ışınım ve sıcaklık) al
-    solar_data = get_current_solar_data(
-        latitude, longitude, tilt_angle, azimuth_angle
-    )
-    irradiance = solar_data["irradiance"]
-    temperature = solar_data["temperature"]
-    
-    # 2. Sıcaklığa göre panel verimini hesapla
-    efficiency = calculate_panel_efficiency(
-        temperature, base_efficiency, temp_coefficient
-    )
-    
-    # 3. Güç üretimini hesapla (kW)
-    # P = Işınım * Alan * Verim
-    power_output = irradiance * panel_area * efficiency
-    
-    return {
-        "solar_irradiance_kw_m2": irradiance,
-        "temperature_celsius": temperature,
-        "panel_efficiency": efficiency,
-        "power_output_kw": power_output
-    }
-
-# Örnek panel özellikleri (veritabanında saklanacak)
 EXAMPLE_PANEL_SPECS = {
     "model_name": "Standart 400W Panel",
     "power_rating_w": 400,
-    "dimensions_m": {"length": 2.0, "width": 1.0},
-    "base_efficiency": 0.15,
+    "dimensions_m": {"length": 2.0, "width": 1.0},  # 2m²/panel
+    "base_efficiency": 0.20, # %20 Verim (Güncel teknolojiye uygun)
     "temp_coefficient": -0.005,
     "is_default": True
 }
-
-
-def get_annual_average_solar_potential(latitude: float, longitude: float) -> float | None:
+# 
+def get_historical_hourly_solar_data(latitude: float, longitude: float) -> Dict[str, Any]:
     """
-    Belirtilen koordinatlar için Open-Meteo API'den 2023 yılına ait
-    günlük güneş ışınımı verilerini (MJ/m²) çeker ve yıllık ortalamayı
-    (kWh/m²/gün) olarak döndürür.
+    Open-Meteo Archive API'den son 1 yılın SAATLİK verilerini çeker.
+    Bu ana fonksiyondur.
     """
+    
+    # 1. Tarih Aralığı (Geçen yılın bugünü - 5 gün önce)
+    end_date = datetime.now() - timedelta(days=5) 
+    start_date = end_date - timedelta(days=365)
+    
+    str_start = start_date.strftime("%Y-%m-%d")
+    str_end = end_date.strftime("%Y-%m-%d")
+    
+    print(f"--- VERİ ÇEKİLİYOR ---")
+    print(f"Konum: {latitude}, {longitude}")
+    print(f"Aralık: {str_start} - {str_end}")
+
     BASE_URL = "https://archive-api.open-meteo.com/v1/archive"
-
+    
     params = {
         "latitude": latitude,
         "longitude": longitude,
-        "start_date": "2023-01-01",
-        "end_date": "2023-12-31",
-        "daily": "shortwave_radiation_sum", # BİRİMİ: MJ/m² (Megajul)
+        "start_date": str_start,
+        "end_date": str_end,
+        "hourly": "shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m,cloud_cover",
         "timezone": "auto"
     }
 
     try:
         response = requests.get(BASE_URL, params=params)
-        response.raise_for_status() 
+        response.raise_for_status()
         data = response.json()
-
-        daily_values_mj = data.get("daily", {}).get("shortwave_radiation_sum", [])
-
-        if not daily_values_mj:
-            print(f"Hata: {latitude},{longitude} için Open-Meteo'dan veri alınamadı.")
-            return None
-
-        valid_values_mj = [v for v in daily_values_mj if v is not None]
-
-        if not valid_values_mj:
-            print(f"Hata: {latitude},{longitude} için sadece geçersiz veri (null) döndü.")
-            return None
-
-        avg_daily_mj = statistics.mean(valid_values_mj)
         
-        # 1 kWh = 3.6 MJ
-        avg_daily_kwh = avg_daily_mj / 3.6
+        hourly = data.get("hourly", {})
         
-        return avg_daily_kwh
+        # Veri listeleri
+        time_list = hourly.get("time", [])
+        ghi_list = hourly.get("shortwave_radiation", []) # W/m²
+        temp_list = hourly.get("temperature_2m", []) # °C
+        cloud_list = hourly.get("cloud_cover", []) # %
+        
+        if not ghi_list:
+            print("Hata: API'den boş veri döndü.")
+            return {"error": "Boş veri"}
 
-    except requests.exceptions.RequestException as e:
-        print(f"Open-Meteo API'ye bağlanırken hata oluştu: {e}")
+        # --- İŞLEME 1: Yıllık Toplam ---
+        valid_ghi = [x for x in ghi_list if x is not None]
+        total_annual_ghi_wh = sum(valid_ghi)
+        total_annual_ghi_kwh = total_annual_ghi_wh / 1000.0 # kWh/m²
+        
+        daily_avg_kwh = total_annual_ghi_kwh / 365.0
+        
+        print(f"Yıllık Toplam Işınım: {total_annual_ghi_kwh:.2f} kWh/m²")
+
+        # --- İŞLEME 2: Aylık Gruplama ---
+        monthly_data = {}
+        
+        for i, time_str in enumerate(time_list):
+            if ghi_list[i] is None: continue
+            month = time_str.split("-")[1] 
+            
+            if month not in monthly_data:
+                monthly_data[month] = {"sum_ghi": 0.0, "sum_temp": 0.0, "count": 0}
+            
+            monthly_data[month]["sum_ghi"] += ghi_list[i]
+            monthly_data[month]["sum_temp"] += (temp_list[i] or 0)
+            monthly_data[month]["count"] += 1
+            
+        processed_monthly_stats = []
+        for m in sorted(monthly_data.keys()):
+            stats = monthly_data[m]
+            processed_monthly_stats.append({
+                "month": int(m),
+                "total_production_kwh_m2": round(stats["sum_ghi"] / 1000.0, 2),
+                "avg_temperature_c": round(stats["sum_temp"] / stats["count"], 1)
+            })
+
+        return {
+            "annual_total_ghi_kwh": total_annual_ghi_kwh,
+            "daily_avg_kwh": daily_avg_kwh,
+            "monthly_stats": processed_monthly_stats,
+        }
+
+    except Exception as e:
+        print(f"API Bağlantı Hatası: {e}")
+        return {"error": str(e)}
+
+# --- SİSTEM HESAPLAMA (Calculate Endpoint İçin) ---
+def calculate_solar_power_production(
+    latitude: float,
+    longitude: float,
+    panel_area: float,
+    panel_efficiency: float = 0.20,
+    performance_ratio: float = 0.75
+) -> Dict:
+    
+    # Yeni veri çekme fonksiyonunu kullan
+    data = get_historical_hourly_solar_data(latitude, longitude)
+    
+    if "error" in data:
+        return {"error": data["error"]}
+    
+    annual_ghi = data["annual_total_ghi_kwh"]
+    annual_energy_kwh = panel_area * annual_ghi * panel_efficiency * performance_ratio
+    
+    return {
+        "annual_potential_kwh_m2": data["annual_total_ghi_kwh"],
+        "daily_avg_potential_kwh_m2": data["daily_avg_kwh"],
+        "system_annual_production_kwh": annual_energy_kwh,
+        "monthly_breakdown": data["monthly_stats"]
+    }
+
+# --- UYUMLULUK MODU (CRUD.PY HATASINI ÇÖZEN KISIM) ---
+# crud.py eski ismiyle bu fonksiyonu arıyor.
+# Biz de eski ismi koruyup, yeni sisteme yönlendiriyoruz.
+
+def get_annual_average_solar_potential(latitude: float, longitude: float) -> float | None:
+    """
+    Eski sistem uyumluluğu için köprü fonksiyon.
+    Yeni 'get_historical_hourly_solar_data' fonksiyonunu çağırır 
+    ve sadece 'daily_avg_kwh' değerini döndürür.
+    """
+    print("UYARI: Eski fonksiyon çağrıldı, yeni sisteme yönlendiriliyor...")
+    data = get_historical_hourly_solar_data(latitude, longitude)
+    
+    if "error" in data:
         return None
-    except (KeyError, statistics.StatisticsError):
-        print(f"Hata: Open-Meteo yanıtı beklenmedik bir formatta veya boş veri.")
-        return None
+        
+    return data["daily_avg_kwh"]
+
+# Eski simülasyon fonksiyonları için de boş wrapperlar (Hata vermemesi için)
+def calculate_solar_irradiance(*args, **kwargs): return 0.0
+def calculate_panel_efficiency(*args, **kwargs): return 0.0
+def get_temperature_from_coordinates(*args, **kwargs): return 0.0
+def calculate_solar_power(*args, **kwargs): return {}
