@@ -1,20 +1,22 @@
 from logging.config import fileConfig
 
-import os
-import sys
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
+
+import os
+import sys
+
+# Projemizin KÖK dizinini Python'un yoluna ekle
+# Bu sayede 'backend.models' import edilebilir.
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from backend import models  # Modellerimizi import et
+from backend.database import Base  # Base'i import et
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
-# Projemizin 'backend' klasörünü Python'un yoluna ekle
-# Bu, 'from backend import models' gibi importlara izin verir
-# ANCAK, 'alembic' 'backend' içinde olduğu için, projenin KÖK dizinini eklemeliyiz
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-from backend import models  
-from backend.database import Base  
-
 config = context.config
 
 # Interpret the config file for Python logging.
@@ -52,6 +54,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        render_as_batch=True, # SQLite için batch modu (Offline)
     )
 
     with context.begin_transaction():
@@ -73,7 +76,9 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, 
+            target_metadata=target_metadata,
+            render_as_batch=True # <-- SQLite için gerekli olan satır (Online)
         )
 
         with context.begin_transaction():

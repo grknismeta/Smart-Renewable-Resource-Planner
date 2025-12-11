@@ -87,14 +87,16 @@ class MapProvider extends ChangeNotifier {
 
   // --- API İşlemleri ---
   Future<void> fetchPins() async {
-    // ... (değişiklik yok) ...
     if (_authProvider.isLoggedIn != true) return;
     _isLoading = true;
     notifyListeners();
     try {
       _pins = await _apiService.fetchPins();
+      print(
+        "Flutter: ${_pins.length} adet pin başarıyla yüklendi.",
+      ); // <-- BU LOG ÖNEMLİ
     } catch (e) {
-      print('Pin yüklenirken hata: $e');
+      print('Pin yüklenirken hata (MapProvider): $e');
     } finally {
       _isLoading = false;
       notifyListeners();

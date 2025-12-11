@@ -1,7 +1,5 @@
 // lib/data/models/pin_model.dart
 
-// --- 1. ANA PIN MODELİ (GÜNCELLENDİ) ---
-// Bu sınıfın, backend'deki PinBase ve PinResponse'a uyması gerekir.
 class Pin {
   final int id;
   final double latitude;
@@ -11,15 +9,13 @@ class Pin {
   final double capacityMw;
   final int ownerId;
 
-  // Güneş potansiyeli (GET /pins/ listesinden gelir)
+  // Backend'den gelen yeni analiz verileri (Nullable olabilir)
   final double? avgSolarIrradiance;
-
-  // Opsiyonel alanlar (Hesaplama veya Pin ekleme için)
+  final double? avgWindSpeed;
   final double? panelArea;
-  final double? panelTilt;
-  final double? panelAzimuth;
-  final int? turbineModelId;
-  final int? panelModelId;
+
+  // Ekipman bilgisi (İleride kullanılacak)
+  final int? equipmentId;
 
   Pin({
     required this.id,
@@ -30,54 +26,55 @@ class Pin {
     required this.capacityMw,
     required this.ownerId,
     this.avgSolarIrradiance,
+    this.avgWindSpeed,
     this.panelArea,
-    this.panelTilt,
-    this.panelAzimuth,
-    this.turbineModelId,
-    this.panelModelId,
+    this.equipmentId,
   });
 
-  // Backend'e (POST /pins/ veya POST /pins/calculate) göndermek için
   Map<String, dynamic> toJson() {
     return {
-      // Not: id ve ownerId backend'e gönderilmez (genellikle)
-      // ancak PinBase şemana göre (schemas.py) backend bunları ayıklar.
       'latitude': latitude,
       'longitude': longitude,
       'name': name,
       'type': type,
       'capacity_mw': capacityMw,
       'panel_area': panelArea,
-      'panel_tilt': panelTilt,
-      'panel_azimuth': panelAzimuth,
-      'turbine_model_id': turbineModelId,
-      'panel_model_id': panelModelId,
+      'equipment_id': equipmentId,
     };
   }
 
-  // Backend'den (GET /pins/) gelen veriyi okumak için
   factory Pin.fromJson(Map<String, dynamic> json) {
+    // Güvenli sayı dönüştürme yardımcısı
+    double? toDouble(dynamic val) {
+      if (val == null) return null;
+      if (val is int) return val.toDouble();
+      if (val is double) return val;
+      if (val is String) return double.tryParse(val);
+      return null;
+    }
+
     return Pin(
       id: json['id'] as int,
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
-      name: json['name'] as String,
-      type: json['type'] as String,
-      capacityMw: (json['capacity_mw'] as num).toDouble(),
-      ownerId: json['owner_id'] as int,
-      avgSolarIrradiance: (json['avg_solar_irradiance'] as num?)?.toDouble(),
-      panelArea: (json['panel_area'] as num?)?.toDouble(),
-      panelTilt: (json['panel_tilt'] as num?)?.toDouble(),
-      panelAzimuth: (json['panel_azimuth'] as num?)?.toDouble(),
-      turbineModelId: json['turbine_model_id'] as int?,
-      panelModelId: json['panel_model_id'] as int?,
+      // Koordinatları güvenli çevir
+      latitude: toDouble(json['latitude']) ?? 0.0,
+      longitude: toDouble(json['longitude']) ?? 0.0,
+
+      name: json['name'] as String? ?? "İsimsiz Kaynak",
+      type: json['type'] as String? ?? "Bilinmiyor",
+
+      capacityMw: toDouble(json['capacity_mw']) ?? 1.0,
+      ownerId: json['owner_id'] as int? ?? 0,
+
+      // Analiz verileri (Backend'deki isimlerle birebir aynı olmalı)
+      avgSolarIrradiance: toDouble(json['avg_solar_irradiance']),
+      avgWindSpeed: toDouble(json['avg_wind_speed']),
+      panelArea: toDouble(json['panel_area']),
+      equipmentId: json['equipment_id'] as int?,
     );
   }
 }
 
-// --- 2. HESAPLAMA MODELLERİ (YENİ EKLENDİ) ---
-// Bu sınıflar, backend'deki (schemas.py) PinCalculationResponse vb.
-// şemalarına tam olarak uymalıdır.
+// --- HESAPLAMA MODELLERİ (AYNI KALIYOR) ---
 
 class SolarCalculationResponse {
   final double solarIrradianceKwM2;
@@ -125,7 +122,6 @@ class WindCalculationResponse {
   }
 }
 
-// Bu sınıf, 'PinResult'ın yerini almalıdır.
 class PinCalculationResponse {
   final String resourceType;
   final WindCalculationResponse? windCalculation;
@@ -146,32 +142,6 @@ class PinCalculationResponse {
       solarCalculation: json['solar_calculation'] != null
           ? SolarCalculationResponse.fromJson(json['solar_calculation'])
           : null,
-    );
-  }
-}
-
-// 'PinResult' sınıfı artık kullanılmamalıdır, ancak
-// projenin başka yerlerinde kullanılıyorsa geçiş tamamlanana kadar
-// tutabilirsin.
-class PinResult {
-  final double potentialKwhAnnual;
-  final double estimatedCost;
-  final double roiYears;
-
-  PinResult({
-    required this.potentialKwhAnnual,
-    required this.estimatedCost,
-    required this.roiYears,
-  });
-
-  factory PinResult.fromJson(Map<String, dynamic> json) {
-    // BU SADECE BİR ÖRNEK! Backend'in böyle bir şey döndürmüyor.
-    // Gerçekte PinCalculationResponse.fromJson kullanılmalı.
-    return PinResult(
-      potentialKwhAnnual:
-          (json['potential_kwh_annual'] as num?)?.toDouble() ?? 0.0,
-      estimatedCost: (json['estimated_cost'] as num?)?.toDouble() ?? 0.0,
-      roiYears: (json['roi_years'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }

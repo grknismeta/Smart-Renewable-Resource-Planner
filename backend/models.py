@@ -1,78 +1,106 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Boolean, JSON, ARRAY
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, JSON, Boolean, Text
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from .database import Base
 
-# --- GÜNEŞ PANELİ TABLOSU ---
-class SolarPanel(Base):
-    __tablename__ = "solar_panels"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    model_name = Column(String, index=True, unique=True)
-    power_rating_w = Column(Float)
-    dimensions_m = Column(JSON)  # {"length": float, "width": float}
-    base_efficiency = Column(Float)
-    temp_coefficient = Column(Float)
-    is_default = Column(Boolean, default=False)
-    
-    # Bu panel modelini kullanan pinler
-    pins = relationship("Pin", back_populates="panel_model")
-
-# Kullanıcı tablosu (Değişiklik yok)
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
-    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
     pins = relationship("Pin", back_populates="owner")
+    scenarios = relationship("Scenario", back_populates="owner")
 
-# --- YENİ TABLO ---
-# PNG'deki "özellikleri girme" ve "standart rüzgar gülü" istekleri için
-class Turbine(Base):
-    __tablename__ = "turbines"
-    
+class Equipment(Base):
+    __tablename__ = "equipments"
     id = Column(Integer, primary_key=True, index=True)
-    model_name = Column(String, index=True, unique=True)
+    name = Column(String, index=True)
+    type = Column(String) 
     rated_power_kw = Column(Float)
-    is_default = Column(Boolean, default=False) # Standart türbini belirlemek için
-    
-    # Güç eğrisini (Power Curve) JSON olarak saklayacağız
-    # Format: {"3": 0, "4": 70, "5": 150 ...}
-    power_curve_data = Column(JSON) 
-    
-    # Bu türbini kullanan pinler
-    pins = relationship("Pin", back_populates="turbine_model")
+    efficiency = Column(Float)
+    specs = Column(JSON) 
+    cost_per_unit = Column(Float)
+    maintenance_cost_annual = Column(Float)
 
-
-# Pin/Resource tablosu (Güncellendi)
 class Pin(Base):
     __tablename__ = "pins"
-
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, index=True)
-    latitude = Column(Float)
-    longitude = Column(Float)
-    
-    avg_solar_irradiance = Column(Float, nullable=True)
-    
-    name = Column(String, index=True, default="Yeni Kaynak")
-    # "Rüzgar Türbini" veya "Güneş Paneli"
-    type = Column(String, default="Güneş Paneli")
+    title = Column(String, index=True, nullable=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    type = Column(String, default="Güneş Paneli") 
     capacity_mw = Column(Float, default=1.0)
+    panel_area = Column(Float, nullable=True)
     
-    # --- YENİ SÜTUNLAR (GÜNEŞ PANELİ İÇİN) ---
-    panel_tilt = Column(Float, nullable=True)  # Panel eğim açısı (derece)
-    panel_azimuth = Column(Float, nullable=True)  # Yön açısı (derece)
-    panel_area = Column(Float, nullable=True)  # Toplam panel alanı (m²)
-    
-    # Sahip (Kullanıcı) ilişkisi
+    # Hızlı Önizleme Verisi
+    avg_solar_irradiance = Column(Float, nullable=True)
+    avg_wind_speed = Column(Float, nullable=True)
+
+    # --- BU KISIM EKSİK OLABİLİR ---
+    equipment_id = Column(Integer, ForeignKey("equipments.id"), nullable=True)
+    equipment = relationship("Equipment")
+    # -------------------------------
+
     owner_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="pins")
     
-    # Türbin model ilişkisi (opsiyonel)
-    turbine_model_id = Column(Integer, ForeignKey("turbines.id"), nullable=True)
-    turbine_model = relationship("Turbine", back_populates="pins")
+    analysis = relationship("PinAnalysis", back_populates="pin", uselist=False, cascade="all, delete-orphan")
+    scenarios = relationship("Scenario", back_populates="pin")
+
+class PinAnalysis(Base):
+    __tablename__ = "pin_analyses"
+    id = Column(Integer, primary_key=True, index=True)
+    pin_id = Column(Integer, ForeignKey("pins.id"), unique=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    result_data = Column(JSON)
+    pin = relationship("Pin", back_populates="analysis")
+
+class Scenario(Base):
+    __tablename__ = "scenarios"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
+    description = Column(Text, nullable=True)
+    pin_id = Column(Integer, ForeignKey("pins.id"))
+    pin = relationship("Pin", back_populates="scenarios")
+    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner = relationship("User", back_populates="scenarios")
+    start_date = Column(DateTime)
+    end_date = Column(DateTime)
+    result_data = Column(JSON) 
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class GridAnalysis(Base):
+    """
+    Tüm Türkiye'yi tarayarak elde edilen coğrafi analiz ve potansiyel önbelleği.
+    Akıllı öneri sistemi bu veriyi kullanır.
+    """
+    __tablename__ = "grid_analyses" # <-- Bu zorunludur
+
+    id = Column(Integer, primary_key=True, index=True)
     
-    # Panel model ilişkisi (opsiyonel)
-    panel_model_id = Column(Integer, ForeignKey("solar_panels.id"), nullable=True)
-    panel_model = relationship("SolarPanel", back_populates="pins")
+    # Grid Noktası Koordinatları
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    
+    # Analiz Tipi: Solar veya Wind
+    type = Column(String, index=True, nullable=False)
+    
+    # Özet Skorlar
+    annual_potential_kwh_m2 = Column(Float, nullable=True)
+    avg_wind_speed_ms = Column(Float, nullable=True)
+    
+    # Coğrafi Kısıtlama Skorları
+    logistics_score = Column(Float, default=1.0) 
+    
+    # Tahmin Verisinin En Son Güncellenme Tarihi
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Gelecek Tahmini (ML) Verisi (Aylık döküm, JSON olarak)
+    predicted_monthly_data = Column(JSON)
+    
+    # Verimlilik Sıralaması için Hızlı Erişim Skoru
+    overall_score = Column(Float, index=True, default=0.0)
