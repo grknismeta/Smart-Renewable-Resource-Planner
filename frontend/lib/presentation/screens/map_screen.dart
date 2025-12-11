@@ -1,14 +1,13 @@
-// lib/presentation/screens/map_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart'; 
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/map_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../widgets/control_buttons.dart';
-import '../../data/models/pin_model.dart'; // Artık Pin, PinCalculationResponse vb. içeriyor
+import '../../providers/theme_provider.dart'; 
+import '../../data/models/pin_model.dart'; 
+import '../widgets/sidebar_menu.dart'; 
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -18,215 +17,120 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  // ... (API sabitleri ve _showErrorDialog - değişiklik yok) ...
-  final String myMapboxAccessToken =
-      "pk.eyJ1IjoiZ3JrbmlzbWV0YSIsImEiOiJjbWdzODB4YmgyNTNrMmlzYTl4NmZxbnZpIn0.Ocbt8oI-AN4H5PedVops7A";
-  final String myOpenWeatherApiKey = "b525f47f8adb6ddfceea1bc14bc72633";
+  final MapController _mapController = MapController();
 
+  final LatLngBounds turkeyBounds = LatLngBounds(const LatLng(34.0, 24.0), const LatLng(44.0, 46.0));
+  bool _showLayersPanel = false; // Başlangıçta kapalı olsun
+
+  // --- UI YARDIMCILARI ---
   void _showErrorDialog(BuildContext context, String message) {
     if (!context.mounted) return;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Hata'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Tamam'),
-          ),
-        ],
+        title: const Text('Hata'), content: Text(message),
+        actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Tamam'))],
       ),
     );
   }
 
-  // --- 1. GÜNCELLEME: "Kötü" AlertDialog'u BottomSheet ile değiştirme ---
+  // --- DİNAMİK TEXT FIELD ---
+  Widget _buildTextField(TextEditingController controller, String label, ThemeProvider theme, {bool isNumber = false}) {
+    return TextField(
+      controller: controller,
+      style: TextStyle(color: theme.textColor),
+      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: theme.secondaryTextColor),
+        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: theme.secondaryTextColor.withValues(alpha: 0.3))),
+        focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.blue)),
+        filled: true,
+        fillColor: theme.backgroundColor.withValues(alpha: 0.5),
+      ),
+    );
+  }
+
+  // --- PİN İŞLEMLERİ ---
   void _showPinActionsDialog(BuildContext context, Pin pin) {
     final mapProvider = Provider.of<MapProvider>(context, listen: false);
+    final theme = Provider.of<ThemeProvider>(context, listen: false);
 
-    // Controller'lar pin'in mevcut verileriyle doldurulur
     final nameController = TextEditingController(text: pin.name);
-    final capacityController = TextEditingController(
-      text: pin.capacityMw.toStringAsFixed(1),
-    );
-    final panelAreaController = TextEditingController(
-      text: pin.panelArea?.toStringAsFixed(1) ?? "100.0",
-    );
-
-    // Dropdown için state (pin'in mevcut tipini al)
+    final capacityController = TextEditingController(text: pin.capacityMw.toStringAsFixed(1));
+    final panelAreaController = TextEditingController(text: pin.panelArea?.toStringAsFixed(1) ?? "100.0");
     String selectedType = pin.type;
 
-    // AlertDialog yerine showModalBottomSheet kullanıyoruz
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // Klavye açıldığında boyutu ayarlar
+      isScrollControlled: true,
+      backgroundColor: theme.cardColor,
       builder: (ctx) {
-        // BottomSheet'in state'ini (örn: Dropdown) yönetmek için StatefulBuilder
         return StatefulBuilder(
           builder: (dialogContext, setStateSB) {
             final isCalculating = mapProvider.isLoading;
-
             return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(dialogContext).viewInsets.bottom,
-                top: 20,
-                left: 20,
-                right: 20,
-              ),
+              padding: EdgeInsets.only(bottom: MediaQuery.of(dialogContext).viewInsets.bottom, top: 20, left: 20, right: 20),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Kaynak İşlemleri',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'ID: ${pin.id} | Yıllık Potansiyel: ${pin.avgSolarIrradiance?.toStringAsFixed(2) ?? 'N/A'} kWh/m²/gün',
-                    ),
-                    const Divider(height: 24),
+                    Text('Kaynak İşlemleri', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: theme.textColor)),
+                    const SizedBox(height: 5),
+                    Text('ID: ${pin.id} | Potansiyel: ${pin.avgSolarIrradiance?.toStringAsFixed(2) ?? 'N/A'} kWh/m²', style: TextStyle(color: theme.secondaryTextColor)),
+                    Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2), height: 24),
 
-                    TextField(
-                      controller: nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Kaynak Adı',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
+                    _buildTextField(nameController, 'Kaynak Adı', theme),
                     const SizedBox(height: 16),
-
-                    // --- 2. GÜNCELLEME: "Tip" alanı artık Dropdown ---
                     DropdownButtonFormField<String>(
                       value: selectedType,
-                      decoration: const InputDecoration(
-                        labelText: 'Kaynak Tipi',
-                        border: OutlineInputBorder(),
+                      dropdownColor: theme.cardColor,
+                      style: TextStyle(color: theme.textColor),
+                      decoration: InputDecoration(
+                        labelText: 'Kaynak Tipi', labelStyle: TextStyle(color: theme.secondaryTextColor),
+                        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: theme.secondaryTextColor.withValues(alpha: 0.3))),
+                        focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.blue)),
+                        filled: true, fillColor: theme.backgroundColor.withValues(alpha: 0.5)
                       ),
-                      items: ['Güneş Paneli', 'Rüzgar Türbini']
-                          .map(
-                            (type) => DropdownMenuItem(
-                              value: type,
-                              child: Text(type),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (newValue) {
-                        if (newValue != null) {
-                          setStateSB(() {
-                            selectedType = newValue;
-                          });
-                        }
-                      },
-                    ),
-
-                    // --- GÜNCELLEME SONU ---
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: capacityController,
-                      decoration: const InputDecoration(
-                        labelText: 'Kapasite (MW)',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
+                      items: ['Güneş Paneli', 'Rüzgar Türbini'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                      onChanged: (newValue) { if (newValue != null) setStateSB(() => selectedType = newValue); },
                     ),
                     const SizedBox(height: 16),
-
-                    // Sadece Güneş Paneli seçiliyse Panel Alanı'nı göster
-                    if (selectedType == 'Güneş Paneli')
-                      TextField(
-                        controller: panelAreaController,
-                        decoration: const InputDecoration(
-                          labelText: 'Panel Alanı (m²)',
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                      ),
-
-                    if (isCalculating)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 16, bottom: 16),
-                        child: Center(child: CircularProgressIndicator()),
-                      ),
-
+                    _buildTextField(capacityController, 'Kapasite (MW)', theme, isNumber: true),
+                    if (selectedType == 'Güneş Paneli') ...[
+                      const SizedBox(height: 16),
+                      _buildTextField(panelAreaController, 'Panel Alanı (m²)', theme, isNumber: true),
+                    ],
+                    if (isCalculating) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator())),
                     const SizedBox(height: 20),
-                    // Butonlar
                     Row(
                       children: [
-                        // Sil Butonu
                         IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
+                          icon: const Icon(Icons.delete, color: Colors.redAccent),
                           onPressed: () async {
-                            Navigator.of(ctx).pop(); // BottomSheet'i kapat
-                            try {
-                              await mapProvider.deletePin(pin.id);
-                            } catch (e) {
-                              _showErrorDialog(
-                                context,
-                                e.toString().replaceFirst('Exception: ', ''),
-                              );
-                            }
+                            Navigator.of(ctx).pop();
+                            try { await mapProvider.deletePin(pin.id); } catch (e) { _showErrorDialog(context, e.toString()); }
                           },
                         ),
-                        // TODO: Güncelle Butonu
-                        // TextButton(
-                        //   onPressed: () { /* mapProvider.updatePin(...) çağrılacak */ },
-                        //   child: const Text('Güncelle'),
-                        // ),
                         const Spacer(),
-                        // Hesapla Butonu
                         ElevatedButton.icon(
-                          icon: const Icon(Icons.calculate),
-                          label: const Text('Hesapla'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                          ),
+                          icon: const Icon(Icons.calculate), label: const Text('Hesapla'),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
                           onPressed: () async {
                             if (isCalculating) return;
-                            setStateSB(() {}); // Loading'i başlat
-
+                            setStateSB(() {});
                             try {
                               await mapProvider.calculatePotential(
-                                lat: pin.latitude,
-                                lon: pin.longitude,
-                                type:
-                                    selectedType, // Dropdown'dan gelen güncel tip
-                                capacityMw:
-                                    double.tryParse(capacityController.text) ??
-                                    1.0,
-                                panelArea:
-                                    double.tryParse(panelAreaController.text) ??
-                                    0.0,
+                                lat: pin.latitude, lon: pin.longitude, type: selectedType,
+                                capacityMw: double.tryParse(capacityController.text) ?? 1.0,
+                                panelArea: double.tryParse(panelAreaController.text) ?? 0.0,
                               );
-                              Navigator.of(ctx).pop(); // BottomSheet'i kapat
-
+                              Navigator.of(ctx).pop();
                               if (mapProvider.latestCalculationResult != null) {
-                                _showCalculationResultDialog(
-                                  context,
-                                  mapProvider.latestCalculationResult!,
-                                );
-                              } else {
-                                _showErrorDialog(
-                                  context,
-                                  "Hesaplama sonucu alınamadı.",
-                                );
+                                _showCalculationResultDialog(context, mapProvider.latestCalculationResult!, theme);
                               }
-                            } catch (e) {
-                              if (ctx.mounted) {
-                                _showErrorDialog(
-                                  ctx,
-                                  e.toString().replaceFirst('Exception: ', ''),
-                                );
-                              }
-                            } finally {
-                              if (ctx.mounted) {
-                                setStateSB(() {}); // Loading'i bitir
-                              }
-                            }
+                            } catch (e) { if (ctx.mounted) _showErrorDialog(ctx, e.toString()); }
                           },
                         ),
                       ],
@@ -242,71 +146,32 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  void _showCalculationResultDialog(
-    BuildContext context,
-    PinCalculationResponse result,
-  ) {
-    // ... (Bu fonksiyonda değişiklik yok) ...
+  void _showCalculationResultDialog(BuildContext context, PinCalculationResponse result, ThemeProvider theme) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Hesaplama Sonucu'),
+        backgroundColor: theme.cardColor,
+        title: Text('Hesaplama Sonucu', style: TextStyle(color: theme.textColor)),
         content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Kaynak Tipi: ${result.resourceType}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const Divider(),
-
+            Text('Kaynak Tipi: ${result.resourceType}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+            Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2)),
             if (result.solarCalculation != null) ...[
-              _buildResultRow(
-                'Anlık Güç (kW)',
-                result.solarCalculation!.powerOutputKw,
-                decimalPlaces: 2,
-              ),
-              _buildResultRow(
-                'Panel Verimi',
-                result.solarCalculation!.panelEfficiency,
-                decimalPlaces: 2,
-              ),
-              _buildResultRow(
-                'Işınım (kW/m²)',
-                result.solarCalculation!.solarIrradianceKwM2,
-                decimalPlaces: 2,
-              ),
-              _buildResultRow(
-                'Sıcaklık (°C)',
-                result.solarCalculation!.temperatureCelsius,
-                decimalPlaces: 1,
-              ),
+              _buildResultRow('Anlık Güç', '${result.solarCalculation!.powerOutputKw.toStringAsFixed(2)} kW', theme),
+              _buildResultRow('Panel Verimi', '%${(result.solarCalculation!.panelEfficiency * 100).toStringAsFixed(1)}', theme),
+              _buildResultRow('Işınım', '${result.solarCalculation!.solarIrradianceKwM2.toStringAsFixed(3)} kW/m²', theme),
+              _buildResultRow('Sıcaklık', '${result.solarCalculation!.temperatureCelsius.toStringAsFixed(1)} °C', theme),
             ],
-
             if (result.windCalculation != null) ...[
-              _buildResultRow(
-                'Anlık Güç (kW)',
-                result.windCalculation!.powerOutputKw,
-                decimalPlaces: 2,
-              ),
-              _buildResultRow(
-                'Rüzgar Hızı (m/s)',
-                result.windCalculation!.windSpeedMS,
-                decimalPlaces: 2,
-              ),
+              _buildResultRow('Anlık Güç', '${result.windCalculation!.powerOutputKw.toStringAsFixed(2)} kW', theme),
+              _buildResultRow('Rüzgar Hızı', '${result.windCalculation!.windSpeedMS.toStringAsFixed(1)} m/s', theme),
             ],
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              Provider.of<MapProvider>(
-                context,
-                listen: false,
-              ).clearCalculationResult();
-              Navigator.of(ctx).pop();
-            },
+            onPressed: () { Provider.of<MapProvider>(context, listen: false).clearCalculationResult(); Navigator.of(ctx).pop(); },
             child: const Text('Tamam'),
           ),
         ],
@@ -314,118 +179,71 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _buildResultRow(String title, double value, {int decimalPlaces = 0}) {
-    // ... (değişiklik yok) ...
+  Widget _buildResultRow(String title, String value, ThemeProvider theme) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text('$title:'),
-          Text(
-            value.toStringAsFixed(decimalPlaces),
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
+          Text('$title:', style: TextStyle(color: theme.secondaryTextColor)),
+          Text(value, style: TextStyle(fontWeight: FontWeight.bold, color: theme.textColor)),
         ],
       ),
     );
   }
-
-  // Harita Tap İşlemi
+  
+  // --- HARİTA ---
   void _handleMapTap(TapPosition tapPosition, LatLng point) async {
     final mapProvider = Provider.of<MapProvider>(context, listen: false);
-
-    // --- 3. GÜNCELLEME: 'isPlacingMarker' (boolean) yerine 'placingPinType' (String) kontrolü
-    if (mapProvider.placingPinType != null) {
-      // Pin ekleme modu açıksa, dialog'u göster
-      _showAddPinDialog(context, point, mapProvider.placingPinType!);
-    } else {
-      // Pin ekleme modu kapalıysa:
-      // TODO: Faz 2 - Anlık Bilgi Aracını (Info Tool) burada çağır
-      print(
-        "Info modu: ${point.latitude}, ${point.longitude} için veri getirilecek.",
-      );
-    }
+    if (mapProvider.placingPinType != null) { _showAddPinDialog(context, point, mapProvider.placingPinType!); }
   }
 
-  // Yeni Pin Ekleme Dialogu
   void _showAddPinDialog(BuildContext context, LatLng point, String pinType) {
-    // ... (Bu fonksiyonda değişiklik yok) ...
     final mapProvider = Provider.of<MapProvider>(context, listen: false);
-
+    final theme = Provider.of<ThemeProvider>(context, listen: false);
     final nameController = TextEditingController(text: 'Yeni Kaynak');
     final capacityController = TextEditingController(text: '1.0');
-    String selectedType = 'Güneş Paneli';
+    String selectedType = pinType;
 
     showDialog(
-      context: context,
-      barrierDismissible: false,
+      context: context, barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (dialogContext, setStateSB) {
           return AlertDialog(
-            title: Text(
-              'Yeni ${selectedType.replaceAll('Paneli', 'Paneli ')}Ekle',
-            ),
+            backgroundColor: theme.cardColor,
+            title: Text('Yeni ${selectedType == "Güneş Paneli" ? "Güneş Paneli" : "Rüzgar Türbini"} Ekle', style: TextStyle(color: theme.textColor)),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'Konum: ${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}',
-                  ),
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Kaynak Adı'),
-                  ),
+                  Text('Konum: ${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}', style: TextStyle(color: theme.secondaryTextColor, fontSize: 12)),
+                  const SizedBox(height: 15),
+                  _buildTextField(nameController, 'Kaynak Adı', theme),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: selectedType,
-                    decoration: const InputDecoration(labelText: 'Kaynak Tipi'),
-                    items: ['Güneş Paneli', 'Rüzgar Türbini']
-                        .map(
-                          (type) =>
-                              DropdownMenuItem(value: type, child: Text(type)),
-                        )
-                        .toList(),
-                    onChanged: (newValue) {
-                      if (newValue != null) {
-                        setStateSB(() {
-                          selectedType = newValue;
-                        });
-                      }
-                    },
-                  ),
-                  TextField(
-                    controller: capacityController,
-                    decoration: const InputDecoration(
-                      labelText: 'Kapasite (MW)',
+                    dropdownColor: theme.cardColor,
+                    style: TextStyle(color: theme.textColor),
+                    decoration: InputDecoration(
+                      labelText: 'Kaynak Tipi', labelStyle: TextStyle(color: theme.secondaryTextColor),
+                      enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: theme.secondaryTextColor.withValues(alpha: 0.3))),
+                      focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.blue)),
+                      filled: true, fillColor: theme.backgroundColor.withValues(alpha: 0.5)
                     ),
-                    keyboardType: TextInputType.number,
+                    items: ['Güneş Paneli', 'Rüzgar Türbini'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                    onChanged: (val) { if (val != null) setStateSB(() => selectedType = val); },
                   ),
+                  const SizedBox(height: 16),
+                  _buildTextField(capacityController, 'Kapasite (MW)', theme, isNumber: true),
                 ],
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(), // Dialog'u kapat
-                child: const Text('İptal'),
-              ),
-              TextButton(
+              TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('İptal')),
+              ElevatedButton(
                 onPressed: () async {
-                  final String name = nameController.text;
-                  final String type = selectedType;
-                  final double capacityMw =
-                      double.tryParse(capacityController.text) ?? 1.0;
-
-                  try {
-                    await mapProvider.addPin(point, name, type, capacityMw);
-                    Navigator.of(ctx).pop(); // Dialog'u kapat
-                  } catch (e) {
-                    _showErrorDialog(
-                      context,
-                      e.toString().replaceFirst('Exception: ', ''),
-                    );
-                  }
+                  try { await mapProvider.addPin(point, nameController.text, selectedType, double.tryParse(capacityController.text) ?? 1.0); Navigator.of(ctx).pop(); } 
+                  catch (e) { _showErrorDialog(context, e.toString()); }
                 },
                 child: const Text('Kaydet'),
               ),
@@ -436,93 +254,183 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // --- 5. YENİ FONKSİYON: Pin tipine göre dinamik ikon ---
   Widget _buildPinIcon(Pin pin) {
-    if (pin.type == 'Güneş Paneli') {
-      return const Icon(Icons.solar_power, color: Colors.orange, size: 35.0);
-    } else if (pin.type == 'Rüzgar Türbini') {
-      return const Icon(Icons.wind_power, color: Colors.blue, size: 35.0);
-    }
-    // Varsayılan (eğer tip bilinmiyorsa)
+    if (pin.type == 'Güneş Paneli') return const Icon(Icons.solar_power, color: Colors.orange, size: 35.0);
+    if (pin.type == 'Rüzgar Türbini') return const Icon(Icons.wind_power, color: Colors.blue, size: 35.0);
     return const Icon(Icons.location_pin, color: Colors.red, size: 35.0);
   }
-  // --- YENİ FONKSİYON SONU ---
 
   @override
   Widget build(BuildContext context) {
-    // ... (build metodunda değişiklik yok) ...
-    final authProvider = Provider.of<AuthProvider>(context);
     final mapProvider = Provider.of<MapProvider>(context);
+    final theme = Provider.of<ThemeProvider>(context); 
 
-    // --- 6. GÜNCELLEME: 'markers' listesi artık dinamik ikonu çağırıyor ---
     List<Marker> markers = mapProvider.pins.map((pin) {
       return Marker(
-        width: 80.0,
-        height: 80.0,
-        point: LatLng(pin.latitude, pin.longitude),
-        child: GestureDetector(
-          onTap: () => _showPinActionsDialog(context, pin),
-          // 'const Icon(...)' yerine yeni fonksiyonumuzu çağırıyoruz
-          child: _buildPinIcon(pin),
-        ),
+        width: 80.0, height: 80.0, point: LatLng(pin.latitude, pin.longitude),
+        child: GestureDetector(onTap: () => _showPinActionsDialog(context, pin), child: _buildPinIcon(pin)),
       );
     }).toList();
-    // --- GÜNCELLEME SONU ---
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('SRRP Harita Ekranı'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: authProvider.logout,
-            tooltip: 'Çıkış Yap',
-          ),
-        ],
-      ),
-      body: mapProvider.isLoading && mapProvider.pins.isEmpty
-          ? const Center(child: CircularProgressIndicator(value: null))
-          : Stack(
+      appBar: MediaQuery.of(context).size.width <= 600 ? AppBar(
+        title: const Text('SRRP'),
+        backgroundColor: theme.backgroundColor,
+        foregroundColor: theme.textColor,
+      ) : null,
+      body: Row(
+        children: [
+          // 1. Sidebar (Sol Menü)
+          if (MediaQuery.of(context).size.width > 600) 
+            const SidebarMenu(),
+          
+          // 2. Harita Alanı
+          Expanded(
+            child: Stack(
               children: [
                 FlutterMap(
+                  mapController: _mapController,
                   options: MapOptions(
-                    initialCenter: const LatLng(38.6191, 27.4289),
-                    initialZoom: 10.0,
+                    initialCenter: const LatLng(39.0, 35.5),
+                    initialZoom: 6.4, minZoom: 6.2, maxZoom: 18.0,
+                    cameraConstraint: CameraConstraint.contain(bounds: turkeyBounds),
+                    interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
                     onTap: _handleMapTap,
+                    backgroundColor: theme.mapBackgroundColor, 
                   ),
                   children: [
+                    // A. Taban Haritası (OSM)
                     TileLayer(
-                      urlTemplate:
-                          'https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token={accessToken}',
-                      additionalOptions: {
-                        'accessToken': myMapboxAccessToken,
-                        'id': 'mapbox/streets-v11',
-                      },
+                      tileProvider: CancellableNetworkTileProvider(),
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      keepBuffer: 10,
+                      panBuffer: 1,
                     ),
+
+                    // B. Veri Katmanları
                     if (mapProvider.currentLayer == MapLayer.wind)
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openweathermap.org/map/wind_new/{z}/{x}/{y}.png?appid={apiKey}',
-                        additionalOptions: {'apiKey': myOpenWeatherApiKey},
-                      ),
+                      const CircleLayer(circles: <CircleMarker>[]),
+                    
                     if (mapProvider.currentLayer == MapLayer.temp)
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid={apiKey}',
-                        additionalOptions: {'apiKey': myOpenWeatherApiKey},
-                      ),
+                      const CircleLayer(circles: <CircleMarker>[]),
+
+                    // C. Sınırlar
+                    PolygonLayer(
+                      polygons: [Polygon(points: [turkeyBounds.southWest, LatLng(turkeyBounds.northEast.latitude, turkeyBounds.southWest.longitude), turkeyBounds.northEast, LatLng(turkeyBounds.southWest.latitude, turkeyBounds.northEast.longitude)], color: Colors.transparent, borderStrokeWidth: 3.0, borderColor: Colors.red.withValues(alpha: 0.3))],
+                    ),
                     MarkerLayer(markers: markers),
                   ],
                 ),
-                Positioned(top: 10.0, right: 10.0, child: ControlButtons()),
-                if (mapProvider.isLoading && mapProvider.pins.isNotEmpty)
-                  const Positioned(
-                    top: 10,
-                    left: 10,
-                    child: CircularProgressIndicator(),
-                  ),
+
+                // --- UI ELEMANLARI ---
+                
+                // 1. DASHBOARD (SOL ÜST)
+                Positioned(
+                  top: 20, 
+                  left: 20, 
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(color: theme.cardColor.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(16), border: Border.all(color: theme.secondaryTextColor.withValues(alpha: 0.1))),
+                    child: Row(children: [_buildStatItem("Total Output", "0.0 MW", Colors.greenAccent, theme), const SizedBox(width: 20), Container(width: 1, height: 30, color: theme.secondaryTextColor.withValues(alpha: 0.2)), const SizedBox(width: 20), _buildStatItem("Capacity", "0 MW", theme.textColor, theme)])
+                  )
+                ),
+
+                // 2. KONTROL VE KATMANLAR (SAĞ ÜST)
+                // Orijinal tasarımdaki gibi Ekleme Butonlarını sağa aldık.
+                Positioned(
+                  top: 20, 
+                  right: 20, 
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end, 
+                    children: [
+                      // --- EKLEME BUTONLARI (YAN YANA) ---
+                      Row(
+                        children: [
+                          _buildActionButton("Rüzgar Türbini", Icons.wind_power, Colors.blue, theme, () => mapProvider.startPlacingMarker('Rüzgar Türbini')),
+                          const SizedBox(width: 10),
+                          _buildActionButton("Güneş Paneli", Icons.solar_power, Colors.orange, theme, () => mapProvider.startPlacingMarker('Güneş Paneli')),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+
+                      // --- KATMAN BUTONU VE PANELİ ---
+                      FloatingActionButton.small(
+                        heroTag: 'layer_toggle', 
+                        backgroundColor: theme.cardColor, 
+                        child: Icon(Icons.layers, color: theme.textColor), 
+                        onPressed: () => setState(() => _showLayersPanel = !_showLayersPanel)
+                      ),
+                      if (_showLayersPanel) ...[
+                        const SizedBox(height: 10), 
+                        Container(
+                          width: 220, 
+                          padding: const EdgeInsets.all(12), 
+                          decoration: BoxDecoration(color: theme.cardColor.withValues(alpha: 0.95), borderRadius: BorderRadius.circular(12), border: Border.all(color: theme.secondaryTextColor.withValues(alpha: 0.1))), 
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start, 
+                            children: [
+                              Text("Katmanlar", style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)), 
+                              Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2)), 
+                              _buildLayerSwitch("Rüzgar Haritası (Backend)", MapLayer.wind, mapProvider, theme), 
+                              _buildLayerSwitch("Sıcaklık Haritası (Backend)", MapLayer.temp, mapProvider, theme)
+                            ]
+                          )
+                        )
+                      ]
+                    ]
+                  )
+                ),
+
+                // 3. EKLEME UYARISI (ALT ORTA)
+                if (mapProvider.placingPinType != null) 
+                  Positioned(bottom: 100, left: 0, right: 0, child: Center(child: Container(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12), decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(30), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10)]), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.touch_app, color: Colors.white), const SizedBox(width: 8), Text("${mapProvider.placingPinType} Eklemek için Haritaya Dokunun", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), const SizedBox(width: 10), InkWell(onTap: mapProvider.stopPlacingMarker, child: const Icon(Icons.cancel, color: Colors.white))])))),
+                
+                // 4. ZOOM BUTONLARI (SAĞ ALT)
+                Positioned(bottom: 40, right: 20, child: Column(children: [_buildZoomButton(Icons.add, theme, () { _mapController.move(_mapController.camera.center, _mapController.camera.zoom + 1); }), const SizedBox(height: 8), _buildZoomButton(Icons.remove, theme, () { _mapController.move(_mapController.camera.center, _mapController.camera.zoom - 1); })]))
               ],
             ),
+          ),
+        ],
+      ),
     );
   }
+
+  // --- WIDGET YAPICILAR ---
+
+  // Yeni Buton Tasarımı (Orijinal Görseldeki Gibi)
+  Widget _buildActionButton(String label, IconData icon, Color color, ThemeProvider theme, VoidCallback onPressed) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: theme.cardColor,
+        foregroundColor: color,
+        elevation: 2,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: color.withValues(alpha: 0.3)))
+      ),
+      icon: Icon(icon, size: 20),
+      label: Text(label),
+      onPressed: onPressed,
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, Color valueColor, ThemeProvider theme) { return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: TextStyle(color: theme.secondaryTextColor, fontSize: 12)), Text(value, style: TextStyle(color: valueColor, fontSize: 18, fontWeight: FontWeight.bold))]); }
+  
+  Widget _buildLayerSwitch(String title, MapLayer layer, MapProvider provider, ThemeProvider theme) { 
+    final bool isActive = provider.currentLayer == layer; 
+    return InkWell(
+      onTap: () { provider.changeMapLayer(); }, 
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0), 
+        child: Row(
+          children: [
+            Icon(isActive ? Icons.check_circle : Icons.radio_button_unchecked, color: isActive ? Colors.greenAccent : theme.secondaryTextColor.withValues(alpha: 0.5), size: 20), 
+            const SizedBox(width: 10), 
+            Expanded(child: Text(title, style: TextStyle(color: isActive ? theme.textColor : theme.secondaryTextColor), overflow: TextOverflow.ellipsis))
+          ]
+        )
+      )
+    ); 
+  }
+  
+  Widget _buildZoomButton(IconData icon, ThemeProvider theme, VoidCallback onTap) { return Container(decoration: BoxDecoration(color: theme.cardColor, borderRadius: BorderRadius.circular(8), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]), child: IconButton(icon: Icon(icon, color: theme.textColor), onPressed: onTap, constraints: const BoxConstraints(minWidth: 40, minHeight: 40))); }
 }

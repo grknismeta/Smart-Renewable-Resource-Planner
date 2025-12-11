@@ -64,7 +64,10 @@ class MapProvider extends ChangeNotifier {
     notifyListeners();
   }
   // --- GÜNCELLEME SONU ---
-
+    void setLayer(MapLayer layer) {
+    _currentLayer = layer;
+    notifyListeners();
+  }
   void changeMapLayer() {
     switch (_currentLayer) {
       case MapLayer.none:
