@@ -18,9 +18,24 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
-
   final LatLngBounds turkeyBounds = LatLngBounds(const LatLng(34.0, 24.0), const LatLng(44.0, 46.0));
-  bool _showLayersPanel = false; // Başlangıçta kapalı olsun
+  bool _showLayersPanel = false;
+
+  final String _arcGisSatelliteUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+  final String _arcGisDarkUrl = 'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+  final String _arcGisStreetUrl = 'https://services.arcgisonline.com/arcgis/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
+
+  String _selectedBaseMap = 'dark'; 
+
+  // --- ÖZEL RENKLER (Referans Görsellerden) ---
+  
+  // Rüzgar (Hydro Görselindeki Mavi Tema)
+  final Color _windBgColor = const Color(0xFF1F3A58); // Koyu Mavi Arkaplan
+  final Color _windFgColor = const Color(0xFF2196F3); // Parlak Mavi Çerçeve/İkon
+
+  // Güneş (Solar Görselindeki Sarı Tema)
+  final Color _solarBgColor = const Color(0xFF413819); // Koyu Sarı/Kahve Arkaplan
+  final Color _solarFgColor = const Color(0xFFFFCA28); // Parlak Sarı Çerçeve/İkon
 
   // --- UI YARDIMCILARI ---
   void _showErrorDialog(BuildContext context, String message) {
@@ -34,7 +49,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // --- DİNAMİK TEXT FIELD ---
   Widget _buildTextField(TextEditingController controller, String label, ThemeProvider theme, {bool isNumber = false}) {
     return TextField(
       controller: controller,
@@ -51,15 +65,18 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // --- PİN İŞLEMLERİ ---
   void _showPinActionsDialog(BuildContext context, Pin pin) {
     final mapProvider = Provider.of<MapProvider>(context, listen: false);
     final theme = Provider.of<ThemeProvider>(context, listen: false);
-
     final nameController = TextEditingController(text: pin.name);
     final capacityController = TextEditingController(text: pin.capacityMw.toStringAsFixed(1));
     final panelAreaController = TextEditingController(text: pin.panelArea?.toStringAsFixed(1) ?? "100.0");
     String selectedType = pin.type;
+
+    // Renk ve ikon seçimi
+    Color iconColor = pin.type == 'Güneş Paneli' ? _solarFgColor : _windFgColor;
+    Color bgColor = pin.type == 'Güneş Paneli' ? _solarBgColor : _windBgColor;
+    IconData iconData = pin.type == 'Güneş Paneli' ? Icons.wb_sunny : Icons.air;
 
     showModalBottomSheet(
       context: context,
@@ -76,11 +93,32 @@ class _MapScreenState extends State<MapScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Kaynak İşlemleri', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: theme.textColor)),
-                    const SizedBox(height: 5),
-                    Text('ID: ${pin.id} | Potansiyel: ${pin.avgSolarIrradiance?.toStringAsFixed(2) ?? 'N/A'} kWh/m²', style: TextStyle(color: theme.secondaryTextColor)),
+                    Row(
+                      children: [
+                        // Dialog içindeki ikon da aynı yuvarlak yapıda
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: bgColor,
+                            shape: BoxShape.circle, // Yuvarlak
+                            border: Border.all(color: iconColor, width: 2)
+                          ),
+                          child: Icon(iconData, color: iconColor, size: 24),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Kaynak İşlemleri', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: theme.textColor)),
+                            Text('ID: ${pin.id}', style: TextStyle(color: theme.secondaryTextColor, fontSize: 12)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text('Yıllık Potansiyel: ${pin.avgSolarIrradiance?.toStringAsFixed(2) ?? 'N/A'} kWh/m²', style: TextStyle(color: theme.textColor)),
+                    
                     Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2), height: 24),
-
                     _buildTextField(nameController, 'Kaynak Adı', theme),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
@@ -106,13 +144,7 @@ class _MapScreenState extends State<MapScreen> {
                     const SizedBox(height: 20),
                     Row(
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.redAccent),
-                          onPressed: () async {
-                            Navigator.of(ctx).pop();
-                            try { await mapProvider.deletePin(pin.id); } catch (e) { _showErrorDialog(context, e.toString()); }
-                          },
-                        ),
+                        IconButton(icon: const Icon(Icons.delete, color: Colors.redAccent), onPressed: () async { Navigator.of(ctx).pop(); try { await mapProvider.deletePin(pin.id); } catch (e) { _showErrorDialog(context, e.toString()); } }),
                         const Spacer(),
                         ElevatedButton.icon(
                           icon: const Icon(Icons.calculate), label: const Text('Hesapla'),
@@ -169,12 +201,7 @@ class _MapScreenState extends State<MapScreen> {
             ],
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () { Provider.of<MapProvider>(context, listen: false).clearCalculationResult(); Navigator.of(ctx).pop(); },
-            child: const Text('Tamam'),
-          ),
-        ],
+        actions: [TextButton(onPressed: () { Provider.of<MapProvider>(context, listen: false).clearCalculationResult(); Navigator.of(ctx).pop(); }, child: const Text('Tamam'))],
       ),
     );
   }
@@ -184,15 +211,11 @@ class _MapScreenState extends State<MapScreen> {
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text('$title:', style: TextStyle(color: theme.secondaryTextColor)),
-          Text(value, style: TextStyle(fontWeight: FontWeight.bold, color: theme.textColor)),
-        ],
+        children: [Text('$title:', style: TextStyle(color: theme.secondaryTextColor)), Text(value, style: TextStyle(fontWeight: FontWeight.bold, color: theme.textColor))],
       ),
     );
   }
   
-  // --- HARİTA ---
   void _handleMapTap(TapPosition tapPosition, LatLng point) async {
     final mapProvider = Provider.of<MapProvider>(context, listen: false);
     if (mapProvider.placingPinType != null) { _showAddPinDialog(context, point, mapProvider.placingPinType!); }
@@ -254,9 +277,34 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  // --- HARİTA PİN SİMGELERİ (TAM YUVARLAK) ---
   Widget _buildPinIcon(Pin pin) {
-    if (pin.type == 'Güneş Paneli') return const Icon(Icons.solar_power, color: Colors.orange, size: 35.0);
-    if (pin.type == 'Rüzgar Türbini') return const Icon(Icons.wind_power, color: Colors.blue, size: 35.0);
+    if (pin.type == 'Güneş Paneli') {
+      return Container(
+        width: 40, height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: _solarBgColor,
+          shape: BoxShape.circle, // YUVARLAK
+          border: Border.all(color: _solarFgColor, width: 2),
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+        ),
+        child: Icon(Icons.wb_sunny, color: _solarFgColor, size: 24),
+      );
+    } else if (pin.type == 'Rüzgar Türbini') {
+      return Container(
+        width: 40, height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: _windBgColor,
+          shape: BoxShape.circle, // YUVARLAK
+          border: Border.all(color: _windFgColor, width: 2),
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+        ),
+        // Rüzgar simgesi (görseldeki "Wind" ikonuna uygun)
+        child: Icon(Icons.air, color: _windFgColor, size: 24),
+      );
+    }
     return const Icon(Icons.location_pin, color: Colors.red, size: 35.0);
   }
 
@@ -267,24 +315,23 @@ class _MapScreenState extends State<MapScreen> {
 
     List<Marker> markers = mapProvider.pins.map((pin) {
       return Marker(
-        width: 80.0, height: 80.0, point: LatLng(pin.latitude, pin.longitude),
+        width: 50.0, height: 50.0, 
+        point: LatLng(pin.latitude, pin.longitude),
         child: GestureDetector(onTap: () => _showPinActionsDialog(context, pin), child: _buildPinIcon(pin)),
       );
     }).toList();
 
+    String currentTileUrl = _arcGisDarkUrl;
+    if (_selectedBaseMap == 'satellite') currentTileUrl = _arcGisSatelliteUrl;
+    if (_selectedBaseMap == 'street') currentTileUrl = _arcGisStreetUrl;
+
     return Scaffold(
-      appBar: MediaQuery.of(context).size.width <= 600 ? AppBar(
-        title: const Text('SRRP'),
-        backgroundColor: theme.backgroundColor,
-        foregroundColor: theme.textColor,
-      ) : null,
+      appBar: MediaQuery.of(context).size.width <= 600 ? AppBar(title: const Text('SRRP'), backgroundColor: theme.backgroundColor, foregroundColor: theme.textColor) : null,
       body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. Sidebar (Sol Menü)
-          if (MediaQuery.of(context).size.width > 600) 
-            const SidebarMenu(),
+          if (MediaQuery.of(context).size.width > 600) const SidebarMenu(),
           
-          // 2. Harita Alanı
           Expanded(
             child: Stack(
               children: [
@@ -292,42 +339,29 @@ class _MapScreenState extends State<MapScreen> {
                   mapController: _mapController,
                   options: MapOptions(
                     initialCenter: const LatLng(39.0, 35.5),
-                    initialZoom: 6.4, minZoom: 6.2, maxZoom: 18.0,
+                    initialZoom: 6.0, minZoom: 3.0, maxZoom: 18.0,
                     cameraConstraint: CameraConstraint.contain(bounds: turkeyBounds),
                     interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
                     onTap: _handleMapTap,
                     backgroundColor: theme.mapBackgroundColor, 
                   ),
                   children: [
-                    // A. Taban Haritası (OSM)
                     TileLayer(
                       tileProvider: CancellableNetworkTileProvider(),
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate: currentTileUrl,
                       keepBuffer: 10,
                       panBuffer: 1,
                     ),
-
-                    // B. Veri Katmanları
-                    if (mapProvider.currentLayer == MapLayer.wind)
-                      const CircleLayer(circles: <CircleMarker>[]),
+                    if (mapProvider.currentLayer == MapLayer.wind) const CircleLayer(circles: <CircleMarker>[]),
+                    if (mapProvider.currentLayer == MapLayer.temp) const CircleLayer(circles: <CircleMarker>[]),
                     
-                    if (mapProvider.currentLayer == MapLayer.temp)
-                      const CircleLayer(circles: <CircleMarker>[]),
-
-                    // C. Sınırlar
-                    PolygonLayer(
-                      polygons: [Polygon(points: [turkeyBounds.southWest, LatLng(turkeyBounds.northEast.latitude, turkeyBounds.southWest.longitude), turkeyBounds.northEast, LatLng(turkeyBounds.southWest.latitude, turkeyBounds.northEast.longitude)], color: Colors.transparent, borderStrokeWidth: 3.0, borderColor: Colors.red.withValues(alpha: 0.3))],
-                    ),
                     MarkerLayer(markers: markers),
                   ],
                 ),
 
-                // --- UI ELEMANLARI ---
-                
-                // 1. DASHBOARD (SOL ÜST)
+                // --- DASHBOARD (SOL ÜST) ---
                 Positioned(
-                  top: 20, 
-                  left: 20, 
+                  top: 20, left: 20, 
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(color: theme.cardColor.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(16), border: Border.all(color: theme.secondaryTextColor.withValues(alpha: 0.1))),
@@ -335,31 +369,51 @@ class _MapScreenState extends State<MapScreen> {
                   )
                 ),
 
-                // 2. KONTROL VE KATMANLAR (SAĞ ÜST)
-                // Orijinal tasarımdaki gibi Ekleme Butonlarını sağa aldık.
+                // --- BUTONLAR (SAĞ ÜST) - TAM YUVARLAK (KARE/KAPSÜL DEĞİL!) ---
                 Positioned(
-                  top: 20, 
-                  right: 20, 
+                  top: 20, right: 20, 
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end, 
                     children: [
-                      // --- EKLEME BUTONLARI (YAN YANA) ---
                       Row(
                         children: [
-                          _buildActionButton("Rüzgar Türbini", Icons.wind_power, Colors.blue, theme, () => mapProvider.startPlacingMarker('Rüzgar Türbini')),
-                          const SizedBox(width: 10),
-                          _buildActionButton("Güneş Paneli", Icons.solar_power, Colors.orange, theme, () => mapProvider.startPlacingMarker('Güneş Paneli')),
+                          // RÜZGAR BUTONU (Tam Yuvarlak - Mavi Tema)
+                          GestureDetector(
+                            onTap: () => mapProvider.startPlacingMarker('Rüzgar Türbini'),
+                            child: Container(
+                              width: 50, height: 50, // Eşit boyut -> Tam Daire
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: _windBgColor, 
+                                shape: BoxShape.circle, // TAM YUVARLAK
+                                border: Border.all(color: _windFgColor, width: 2),
+                                boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                              ),
+                              child: Icon(Icons.air, color: _windFgColor, size: 28),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+
+                          // GÜNEŞ BUTONU (Tam Yuvarlak - Sarı Tema)
+                          GestureDetector(
+                            onTap: () => mapProvider.startPlacingMarker('Güneş Paneli'),
+                            child: Container(
+                              width: 50, height: 50, // Eşit boyut -> Tam Daire
+                              decoration: BoxDecoration(
+                                color: _solarBgColor, 
+                                shape: BoxShape.circle, // TAM YUVARLAK
+                                border: Border.all(color: _solarFgColor, width: 2),
+                                boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                              ),
+                              child: Icon(Icons.wb_sunny, color: _solarFgColor, size: 28),
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 10),
-
-                      // --- KATMAN BUTONU VE PANELİ ---
-                      FloatingActionButton.small(
-                        heroTag: 'layer_toggle', 
-                        backgroundColor: theme.cardColor, 
-                        child: Icon(Icons.layers, color: theme.textColor), 
-                        onPressed: () => setState(() => _showLayersPanel = !_showLayersPanel)
-                      ),
+                      
+                      FloatingActionButton.small(heroTag: 'layer_toggle', backgroundColor: theme.cardColor, child: Icon(Icons.layers, color: theme.textColor), onPressed: () => setState(() => _showLayersPanel = !_showLayersPanel)),
+                      
                       if (_showLayersPanel) ...[
                         const SizedBox(height: 10), 
                         Container(
@@ -369,10 +423,16 @@ class _MapScreenState extends State<MapScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start, 
                             children: [
-                              Text("Katmanlar", style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)), 
+                              Text("Harita Stili", style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)), 
                               Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2)), 
-                              _buildLayerSwitch("Rüzgar Haritası (Backend)", MapLayer.wind, mapProvider, theme), 
-                              _buildLayerSwitch("Sıcaklık Haritası (Backend)", MapLayer.temp, mapProvider, theme)
+                              _buildBaseMapOption("ArcGIS Koyu", "dark", theme),
+                              _buildBaseMapOption("Uydu (Satellite)", "satellite", theme),
+                              _buildBaseMapOption("Sokak Haritası", "street", theme),
+                              const SizedBox(height: 10), 
+                              Text("Veri Katmanları", style: TextStyle(color: theme.textColor, fontWeight: FontWeight.bold)), 
+                              Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2)), 
+                              _buildLayerSwitch("Rüzgar Haritası", MapLayer.wind, mapProvider, theme), 
+                              _buildLayerSwitch("Sıcaklık Haritası", MapLayer.temp, mapProvider, theme)
                             ]
                           )
                         )
@@ -381,11 +441,50 @@ class _MapScreenState extends State<MapScreen> {
                   )
                 ),
 
-                // 3. EKLEME UYARISI (ALT ORTA)
+                // --- UYARI BARI (DİNAMİK RENKLİ) ---
                 if (mapProvider.placingPinType != null) 
-                  Positioned(bottom: 100, left: 0, right: 0, child: Center(child: Container(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12), decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(30), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10)]), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.touch_app, color: Colors.white), const SizedBox(width: 8), Text("${mapProvider.placingPinType} Eklemek için Haritaya Dokunun", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)), const SizedBox(width: 10), InkWell(onTap: mapProvider.stopPlacingMarker, child: const Icon(Icons.cancel, color: Colors.white))])))),
+                  Positioned(
+                    bottom: 100, 
+                    left: 0, 
+                    right: 0, 
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12), 
+                        decoration: BoxDecoration(
+                          color: mapProvider.placingPinType == 'Güneş Paneli' ? _solarBgColor : _windBgColor, 
+                          borderRadius: BorderRadius.circular(30), 
+                          border: Border.all(
+                            color: mapProvider.placingPinType == 'Güneş Paneli' ? _solarFgColor : _windFgColor,
+                            width: 2
+                          ),
+                          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10)]
+                        ), 
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min, 
+                          children: [
+                            Icon(
+                              Icons.touch_app, 
+                              color: mapProvider.placingPinType == 'Güneş Paneli' ? _solarFgColor : _windFgColor
+                            ), 
+                            const SizedBox(width: 8), 
+                            Text(
+                              "${mapProvider.placingPinType} Eklemek için Haritaya Dokunun", 
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold, 
+                                color: mapProvider.placingPinType == 'Güneş Paneli' ? _solarFgColor : _windFgColor
+                              )
+                            ), 
+                            const SizedBox(width: 10), 
+                            InkWell(
+                              onTap: mapProvider.stopPlacingMarker, 
+                              child: const Icon(Icons.cancel, color: Colors.white) 
+                            )
+                          ]
+                        )
+                      )
+                    )
+                  ),
                 
-                // 4. ZOOM BUTONLARI (SAĞ ALT)
                 Positioned(bottom: 40, right: 20, child: Column(children: [_buildZoomButton(Icons.add, theme, () { _mapController.move(_mapController.camera.center, _mapController.camera.zoom + 1); }), const SizedBox(height: 8), _buildZoomButton(Icons.remove, theme, () { _mapController.move(_mapController.camera.center, _mapController.camera.zoom - 1); })]))
               ],
             ),
@@ -395,42 +494,8 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // --- WIDGET YAPICILAR ---
-
-  // Yeni Buton Tasarımı (Orijinal Görseldeki Gibi)
-  Widget _buildActionButton(String label, IconData icon, Color color, ThemeProvider theme, VoidCallback onPressed) {
-    return ElevatedButton.icon(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: theme.cardColor,
-        foregroundColor: color,
-        elevation: 2,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: color.withValues(alpha: 0.3)))
-      ),
-      icon: Icon(icon, size: 20),
-      label: Text(label),
-      onPressed: onPressed,
-    );
-  }
-
+  Widget _buildBaseMapOption(String title, String value, ThemeProvider theme) { final bool isActive = _selectedBaseMap == value; return InkWell(onTap: () => setState(() => _selectedBaseMap = value), child: Padding(padding: const EdgeInsets.symmetric(vertical: 6.0), child: Row(children: [Icon(isActive ? Icons.radio_button_checked : Icons.radio_button_off, color: isActive ? Colors.blueAccent : theme.secondaryTextColor, size: 18), const SizedBox(width: 8), Text(title, style: TextStyle(color: isActive ? theme.textColor : theme.secondaryTextColor, fontSize: 13))]))); }
   Widget _buildStatItem(String label, String value, Color valueColor, ThemeProvider theme) { return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: TextStyle(color: theme.secondaryTextColor, fontSize: 12)), Text(value, style: TextStyle(color: valueColor, fontSize: 18, fontWeight: FontWeight.bold))]); }
-  
-  Widget _buildLayerSwitch(String title, MapLayer layer, MapProvider provider, ThemeProvider theme) { 
-    final bool isActive = provider.currentLayer == layer; 
-    return InkWell(
-      onTap: () { provider.changeMapLayer(); }, 
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8.0), 
-        child: Row(
-          children: [
-            Icon(isActive ? Icons.check_circle : Icons.radio_button_unchecked, color: isActive ? Colors.greenAccent : theme.secondaryTextColor.withValues(alpha: 0.5), size: 20), 
-            const SizedBox(width: 10), 
-            Expanded(child: Text(title, style: TextStyle(color: isActive ? theme.textColor : theme.secondaryTextColor), overflow: TextOverflow.ellipsis))
-          ]
-        )
-      )
-    ); 
-  }
-  
+  Widget _buildLayerSwitch(String title, MapLayer layer, MapProvider provider, ThemeProvider theme) { final bool isActive = provider.currentLayer == layer; return InkWell(onTap: () { provider.changeMapLayer(); }, child: Padding(padding: const EdgeInsets.symmetric(vertical: 6.0), child: Row(children: [Icon(isActive ? Icons.check_circle : Icons.radio_button_unchecked, color: isActive ? Colors.greenAccent : theme.secondaryTextColor.withValues(alpha: 0.5), size: 18), const SizedBox(width: 8), Expanded(child: Text(title, style: TextStyle(color: isActive ? theme.textColor : theme.secondaryTextColor, fontSize: 13), overflow: TextOverflow.ellipsis))]))); }
   Widget _buildZoomButton(IconData icon, ThemeProvider theme, VoidCallback onTap) { return Container(decoration: BoxDecoration(color: theme.cardColor, borderRadius: BorderRadius.circular(8), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]), child: IconButton(icon: Icon(icon, color: theme.textColor), onPressed: onTap, constraints: const BoxConstraints(minWidth: 40, minHeight: 40))); }
 }
