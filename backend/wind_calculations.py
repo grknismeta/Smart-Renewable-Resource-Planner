@@ -1,142 +1,238 @@
-# wind_calculations.py
-# Bu dosya, rüzgar türbinlerinin enerji üretimi ve 
-# maliyet hesaplamalarını içerecektir.
-
-import math
-from typing import Dict
 import requests
+import statistics
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
 
-def get_power_from_curve(wind_speed: float, power_curve: Dict[float, float]) -> float:
-    """
-    Bir türbinin güç eğrisini (power curve) kullanarak, 
-    belirli bir rüzgar hızındaki anlık güç üretimini (kW) hesaplar.
-    
-    Güç eğrisi (sözlük) içindeki veriler arasında lineer interpolasyon yapar.
+# --- YENİ IMPORT ---
+from .ml_predictor import predict_future_production 
+# -------------------
 
-    :param wind_speed: Rüzgar hızı (m/s).
-    :param power_curve: Türbin modeline ait güç eğrisi. 
-                        Format: {hız_ms: guc_kw}
-    :return: Anlık güç üretimi (kW).
+# --- ÖRNEK TÜRBİN GÜÇ EĞRİSİ (3.3 MW) ---
+# Hız (m/s) : Güç (kW)
+EXAMPLE_TURBINE_POWER_CURVE: Dict[float, float] = {
+    0: 0, 1: 0, 2: 0, 
+    3: 50,    # Cut-in
+    4: 150, 5: 350, 6: 600, 7: 950, 8: 1400, 
+    9: 1900, 10: 2300, 11: 2700, 
+    12: 3000, # Rated Power'a yaklaşım
+    13: 3200, 14: 3300, 25: 3300, 26: 0 # Cut-out
+}
+
+def get_power_from_curve(wind_speed_ms: float, power_curve: Dict[float, float]) -> float:
     """
+    Belirli bir rüzgar hızında (m/s), türbin güç eğrisinden (kW) üretim değerini çeker.
+    Lineer interpolasyon kullanır.
+    """
+    if not power_curve: return 0.0
+    if wind_speed_ms < 0: return 0.0
+
+    sorted_speeds = sorted([float(k) for k in power_curve.keys()])
     
-    if not power_curve:
+    # Sınır kontrolü (Cut-in altı veya Cut-out üstü)
+    if wind_speed_ms < sorted_speeds[0] or wind_speed_ms > sorted_speeds[-1]:
         return 0.0
-
-    # Güç eğrisini hızlara (key'lere) göre sıralayalım
-    # JSON'dan gelen key'ler string olabilir, float'a çevirip sıralayalım
-    try:
-        sorted_speeds = sorted([float(k) for k in power_curve.keys()])
         
-        # Orijinal power_curve'ün key'leri string ise, 
-        # float key'lere sahip yeni bir dict oluşturalım.
-        float_key_curve = {float(k): float(v) for k, v in power_curve.items()}
-    except ValueError:
-        print("Hata: Güç eğrisi verisi bozuk.")
-        return 0.0
-    
-    # 1. Rüzgar hızı, eğrinin altındaysa (cut-in speed altı)
-    if wind_speed < sorted_speeds[0]:
-        return 0.0
-    
-    # 2. Rüzgar hızı, eğrinin üstündeyse (cut-out speed üstü)
-    if wind_speed > sorted_speeds[-1]:
-        return 0.0
-    
-    # 3. Rüzgar hızı eğride tam olarak varsa
-    if wind_speed in float_key_curve:
-        return float_key_curve[wind_speed]
+    # Tam eşleşme varsa
+    if wind_speed_ms in power_curve:
+        return power_curve[wind_speed_ms]
 
-    # 4. Rüzgar hızı ara bir değerdeyse (Lineer Interpolasyon)
-    #    y = y1 + (x - x1) * (y2 - y1) / (x2 - x1)
-    
+    # Interpolasyon (Ara değer bulma)
     lower_speed = sorted_speeds[0]
     upper_speed = sorted_speeds[-1]
     
-    # Hızı kapsayan alt ve üst sınırları bul
-    for speed in sorted_speeds:
-        if speed <= wind_speed:
-            lower_speed = speed
-        if speed >= wind_speed:
-            upper_speed = speed
+    for s in sorted_speeds:
+        if s <= wind_speed_ms: lower_speed = s
+        if s >= wind_speed_ms: 
+            upper_speed = s
             break
-
-    if lower_speed == upper_speed:
-        return float_key_curve[lower_speed]
-
-    lower_power = float_key_curve[lower_speed]
-    upper_power = float_key_curve[upper_speed]
+            
+    if lower_speed == upper_speed: return power_curve[lower_speed]
+        
+    lower_power = power_curve[lower_speed]
+    upper_power = power_curve[upper_speed]
     
-    # Bölme hatasını engelle (eğer upper_speed == lower_speed ise)
-    if (upper_speed - lower_speed) == 0:
-        return lower_power
-
-    # Interpolasyon
-    interpolated_power = lower_power + (wind_speed - lower_speed) * \
+    # Lineer İnterpolasyon Formülü
+    interpolated_power = lower_power + (wind_speed_ms - lower_speed) * \
                          (upper_power - lower_power) / (upper_speed - lower_speed)
-    
+                         
     return interpolated_power
 
-def get_wind_speed_from_coordinates(lat: float, lon: float) -> float:
+def get_historical_hourly_wind_data(latitude: float, longitude: float) -> Dict[str, Any]:
     """
-    Belirtilen koordinatlardaki ANLIK rüzgar hızını (m/s) Open-Meteo'dan çeker.
-    Türbin yüksekliği için 100m rüzgar hızı verisini kullanır.
+    Open-Meteo Archive API'den son 10 yılın SAATLİK rüzgar verilerini çeker.
+    ML tahmini ve detaylı analiz yapar.
     """
-    print(f"ANLIK rüzgar hızı verisi {lat}, {lon} koordinatları için çekiliyor (GERÇEK API)...")
+    # 1. Tarih Aralığı (10 Yıl)
+    end_date = datetime.now() - timedelta(days=5) 
+    days_to_fetch = 3650 
+    start_date = end_date - timedelta(days=days_to_fetch)
     
-    API_URL = "https://api.open-meteo.com/v1/forecast"
+    str_start = start_date.strftime("%Y-%m-%d")
+    str_end = end_date.strftime("%Y-%m-%d")
     
+    print(f"--- RÜZGAR VERİSİ ÇEKİLİYOR (10 Yıllık) ---")
+    print(f"Aralık: {str_start} - {str_end}")
+
+    BASE_URL = "https://archive-api.open-meteo.com/v1/archive"
+    
+    # 100m yükseklik (Türbin seviyesi) verisi çekiyoruz
     params = {
-        "latitude": lat,
-        "longitude": lon,
-        "current": "wind_speed_100m", # 100 metre yükseklikteki rüzgar hızı
-        "wind_speed_unit": "ms", # m/s birimi
+        "latitude": latitude,
+        "longitude": longitude,
+        "start_date": str_start,
+        "end_date": str_end,
+        "hourly": "wind_speed_100m,wind_direction_100m",
         "timezone": "auto"
     }
 
     try:
-        response = requests.get(API_URL, params=params)
+        response = requests.get(BASE_URL, params=params)
         response.raise_for_status()
-        data = response.json().get("current", {})
+        data = response.json()
         
-        # Rüzgar hızını al (m/s)
-        wind_speed = data.get("wind_speed_100m", 0.0)
+        hourly = data.get("hourly", {})
+        time_list = hourly.get("time", [])
+        ws_list_kmh = hourly.get("wind_speed_100m", []) # km/h
         
-        return wind_speed
+        if not ws_list_kmh:
+            return {"error": "Boş rüzgar verisi"}
+
+        # --- 1. GEÇMİŞ VERİ ANALİZİ ---
+        # Rüzgar hızını m/s'ye çeviriyoruz
+        valid_ws_ms = [(x / 3.6) for x in ws_list_kmh if x is not None]
         
+        # 10 Yıllık Ortalama Hız
+        avg_wind_speed_ms = statistics.mean(valid_ws_ms)
+        print(f"10 Yıllık Ortalama Rüzgar Hızı: {avg_wind_speed_ms:.2f} m/s")
+
+        # --- 2. SAATLİK ÜRETİM SİMÜLASYONU (Hassas Hesap) ---
+        total_energy_kwh = 0.0
+        for ws in valid_ws_ms:
+            power_kw = get_power_from_curve(ws, EXAMPLE_TURBINE_POWER_CURVE)
+            total_energy_kwh += power_kw * 1.0 # Güç * 1 saat = Enerji
+            
+        # Toplam enerjiyi 1 yıla indirge
+        actual_years = len(time_list) / 8760.0
+        annual_avg_production_kwh = total_energy_kwh / actual_years
+        
+        print(f"Hesaplanan Yıllık Ortalama Üretim: {annual_avg_production_kwh:.0f} kWh")
+
+        # --- 3. AYLIK GRUPLAMA (Grafik İçin) ---
+        monthly_aggregate = {} 
+        
+        for i, time_str in enumerate(time_list):
+            if ws_list_kmh[i] is None: continue
+            month = time_str.split("-")[1] 
+            
+            if month not in monthly_aggregate:
+                monthly_aggregate[month] = {"ws_sum": 0.0, "count": 0}
+            
+            # km/h -> m/s çevirerek topla
+            monthly_aggregate[month]["ws_sum"] += (ws_list_kmh[i] / 3.6)
+            monthly_aggregate[month]["count"] += 1
+            
+        processed_monthly_stats = []
+        for m in sorted(monthly_aggregate.keys()):
+            stats = monthly_aggregate[m]
+            avg_ws = stats["ws_sum"] / stats["count"]
+            
+            processed_monthly_stats.append({
+                "month": int(m),
+                "avg_wind_speed_ms": round(avg_ws, 2),
+            })
+
+        # --- 4. ML İÇİN VERİ HAZIRLIĞI VE TAHMİN ---
+        ml_training_data = []
+        for i in range(len(time_list)):
+            if ws_list_kmh[i] is not None:
+                ml_training_data.append({
+                    "time": time_list[i],
+                    "value": ws_list_kmh[i] / 3.6 # m/s olarak eğitiyoruz
+                })
+        
+        # ML Motorunu Çalıştır
+        future_prediction = predict_future_production(ml_training_data, resource_type="wind")
+
+        return {
+            "avg_wind_speed_ms": avg_wind_speed_ms,
+            "annual_production_kwh": annual_avg_production_kwh,
+            "monthly_stats": processed_monthly_stats,
+            "future_prediction": future_prediction
+        }
+
+    except requests.exceptions.HTTPError as errh: # <-- HTTP Hatalarını Yakala
+        print(f"Rüzgar API Hatası (HTTP): {errh}")
+        return {"error": str(errh)}
+    except requests.exceptions.RequestException as erre: # <-- İstek Hatalarını Yakala
+        print(f"Rüzgar API İstek Hatası: {erre}")
+        return {"error": str(erre)}
     except Exception as e:
-        print(f"Hata: Anlık rüzgar verisi çekilemedi: {e}")
-        # Hata durumunda güvenli bir değer veya 0 döndür
-        return 0.0
+        print(f"Rüzgar API Genel Hata: {e}")
+        return {"error": str(e)}# --- SİSTEM HESAPLAMA ---
+    
+def calculate_wind_power_production(
+    latitude: float,
+    longitude: float,
+    # turbine_model_id: int = None # İleride eklenecek
+) -> Dict:
+    
+    # 1. Gerçek Veriyi Çek
+    data = get_historical_hourly_wind_data(latitude, longitude)
+    
+    if "error" in data:
+        return {"error": data["error"]}
+    
+    # Geçmiş veriye dayalı yıllık üretim (Saatlik simülasyon sonucu)
+    annual_production_kwh = data["annual_production_kwh"]
+    
+    # ML Gelecek Tahmini (Rüzgar Hızı Tahmini)
+    # ML bize aylık ortalama hız tahminlerini verir.
+    # Gelecek yılın toplam üretimini tahmin etmek için bu hızları güç eğrisine sokuyoruz.
+    
+    predicted_annual_production = 0.0
+    ml_monthly_system_production = []
+    
+    if "monthly_predictions" in data["future_prediction"]:
+        for pred in data["future_prediction"]["monthly_predictions"]:
+            pred_speed_ms = pred["prediction"]
+            
+            # Bu ayın ortalama gücünü bul (Basitleştirilmiş)
+            # Not: Ortalama hızdan güç bulmak, küp kuralı nedeniyle düşük sonuç verir.
+            # Düzeltme faktörü (Rayleigh Distribution Factor) ~1.91 eklenebilir veya
+            # ML'den saatlik tahmin istenebilir. Şimdilik basitleştirilmiş haliyle bırakıyoruz.
+            avg_power_kw = get_power_from_curve(pred_speed_ms, EXAMPLE_TURBINE_POWER_CURVE)
+            
+            # Ayı 730 saat kabul et
+            monthly_prod = avg_power_kw * 730.0 
+            predicted_annual_production += monthly_prod
+            
+            ml_monthly_system_production.append({
+                "year": pred["year"],
+                "month": pred["month"],
+                "predicted_wind_speed_ms": pred_speed_ms,
+                "predicted_production_kwh": round(monthly_prod, 2)
+            })
 
+    return {
+        "avg_wind_speed_ms": data["avg_wind_speed_ms"],
+        "system_annual_production_kwh": annual_production_kwh, # Geçmiş (Kesin)
+        "predicted_annual_production_kwh": predicted_annual_production, # Gelecek (Tahmin)
+        "monthly_breakdown": data["monthly_stats"],
+        "future_monthly_breakdown": ml_monthly_system_production
+    }
 
-# --- ÖRNEK STANDART GÜÇ EĞRİSİ ---
-# PNG'deki "standart bir rüzgar gülü belirt" isteği için
-# Bu veriyi veritabanındaki 'turbines' tablosuna ekleyeceğiz.
-EXAMPLE_TURBINE_POWER_CURVE: Dict[float, float] = {
-    0: 0,
-    1: 0,
-    2: 0,
-    3: 0,       # Cut-in hızı (çalışmaya başlama)
-    4: 70,
-    5: 150,
-    6: 300,
-    7: 500,
-    8: 800,
-    9: 1200,
-    10: 1600,
-    11: 1900,
-    12: 2000,   # Rated hızı (tam kapasite)
-    13: 2000,
-    14: 2000,
-    15: 2000,
-    16: 2000,
-    17: 2000,
-    18: 2000,
-    19: 2000,
-    20: 2000,
-    21: 2000,
-    22: 2000,
-    23: 2000,
-    24: 2000,
-    25: 0        # Cut-out hızı (koruma için durma)
-}
+# --- UYUMLULUK MODU ---
+def get_historical_wind_data(latitude: float, longitude: float) -> Dict[str, Any]:
+    # Eski kodların (crud.py) çağırabileceği basit veri dönüşü
+    data = get_historical_hourly_wind_data(latitude, longitude)
+    if "error" in data:
+        return {"error": data["error"]}
+    return {
+        "avg_wind_speed_ms": data["avg_wind_speed_ms"],
+        # Diğer eski alanlar gerekirse buraya eklenebilir
+    }
+
+def get_wind_speed_from_coordinates(lat: float, lon: float) -> float:
+    data = get_historical_hourly_wind_data(lat, lon)
+    if "error" in data: return 0.0
+    return data["avg_wind_speed_ms"]

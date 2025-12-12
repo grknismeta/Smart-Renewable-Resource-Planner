@@ -1,43 +1,28 @@
-# routers/pins.py
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
 from sqlalchemy.orm import Session
-from typing import List, Union, cast, Optional # <-- Optional'ı buraya ekle
+from typing import List, Optional, cast, Union
 
-from .. import crud, schemas, auth, models, wind_calculations, solar_calculations
-from ..database import SessionLocal
-from ..database import get_db
-from ..import solar_calculations, wind_calculations
-from ..schemas import PinCalculationResponse, WindCalculationResponse, SolarCalculationResponse, PinBase 
+from .. import crud, models, schemas, auth, solar_calculations, wind_calculations
+from ..database import get_db, get_system_db # get_system_db'yi import ettik
+from ..schemas import PinCalculationResponse, SolarCalculationResponse, WindCalculationResponse, PinBase
 
-
-router = APIRouter(
-    prefix="/pins",
-    tags=["Pins & Calculations"]
-)
-
-# Dependency (get_db)
+router = APIRouter()
 
 @router.post("/", response_model=schemas.PinResponse, status_code=status.HTTP_201_CREATED)
 def create_pin(
     pin: schemas.PinCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_active_user),
-    
-    # 2. YENİ PARAMETRE: Gelen 'Authorization' başlığını yakala
-    authorization: Optional[str] = Header(None) 
+    system_db: Session = Depends(get_system_db), # YENİ: Sistem veritabanı bağlantısı
+    current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """
-    Kimliği doğrulanmış kullanıcı için yeni bir harita pini (kaynak) oluşturur.
+    Kimliği doğrulanmış kullanıcı için yeni bir harita pini oluşturur.
+    SystemDB kullanarak o konumun hava verilerini (varsa) çeker.
     """
-    
-    # 3. YENİ KOD: Gelen token'ı terminale yazdır
-    print("--- POST /pins/ GELEN TOKEN ---")
-    print(f"Authorization Header: {authorization}")
-    print("-------------------------------")
-    
-    # Kalan kod aynı
     user_id = cast(int, current_user.id)
-    return crud.create_pin_for_user(db=db, pin=pin, user_id=user_id)
+    # system_db'yi crud fonksiyonuna gönderiyoruz
+    return crud.create_pin_for_user(db=db, pin=pin, user_id=user_id, system_db=system_db)
+
 
 @router.get("/", response_model=List[schemas.PinResponse])
 def read_pins_for_user(
@@ -47,14 +32,11 @@ def read_pins_for_user(
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """
-    Kimliği doğrulanmış kullanıcının sahip olduğu tüm pinleri listeler.
+    Kullanıcının pinlerini listeler.
     """
     user_id = cast(int, current_user.id)
     pins = crud.get_pins_by_owner(db, owner_id=user_id, skip=skip, limit=limit)
     return pins
-
-# ... (create_pin ve read_pins_for_user fonksiyonlarınızın ALTINA) ...
-
 
 @router.post(
     "/calculate", 
@@ -62,71 +44,86 @@ def read_pins_for_user(
     summary="Bir pinin potansiyelini, kaydetmeden hesaplar"
 )
 def calculate_pin_potential(
-    # Flutter'dan gelen geçici pin verisini PinBase şemasıyla yakalıyoruz
     pin_data: PinBase, 
-    # Bu endpoint'i kullanmak için de giriş yapmış olmak zorunlu
+    db: Session = Depends(get_db),
+    system_db: Session = Depends(get_system_db), # system_db kullanımı
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """
-    Bu endpoint veritabanına HİÇBİR ŞEY KAYDETMEZ.
-    Sadece Flutter'dan gelen 'pin_data' gövdesini alır,
-    gerekli hesaplama fonksiyonlarını (solar/wind) çağırır
-    ve sonucu bir PinCalculationResponse olarak döndürür.
+    Veritabanına kaydetmeden anlık hesaplama yapar.
     """
-    
-    print(f"Hesaplama isteği alındı: {pin_data.type}")
+    print(f"Hesaplama isteği: {pin_data.type} - {pin_data.latitude}, {pin_data.longitude}")
+
+    # --- EKİPMAN SEÇİMİ ---
+    selected_equipment: Optional[models.Equipment] = None
+    if pin_data.equipment_id is not None:
+        # Ekipman verisi SystemDB'den çekilir
+        selected_equipment = crud.get_equipment(system_db, pin_data.equipment_id)
+        if selected_equipment is None:
+            print("Uyarı: Seçilen ekipman ID bulunamadı, varsayılanlar kullanılacak.")
 
     if pin_data.type == "Güneş Paneli":
-        # --- Güneş Enerjisi Hesaplama ---
+        panel_area = pin_data.panel_area or 10.0
+        efficiency: float = 0.20
+        model_name: str = "Veri Analizli Standart Panel"
         
-        # Flutter'dan 'panel_area' (panel alanı) göndermeniz gerekiyor.
-        # Eğer göndermezseniz, varsayılan olarak 0 kullanılır.
-        panel_area = pin_data.panel_area or 0.0 
-        
-        if panel_area == 0.0:
-            print("Uyarı: Panel alanı 0 olduğu için güç çıkışı 0 olacaktır.")
-
-        # solar_calculations.py dosyanızdaki fonksiyonu çağır
-        calc_results = solar_calculations.calculate_solar_power(
+        if selected_equipment is not None and str(selected_equipment.type) == "Solar":
+            efficiency = float(selected_equipment.efficiency) # type: ignore
+            model_name = str(selected_equipment.name) # type: ignore
+            
+        # --- HESAPLAMA ---
+        results = solar_calculations.calculate_solar_power_production(
             latitude=pin_data.latitude,
             longitude=pin_data.longitude,
             panel_area=panel_area,
-            tilt_angle=pin_data.panel_tilt or 35.0,
-            azimuth_angle=pin_data.panel_azimuth or 180.0
+            panel_efficiency=efficiency 
         )
         
-        # schemas.py'deki yanıt modelini doldur
+        if "error" in results:
+             raise HTTPException(status_code=500, detail=results["error"])
+
         solar_response = SolarCalculationResponse(
-            **calc_results,
-            panel_model="Standart Model" # TODO: Bunu da modelden al
+            solar_irradiance_kw_m2=results["daily_avg_potential_kwh_m2"], 
+            temperature_celsius=25.0,
+            panel_efficiency=efficiency,
+            power_output_kw=results["predicted_annual_production_kwh"],
+            panel_model=model_name
         )
         
         return PinCalculationResponse(
             resource_type="Güneş Paneli",
             solar_calculation=solar_response
         )
-
+    
     elif pin_data.type == "Rüzgar Türbini":
-        # --- Rüzgar Enerjisi Hesaplama ---
         
-        # 1. Koordinatlara göre (simüle edilmiş) rüzgar hızını al
+        power_curve = wind_calculations.EXAMPLE_TURBINE_POWER_CURVE
+        model_name: str = "Standart 3.3MW Türbin"
+
+        if selected_equipment is not None and str(selected_equipment.type) == "Wind":
+            model_name = str(selected_equipment.name) # type: ignore
+            specs_data = selected_equipment.specs
+            if specs_data is not None and "power_curve" in specs_data:
+                raw_curve = specs_data["power_curve"]
+                power_curve = {float(k): float(v) for k, v in raw_curve.items()} # type: ignore
+
+        # Veri Çekme (Şu anlık API/Modül üzerinden, ileride SystemDB'den çekilebilir)
         wind_speed = wind_calculations.get_wind_speed_from_coordinates(
             pin_data.latitude, pin_data.longitude
         )
         
-        # 2. Şimdilik örnek güç eğrisini kullan
-        # TODO: Bunu pin_data.turbine_model_id'ye göre veritabanından çek
-        power_curve = wind_calculations.EXAMPLE_TURBINE_POWER_CURVE
-        
-        # 3. Anlık gücü hesapla
-        power_kw = wind_calculations.get_power_from_curve(
-            wind_speed, power_curve
+        # HASSAS HESAPLAMA ÇAĞRISI
+        results = wind_calculations.calculate_wind_power_production(
+            latitude=pin_data.latitude,
+            longitude=pin_data.longitude
         )
         
+        if "error" in results: raise HTTPException(status_code=500, detail=results["error"])
+        
         wind_response = WindCalculationResponse(
-            wind_speed_m_s=wind_speed,
-            power_output_kw=power_kw,
-            turbine_model="Standart Türbin" # TODO: Bunu da modelden al
+            wind_speed_m_s=round(results["avg_wind_speed_ms"], 2),
+            power_output_kw=round(results["predicted_annual_production_kwh"], 0),
+            turbine_model=model_name
         )
         
         return PinCalculationResponse(
@@ -135,213 +132,22 @@ def calculate_pin_potential(
         )
     
     else:
-        # Eğer tip "Güneş Paneli" veya "Rüzgar Türbini" değilse hata ver
         raise HTTPException(status_code=400, detail="Geçersiz kaynak tipi.")
 
-@router.delete("/{pin_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_pin(
-    pin_id: int,
-    db: Session = Depends(get_db),
+
+# --- GRID ENDPOINT ---
+@router.get("/map-data", response_model=List[schemas.GridResponse])
+def get_grid_map_data(
+    type: str = Query(..., description="Analiz tipi: Solar veya Wind"),
+    db: Session = Depends(get_system_db), # Grid verisi SystemDB'de
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
-    """
-    Kimliği doğrulanmış kullanıcının sahip olduğu bir pini siler.
-    """
-    user_id = cast(int, current_user.id)
-    success = crud.delete_pin_by_id(db, pin_id=pin_id, user_id=user_id)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pin bulunamadı veya bu kullanıcıya ait değil."
-        )
-    return {"message": "Pin başarıyla silindi."}
-
-
-# --- YENİ HESAPLAMA ENDPOINT'İ ---
-
-@router.get("/{pin_id}/calculate", response_model=schemas.PinCalculationResponse)
-def calculate_pin_power(
-    pin_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_active_user)
-):
-    """
-    Belirli bir pin'in potansiyel enerji üretimini hesaplar.
-    """
-    # 1. Pini veritabanından bul
-    user_id = cast(int, current_user.id)
-    pin = crud.get_pin_by_id(db, pin_id=pin_id, user_id=user_id)
-    if not pin:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pin bulunamadı veya bu kullanıcıya ait değil."
-        )
-
-    # 2. Kaynak tipine göre hesaplama yap
-    pin_type = str(pin.type)
-    if pin_type == "Rüzgar Türbini":
-        return calculate_wind_power(db, pin)
-    elif pin_type == "Güneş Paneli":
-        return calculate_solar_power(db, pin)
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Bilinmeyen kaynak tipi: {pin_type}"
-        )
-
-def calculate_wind_power(db: Session, pin: models.Pin) -> schemas.PinCalculationResponse:
-    """Rüzgar türbini güç hesaplaması"""
-    # Pin verilerini tek sorguda al
-    pin_data = db.query(
-        models.Pin.latitude,
-        models.Pin.longitude,
-        models.Pin.turbine_model_id
-    ).filter_by(id=pin.id).first()
-
-    if not pin_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pin bulunamadı"
-        )
-
-    try:
-        # Rüzgar hızını hesapla
-        wind_speed = wind_calculations.get_wind_speed_from_coordinates(
-            float(pin_data.latitude),
-            float(pin_data.longitude)
-        )
-    except (TypeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Geçersiz koordinat değerleri"
-        )
-
-    # Türbin modelini al
-    turbine_data = None
-    if pin_data.turbine_model_id:
-        turbine_data = db.query(
-            models.Turbine.power_curve_data,
-            models.Turbine.model_name
-        ).filter_by(id=pin_data.turbine_model_id).first()
-
-    if not turbine_data:
-        turbine_data = db.query(
-            models.Turbine.power_curve_data,
-            models.Turbine.model_name
-        ).filter_by(is_default=True).first()
-
-    if not turbine_data or not turbine_data.power_curve_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Hesaplama için standart (default) bir türbin modeli bulunamadı."
-        )
-
-    try:
-        power_curve = dict(turbine_data.power_curve_data)
-        power_kw = wind_calculations.get_power_from_curve(
-            wind_speed,
-            power_curve
-        )
-    except (TypeError, ValueError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Güç hesaplama hatası: {str(e)}"
-        )
-
-    # Yanıtı oluştur
-    wind_calc = schemas.WindCalculationResponse(
-        wind_speed_m_s=wind_speed,
-        power_output_kw=power_kw,
-        turbine_model=turbine_data.model_name
-    )
-
-    return schemas.PinCalculationResponse(
-        resource_type="Rüzgar Türbini",
-        wind_calculation=wind_calc
-    )
-
-def calculate_solar_power(db: Session, pin: models.Pin) -> schemas.PinCalculationResponse:
-    """Güneş paneli güç hesaplaması"""
-    # Pin verilerini tek sorguda al
-    pin_data = db.query(
-        models.Pin.latitude,
-        models.Pin.longitude,
-        models.Pin.panel_model_id,
-        models.Pin.panel_area,
-        models.Pin.panel_tilt,
-        models.Pin.panel_azimuth
-    ).filter_by(id=pin.id).first()
+    if type not in ["Solar", "Wind"]:
+        raise HTTPException(status_code=400, detail="Geçersiz analiz tipi. 'Solar' veya 'Wind' olmalı.")
     
-    if not pin_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Pin bulunamadı"
-        )
-
-    # Panel modelini al
-    panel_data = None
-    if pin_data.panel_model_id:
-        panel_data = db.query(
-            models.SolarPanel.dimensions_m,
-            models.SolarPanel.base_efficiency,
-            models.SolarPanel.temp_coefficient,
-            models.SolarPanel.model_name
-        ).filter_by(id=pin_data.panel_model_id).first()
-
-    if not panel_data:
-        panel_data = db.query(
-            models.SolarPanel.dimensions_m,
-            models.SolarPanel.base_efficiency,
-            models.SolarPanel.temp_coefficient,
-            models.SolarPanel.model_name
-        ).filter_by(is_default=True).first()
-
-    if not panel_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Hesaplama için standart (default) bir panel modeli bulunamadı."
-        )
-
-    try:
-        # Panel boyutlarını hazırla
-        dimensions = dict(panel_data.dimensions_m)
-        default_area = float(dimensions["length"]) * float(dimensions["width"])
-
-        # Değerleri dönüştür
-        panel_area = float(pin_data.panel_area) if pin_data.panel_area is not None else 100.0
-        tilt_angle = float(pin_data.panel_tilt) if pin_data.panel_tilt is not None else 35.0
-        azimuth_angle = float(pin_data.panel_azimuth) if pin_data.panel_azimuth is not None else 180.0
-        latitude = float(pin_data.latitude)
-        longitude = float(pin_data.longitude)
-        base_efficiency = float(panel_data.base_efficiency)
-        temp_coefficient = float(panel_data.temp_coefficient)
-
-        # Güç hesaplaması
-        result = solar_calculations.calculate_solar_power(
-            latitude=latitude,
-            longitude=longitude,
-            panel_area=panel_area,
-            tilt_angle=tilt_angle,
-            azimuth_angle=azimuth_angle,
-            base_efficiency=base_efficiency,
-            temp_coefficient=temp_coefficient
-        )
-
-        # Yanıtı oluştur
-        solar_calc = schemas.SolarCalculationResponse(
-            solar_irradiance_kw_m2=result["solar_irradiance_kw_m2"],
-            temperature_celsius=result["temperature_celsius"],
-            panel_efficiency=result["panel_efficiency"],
-            power_output_kw=result["power_output_kw"],
-            panel_model=panel_data.model_name
-        )
-    except (TypeError, ValueError, KeyError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Güç hesaplama hatası: {str(e)}"
-        )
-
-    return schemas.PinCalculationResponse(
-        resource_type="Güneş Paneli",
-        solar_calculation=solar_calc
-    )
+    grid_data = db.query(models.GridAnalysis).filter(
+        models.GridAnalysis.type == type,
+        models.GridAnalysis.overall_score > 0.0
+    ).all()
+    
+    return grid_data

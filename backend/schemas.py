@@ -1,38 +1,37 @@
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List, Dict, Literal
 
-# --- Güneş Paneli Şemaları ---
-class SolarPanelBase(BaseModel):
-    model_name: str
-    power_rating_w: float
-    dimensions_m: Dict[str, float]  # {"length": float, "width": float}
-    base_efficiency: float  # 0-1 arası
-    
-    @field_validator('base_efficiency')
-    def validate_efficiency(cls, v):
-        if not 0 < v < 1:
-            raise ValueError('Verim 0 ile 1 arasında olmalıdır')
-        return v
-    temp_coefficient: float
-    is_default: bool = False
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Literal, Any
+from datetime import datetime
 
-class SolarPanelCreate(SolarPanelBase):
+# --- EKİPMAN ŞEMALARI (YENİ) ---
+class EquipmentBase(BaseModel):
+    name: str
+    type: Literal["Solar", "Wind"]
+    rated_power_kw: float
+    efficiency: float
+    cost_per_unit: float
+    maintenance_cost_annual: float
+    specs: Dict[str, Any] = {} # Esnek teknik özellikler
+
+class EquipmentCreate(EquipmentBase):
     pass
 
-class SolarPanelResponse(SolarPanelBase):
+class EquipmentResponse(EquipmentBase):
     id: int
     class Config:
         from_attributes = True
 
-# --- Kimlik Doğrulama Şemaları ---
+# --- KULLANICI ŞEMALARI ---
 class UserBase(BaseModel):
     email: str
 
 class UserCreate(UserBase):
-    password: str = Field(..., max_length=1024)
-    
+    password: str
+
 class UserResponse(UserBase):
     id: int
+    is_active: bool
+    created_at: datetime
     class Config:
         from_attributes = True
 
@@ -43,37 +42,17 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
 
-# --- Türbin Şemaları ---
-class TurbineBase(BaseModel):
-    model_name: str
-    rated_power_kw: float
-    is_default: bool = False
-    power_curve_data: Dict[float, float]
-
-class TurbineCreate(TurbineBase):
-    pass
-
-class TurbineResponse(TurbineBase):
-    id: int
-    class Config:
-        from_attributes = True
-
-
-# --- Pin (Kaynak) Şemaları ---
-
+# --- PIN ŞEMALARI ---
 class PinBase(BaseModel):
     latitude: float
     longitude: float
-    name: str = Field(default="Yeni Kaynak")
-    type: Literal["Rüzgar Türbini", "Güneş Paneli"] = Field(default="Rüzgar Türbini")
-    capacity_mw: Optional[float] = Field(default=1.0)
-    
-    turbine_model_id: Optional[int] = None
-    
-    panel_model_id: Optional[int] = None
-    panel_tilt: Optional[float] = Field(default=35.0)
-    panel_azimuth: Optional[float] = Field(default=180.0)
+    title: Optional[str] = "Yeni Kaynak"
+    type: Literal["Güneş Paneli", "Rüzgar Türbini"] = "Güneş Paneli"
+    capacity_mw: float = 1.0
     panel_area: Optional[float] = None
+    
+    # Yeni Alan: Seçilen Ekipman ID'si
+    equipment_id: Optional[int] = None
 
 class PinCreate(PinBase):
     pass
@@ -82,8 +61,11 @@ class PinResponse(PinBase):
     id: int
     owner_id: int
     avg_solar_irradiance: Optional[float] = None
-    turbine_model_id: Optional[int] = None
+    avg_wind_speed: Optional[float] = None
     
+    # Ekipman detayını da döndürebiliriz
+    equipment: Optional[EquipmentResponse] = None
+
     class Config:
         from_attributes = True
 
@@ -118,3 +100,36 @@ class PinCalculationResponse(BaseModel):
     resource_type: Literal["Rüzgar Türbini", "Güneş Paneli"]
     wind_calculation: Optional[WindCalculationResponse] = None
     solar_calculation: Optional[SolarCalculationResponse] = None
+
+# --- GRID ŞEMALARI (YENİ EKLENECEK) ---
+class GridBase(BaseModel):
+    latitude: float
+    longitude: float
+    type: str
+    overall_score: float
+
+class GridResponse(GridBase):
+    id: int
+    class Config:
+        from_attributes = True
+        
+# --- SENARYO ŞEMALARI (YENİ) ---
+class ScenarioBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    pin_id: int
+    start_date: datetime
+    end_date: datetime
+
+class ScenarioCreate(ScenarioBase):
+    pass
+
+class ScenarioResponse(ScenarioBase):
+    id: int
+    owner_id: int
+    result_data: Dict[str, Any] # ML Sonuçları burada olacak
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+    
