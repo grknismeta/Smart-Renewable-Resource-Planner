@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 # (DÜZELTME) Göreceli import'lar
 from . import schemas, crud, models
-from .database import SessionLocal
+from .database import SystemSessionLocal
 from .database import get_db
 
 # --- Security Constants and Settings ---

@@ -3,16 +3,16 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from .. import crud, models, schemas, auth
-from ..database import get_db
+from ..database import get_system_db # DÜZELTME: get_db yerine get_system_db
 
 router = APIRouter()
 
 @router.get("/", response_model=List[schemas.EquipmentResponse])
 def read_equipments(
-    type: Optional[str] = None, # "Solar" veya "Wind" filtresi
+    type: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_system_db), # DÜZELTME YAPILDI
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """
@@ -25,7 +25,7 @@ def read_equipments(
 @router.get("/{equipment_id}", response_model=schemas.EquipmentResponse)
 def read_equipment(
     equipment_id: int,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_system_db), # DÜZELTME YAPILDI
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """

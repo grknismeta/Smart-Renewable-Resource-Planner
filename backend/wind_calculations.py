@@ -106,8 +106,6 @@ def get_historical_hourly_wind_data(latitude: float, longitude: float) -> Dict[s
         print(f"10 Yıllık Ortalama Rüzgar Hızı: {avg_wind_speed_ms:.2f} m/s")
 
         # --- 2. SAATLİK ÜRETİM SİMÜLASYONU (Hassas Hesap) ---
-        # Ortalama hızdan hesaplamak yerine, her saatin hızını güç eğrisine sokup topluyoruz.
-        # Bu yöntem rüzgarın değişkenliğini (küp kuralı) hesaba kattığı için çok daha doğrudur.
         total_energy_kwh = 0.0
         for ws in valid_ws_ms:
             power_kw = get_power_from_curve(ws, EXAMPLE_TURBINE_POWER_CURVE)
@@ -138,12 +136,9 @@ def get_historical_hourly_wind_data(latitude: float, longitude: float) -> Dict[s
             stats = monthly_aggregate[m]
             avg_ws = stats["ws_sum"] / stats["count"]
             
-            # O ay için tahmini üretim (Basitleştirilmiş: Ortalama hız * Saat)
-            # Not: Grafik için ortalama hız daha anlamlı olabilir
             processed_monthly_stats.append({
                 "month": int(m),
                 "avg_wind_speed_ms": round(avg_ws, 2),
-                # "estimated_kwh": ... (İstenirse eklenebilir)
             })
 
         # --- 4. ML İÇİN VERİ HAZIRLIĞI VE TAHMİN ---
@@ -165,11 +160,16 @@ def get_historical_hourly_wind_data(latitude: float, longitude: float) -> Dict[s
             "future_prediction": future_prediction
         }
 
+    except requests.exceptions.HTTPError as errh: # <-- HTTP Hatalarını Yakala
+        print(f"Rüzgar API Hatası (HTTP): {errh}")
+        return {"error": str(errh)}
+    except requests.exceptions.RequestException as erre: # <-- İstek Hatalarını Yakala
+        print(f"Rüzgar API İstek Hatası: {erre}")
+        return {"error": str(erre)}
     except Exception as e:
-        print(f"Rüzgar API Hatası: {e}")
-        return {"error": str(e)}
-
-# --- SİSTEM HESAPLAMA ---
+        print(f"Rüzgar API Genel Hata: {e}")
+        return {"error": str(e)}# --- SİSTEM HESAPLAMA ---
+    
 def calculate_wind_power_production(
     latitude: float,
     longitude: float,

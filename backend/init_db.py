@@ -1,15 +1,19 @@
-from .database import engine, SessionLocal
+from .database import SystemEngine, SystemBase, SystemSessionLocal, UserEngine, UserBase, UserSessionLocal
 from . import models
 
 def init_db():
-    # Tabloları oluştur
-    models.Base.metadata.create_all(bind=engine)
+    # 1. User DB (Pinler, Kullanıcılar, Senaryolar) tablolarını oluştur
+    models.UserBase.metadata.create_all(bind=UserEngine)
     
-    db = SessionLocal()
+    # 2. System DB (Ekipmanlar, Grid Analizi) tablolarını oluştur
+    models.SystemBase.metadata.create_all(bind=SystemEngine)
     
-    # --- EKİPMANLARI KONTROL ET VE EKLE ---
+    # Sadece System DB'ye yazmak için Session aç
+    db = SystemSessionLocal()
+    
+    # --- EKİPMANLARI KONTROL ET VE EKLE (SADECE SYSTEM DB'YE) ---
     if db.query(models.Equipment).count() == 0:
-        print("Ekipman veritabanı boş, örnek veriler ekleniyor...")
+        print("Ekipman veritabanı boş, örnek veriler System DB'ye ekleniyor...")
         
         equipments = [
             # --- GÜNEŞ PANELLERİ ---
@@ -60,7 +64,7 @@ def init_db():
                     "hub_height": 160,
                     "power_curve": {
                         "3": 100, "5": 800, "7": 2500, "9": 4500, 
-                        "11": 5800, "13": 6200, "25": 6200
+                        "11": 5800, "13": 6200, "22": 6200
                     }
                 }
             )
@@ -68,9 +72,9 @@ def init_db():
         
         db.add_all(equipments)
         db.commit()
-        print("Örnek ekipmanlar eklendi.")
+        print("Örnek ekipmanlar System DB'ye eklendi.")
     else:
-        print("Ekipmanlar zaten mevcut.")
+        print("Ekipmanlar System DB'de zaten mevcut.")
         
     db.close()
 

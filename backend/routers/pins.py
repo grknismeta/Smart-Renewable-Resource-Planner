@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, cast, Union
 
 from .. import crud, models, schemas, auth, solar_calculations, wind_calculations
-from ..database import get_db
+from ..database import get_db, get_system_db # get_system_db'yi import ettik
 from ..schemas import PinCalculationResponse, SolarCalculationResponse, WindCalculationResponse, PinBase
 
 router = APIRouter()
@@ -12,14 +12,16 @@ router = APIRouter()
 def create_pin(
     pin: schemas.PinCreate,
     db: Session = Depends(get_db),
+    system_db: Session = Depends(get_system_db), # YENİ: Sistem veritabanı bağlantısı
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """
     Kimliği doğrulanmış kullanıcı için yeni bir harita pini oluşturur.
-    Hesaplama mantığı CRUD katmanındadır.
+    SystemDB kullanarak o konumun hava verilerini (varsa) çeker.
     """
     user_id = cast(int, current_user.id)
-    return crud.create_pin_for_user(db=db, pin=pin, user_id=user_id)
+    # system_db'yi crud fonksiyonuna gönderiyoruz
+    return crud.create_pin_for_user(db=db, pin=pin, user_id=user_id, system_db=system_db)
 
 
 @router.get("/", response_model=List[schemas.PinResponse])
@@ -44,6 +46,7 @@ def read_pins_for_user(
 def calculate_pin_potential(
     pin_data: PinBase, 
     db: Session = Depends(get_db),
+    system_db: Session = Depends(get_system_db), # system_db kullanımı
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """
@@ -54,18 +57,16 @@ def calculate_pin_potential(
     # --- EKİPMAN SEÇİMİ ---
     selected_equipment: Optional[models.Equipment] = None
     if pin_data.equipment_id is not None:
-        selected_equipment = crud.get_equipment(db, pin_data.equipment_id)
+        # Ekipman verisi SystemDB'den çekilir
+        selected_equipment = crud.get_equipment(system_db, pin_data.equipment_id)
         if selected_equipment is None:
             print("Uyarı: Seçilen ekipman ID bulunamadı, varsayılanlar kullanılacak.")
 
     if pin_data.type == "Güneş Paneli":
         panel_area = pin_data.panel_area or 10.0
-        
-        # Pylance Hatası Düzeltmesi: Tip zorlaması yapılıyor
         efficiency: float = 0.20
         model_name: str = "Veri Analizli Standart Panel"
         
-        # Dinamik Ekipman Kullanımı
         if selected_equipment is not None and str(selected_equipment.type) == "Solar":
             efficiency = float(selected_equipment.efficiency) # type: ignore
             model_name = str(selected_equipment.name) # type: ignore
@@ -75,13 +76,12 @@ def calculate_pin_potential(
             latitude=pin_data.latitude,
             longitude=pin_data.longitude,
             panel_area=panel_area,
-            panel_efficiency=efficiency # Dinamik verim
+            panel_efficiency=efficiency 
         )
         
         if "error" in results:
              raise HTTPException(status_code=500, detail=results["error"])
 
-        # Response Modelini Doldurma
         solar_response = SolarCalculationResponse(
             solar_irradiance_kw_m2=results["daily_avg_potential_kwh_m2"], 
             temperature_celsius=25.0,
@@ -94,33 +94,25 @@ def calculate_pin_potential(
             resource_type="Güneş Paneli",
             solar_calculation=solar_response
         )
-
+    
     elif pin_data.type == "Rüzgar Türbini":
         
-        # Varsayılanlar
         power_curve = wind_calculations.EXAMPLE_TURBINE_POWER_CURVE
         model_name: str = "Standart 3.3MW Türbin"
 
-        # Dinamik Ekipman Kullanımı
         if selected_equipment is not None and str(selected_equipment.type) == "Wind":
             model_name = str(selected_equipment.name) # type: ignore
-            
-            # Hata Giderildi: specs'i açıkça kontrol et ve kullan (Pylance'ı yatıştırmak için)
             specs_data = selected_equipment.specs
-            if specs_data is not None and "power_curve" in specs_data: # <--- DÜZELTİLDİ
+            if specs_data is not None and "power_curve" in specs_data:
                 raw_curve = specs_data["power_curve"]
                 power_curve = {float(k): float(v) for k, v in raw_curve.items()} # type: ignore
 
-        # Veri Çekme
+        # Veri Çekme (Şu anlık API/Modül üzerinden, ileride SystemDB'den çekilebilir)
         wind_speed = wind_calculations.get_wind_speed_from_coordinates(
             pin_data.latitude, pin_data.longitude
         )
         
-        # Seçilen eğriye göre güç hesabı (Bu, ML tabanlı hesaplamanın sadeleştirilmişidir)
-        power_kw = wind_calculations.get_power_from_curve(wind_speed, power_curve)
-        annual_kwh = power_kw * 8760 
-        
-        # HASSAS HESAPLAMA ÇAĞRISI (ML ve 10 yıllık veri)
+        # HASSAS HESAPLAMA ÇAĞRISI
         results = wind_calculations.calculate_wind_power_production(
             latitude=pin_data.latitude,
             longitude=pin_data.longitude
@@ -130,8 +122,8 @@ def calculate_pin_potential(
         
         wind_response = WindCalculationResponse(
             wind_speed_m_s=round(results["avg_wind_speed_ms"], 2),
-            power_output_kw=round(results["predicted_annual_production_kwh"], 0), # Gelecek Tahmini Üretimi
-            turbine_model=model_name # Tip zorlaması yapıldığı için sorun kalmadı
+            power_output_kw=round(results["predicted_annual_production_kwh"], 0),
+            turbine_model=model_name
         )
         
         return PinCalculationResponse(
@@ -143,21 +135,16 @@ def calculate_pin_potential(
         raise HTTPException(status_code=400, detail="Geçersiz kaynak tipi.")
 
 
-# --- YENİ EKLENEN GRID HARİTASI ENDPOINT'İ ---
+# --- GRID ENDPOINT ---
 @router.get("/map-data", response_model=List[schemas.GridResponse])
 def get_grid_map_data(
     type: str = Query(..., description="Analiz tipi: Solar veya Wind"),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_system_db), # Grid verisi SystemDB'de
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
-    """
-    Tüm Türkiye için önbelleklenmiş Grid Skorlarını (Akıllı Tavsiye Haritası) döndürür.
-    Flutter bu veriyi haritayı renklendirmek için kullanır.
-    """
     if type not in ["Solar", "Wind"]:
         raise HTTPException(status_code=400, detail="Geçersiz analiz tipi. 'Solar' veya 'Wind' olmalı.")
     
-    # GridAnalysis tablosundaki verileri çek
     grid_data = db.query(models.GridAnalysis).filter(
         models.GridAnalysis.type == type,
         models.GridAnalysis.overall_score > 0.0

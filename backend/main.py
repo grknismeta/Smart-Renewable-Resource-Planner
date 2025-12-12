@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .database import engine
+from .database import UserEngine, SystemEngine
 from . import models
 
 # --- ROUTERLARI IMPORT ET ---
@@ -9,7 +9,8 @@ from .routers import pins, users, equipments
 # ----------------------------
 
 # Veritabanı tablolarını oluştur (Eğer yoksa)
-models.Base.metadata.create_all(bind=engine)
+models.SystemBase.metadata.create_all(bind=SystemEngine)
+models.UserBase.metadata.create_all(bind=UserEngine)
 
 app = FastAPI(
     title="Smart Renewable Resource Planner (SRRP) API",
