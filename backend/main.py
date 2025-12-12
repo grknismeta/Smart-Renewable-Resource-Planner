@@ -5,7 +5,7 @@ from . import models
 
 # --- ROUTERLARI IMPORT ET ---
 # DİKKAT: Eski 'turbines' ve 'solar_panels' dosyaları yerine artık 'equipments' var.
-from .routers import pins, users, equipments 
+from .routers import pins, users, equipments, scenario 
 # ----------------------------
 
 # Veritabanı tablolarını oluştur (Eğer yoksa)
@@ -33,6 +33,9 @@ app.include_router(users.router, prefix="/users", tags=["Users"])
 
 # Yeni Ekipman Router'ı (Rüzgar türbinleri ve Güneş panelleri burada)
 app.include_router(equipments.router, prefix="/equipments", tags=["Equipments"])
+
+# Senaryo Router'ı (ML Tahmin Senaryoları)
+app.include_router(scenario.router, prefix="/scenarios", tags=["Scenarios"])
 
 @app.get("/")
 def read_root():
