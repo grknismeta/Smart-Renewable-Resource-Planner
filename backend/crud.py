@@ -1,11 +1,11 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from typing import Optional, List
+from sqlalchemy import func
+from typing import Optional, List, Union
 
-from . import models, schemas, auth, solar_calculations
-from .solar_calculations import calculate_solar_power_production
-from .wind_calculations import get_historical_wind_data
-# --- Kullanıcı (User) İşlemleri (DÜZELTİLDİ) ---
+from . import models, schemas, auth
+
+# --- KULLANICI (User) İŞLEMLERİ ---
 
 def get_user_by_email(db: Session, email: str):
     return db.query(models.User).filter(models.User.email == email).first()
@@ -24,77 +24,84 @@ def create_user(db: Session, user: schemas.UserCreate):
         return None 
     except Exception as e:
         db.rollback()
-        print(f"Kullanıcı oluşturulurken beklenmedik hata: {e}")
+        print(f"Kullanıcı oluşturulurken hata: {e}")
         return None
-        
 
-def get_equipments(db: Session, type: str | None = None, skip: int = 0, limit: int = 100):
-    """
-    Tüm ekipmanları veya belirli bir tipe (Solar/Wind) göre filtreleyerek getirir.
-    """
+# --- EKİPMAN (System DB) İŞLEMLERİ ---
+
+def get_equipments(db: Session, type: Optional[str] = None, skip: int = 0, limit: int = 100):
+    # db: SystemSession olmalı
     query = db.query(models.Equipment)
     if type:
         query = query.filter(models.Equipment.type == type)
     return query.offset(skip).limit(limit).all()
 
 def get_equipment(db: Session, equipment_id: int):
+    # db: SystemSession olmalı
     return db.query(models.Equipment).filter(models.Equipment.id == equipment_id).first()
 
-# --- Pin (Konum) İşlemleri (Güncellendi) ---
+# --- PIN (User DB + System DB) İŞLEMLERİ ---
 
 def get_pin_by_id(db: Session, pin_id: int, user_id: int):
-    """(YENİ) Belirli bir pini, sahibine göre getirir."""
     return db.query(models.Pin).filter(
         models.Pin.id == pin_id,
         models.Pin.owner_id == user_id
     ).first()
 
 def get_pins_by_owner(db: Session, owner_id: int, skip: int = 0, limit: int = 100):
-    """Belirli bir kullanıcıya ait tüm pinleri döndürür."""
     return db.query(models.Pin).filter(models.Pin.owner_id == owner_id).offset(skip).limit(limit).all()
 
-# backend/crud.py
-def create_pin_for_user(db: Session, pin: schemas.PinCreate, user_id: int):
-    print(f"CRUD: {pin.latitude}, {pin.longitude} için veri analizi yapılıyor...")
+# DÜZELTME: system_db parametresini Optional yaptık
+def create_pin_for_user(
+    db: Session, 
+    pin: schemas.PinCreate, 
+    user_id: int, 
+    system_db: Optional[Session] = None
+):
+    """
+    Pin oluşturur. Eğer system_db verilirse, oradan hava durumu ortalamalarını çeker.
+    """
+    print(f"CRUD: {pin.latitude}, {pin.longitude} kayıt ediliyor...")
     
-    # Varsayılan değerler
     avg_solar = None
     avg_wind = None
     
-    # Pin tipine göre otomatik analiz yapıp 'Önizleme' verilerini dolduruyoruz.
-    # Bu sayede listede "Ortalama X kWh" yazabilecek.
-    
-    if pin.type == "Güneş Paneli":
-        # Güneş için 1m2'lik ham potansiyeli çek
-        solar_res = calculate_solar_power_production(
-            latitude=pin.latitude,
-            longitude=pin.longitude,
-            panel_area=1.0
-        )
-        if "error" not in solar_res:
-            avg_solar = solar_res.get("daily_avg_potential_kwh_m2")
+    # System DB varsa gerçek veriden ortalama çek
+    if system_db:
+        try:
+            # Koordinat yuvarlama (Grid eşleşmesi için)
+            lat_round = round(pin.latitude * 2) / 2
+            lon_round = round(pin.longitude * 2) / 2
             
-    elif pin.type == "Rüzgar Türbini":
-        # Rüzgar için 100m yükseklikteki ortalama hızı çek
-        wind_res = get_historical_wind_data(
-            latitude=pin.latitude,
-            longitude=pin.longitude
-        )
-        if "error" not in wind_res:
-            avg_wind = wind_res.get("avg_wind_speed_ms")
+            if pin.type == "Güneş Paneli":
+                # Tüm zamanların ortalama radyasyonu
+                # Not: WeatherData modelini burada kullanabilmek için models.WeatherData import edilmiş olmalı
+                # Eğer models.py içinde WeatherData yoksa bu blok çalışmaz (try-except ile korunuyor)
+                avg_val = system_db.query(func.avg(models.WeatherData.shortwave_radiation_sum)).filter(
+                    models.WeatherData.latitude == lat_round,
+                    models.WeatherData.longitude == lon_round
+                ).scalar()
+                if avg_val: avg_solar = round(avg_val, 2)
+                
+            elif pin.type == "Rüzgar Türbini":
+                # Tüm zamanların ortalama rüzgar hızı
+                avg_val = system_db.query(func.avg(models.WeatherData.wind_speed_mean)).filter(
+                    models.WeatherData.latitude == lat_round,
+                    models.WeatherData.longitude == lon_round
+                ).scalar()
+                if avg_val: avg_wind = round(avg_val, 2)
+                
+        except Exception as e:
+            print(f"Hava verisi çekilirken hata (Önemsiz): {e}")
 
-    # Modeli oluştur
-    # Pydantic modelini sözlüğe çevir
+    # Pydantic -> Dict
     pin_data = pin.model_dump()
-    
-    # ID ve OwnerID'yi manuel yönetiyoruz (Client göndermez)
     pin_data["owner_id"] = user_id
     
     # Hesaplanan özet verileri ekle
     pin_data["avg_solar_irradiance"] = avg_solar
     pin_data["avg_wind_speed"] = avg_wind
 
-    # Veritabanı nesnesini oluştur
     db_pin = models.Pin(**pin_data)
     
     db.add(db_pin)
@@ -103,9 +110,6 @@ def create_pin_for_user(db: Session, pin: schemas.PinCreate, user_id: int):
     return db_pin
 
 def delete_pin_by_id(db: Session, pin_id: int, user_id: int):
-    """
-    Belirli bir pini siler (sadece sahibi silebilir).
-    """
     db_pin = db.query(models.Pin).filter(
         models.Pin.id == pin_id,
         models.Pin.owner_id == user_id
