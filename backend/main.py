@@ -1,43 +1,39 @@
-# main.py
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-# from sqlalchemy.orm import Session 
+from .database import UserEngine, SystemEngine
+from . import models
 
-# Düzeltildi: .models yerine direkt models import edildi.
-import models 
-from database import engine 
-from routers import users, pins 
+# --- ROUTERLARI IMPORT ET ---
+# DİKKAT: Eski 'turbines' ve 'solar_panels' dosyaları yerine artık 'equipments' var.
+from .routers import pins, users, equipments 
+# ----------------------------
 
+# Veritabanı tablolarını oluştur (Eğer yoksa)
+models.SystemBase.metadata.create_all(bind=SystemEngine)
+models.UserBase.metadata.create_all(bind=UserEngine)
 
-# 1. Veritabanı tabloları oluşturulur.
-models.Base.metadata.create_all(bind=engine)
-
-# 2. FastAPI uygulaması oluşturulur.
 app = FastAPI(
-    title="SRRP Backend API",
-    description="Smart Renewable Resources Project - Yenilenebilir Kaynak Planlama API'si",
-    version="1.0.0",
+    title="Smart Renewable Resource Planner (SRRP) API",
+    description="Güneş ve Rüzgar enerjisi potansiyeli hesaplama ve planlama API'si",
+    version="1.0.0"
 )
 
-# 3. CORS ayarları oluşturulan app'e eklenir.
-origins = ["*"]
+# --- CORS AYARLARI ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 4. Router'lar uygulamaya dahil edilir.
-app.include_router(users.router)
-app.include_router(pins.router)
+# --- ROUTERLARI UYGULAMAYA EKLE ---
+app.include_router(pins.router, prefix="/pins", tags=["Pins"])
+app.include_router(users.router, prefix="/users", tags=["Users"])
 
-# 5. Kök Uç Nokta
+# Yeni Ekipman Router'ı (Rüzgar türbinleri ve Güneş panelleri burada)
+app.include_router(equipments.router, prefix="/equipments", tags=["Equipments"])
+
 @app.get("/")
 def read_root():
-    return {"message": "SRRP Backend çalışıyor! /docs adresini ziyaret edin."}
-
-# NOT: Eski SessionLocal import'u main.py'den kaldırıldı.
-# database dependency'si router'lar içinde tanımlanmıştır.
+    return {"message": "SRRP API başarıyla çalışıyor! 🚀"}

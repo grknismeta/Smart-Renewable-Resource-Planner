@@ -1,0 +1,191 @@
+import requests
+import statistics
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+
+# --- SABİTLER ---
+STC_TEMPERATURE = 25.0  # Standart Test Koşulları Sıcaklığı (°C)
+
+def get_historical_hourly_solar_data(latitude: float, longitude: float) -> Dict[str, Any]:
+    """
+    Open-Meteo Archive API'den son 1 yılın SAATLİK güneş ve hava durumu verilerini çeker.
+    
+    Bu fonksiyon projenin 'Veri Madenciliği' kalbidir.
+    
+    Çekilen Veriler (Saatlik):
+    - shortwave_radiation (GHI): Küresel Yatay Işınım (W/m²) - Panel üretimi için ana veri.
+    - direct_normal_irradiance (DNI): Direkt Işınım (W/m²) - Odaklı sistemler için.
+    - diffuse_radiation (DHI): Yayılı Işınım (W/m²) - Bulutlu günler için.
+    - temperature_2m: Sıcaklık (°C) - Panel verim kaybı hesabı için.
+    - cloud_cover: Bulutluluk Oranı (%) - ML eğitimi için özellik (feature).
+    
+    Dönüş (Sözlük):
+    - 'hourly_data': Ham saatlik veri listesi (Makine Öğrenmesi verisetini oluşturmak için).
+    - 'monthly_stats': Aylık gruplanmış istatistikler (Flutter grafikleri için).
+    - 'annual_total_ghi_kwh': Yıllık toplam potansiyel (kWh/m²).
+    """
+    
+    # 1. Tarih Aralığını Belirle (Geçen yılın bugünü ile 5 gün öncesi arası)
+    # Veri sağlayıcıların kesinleşmesi için 5 gün geriden geliyoruz (Quality Check).
+    end_date = datetime.now() - timedelta(days=5) 
+    start_date = end_date - timedelta(days=365)
+    
+    str_start = start_date.strftime("%Y-%m-%d")
+    str_end = end_date.strftime("%Y-%m-%d")
+    
+    print(f"--- VERİ ÇEKİLİYOR ---")
+    print(f"Konum: {latitude}, {longitude}")
+    print(f"Aralık: {str_start} - {str_end}")
+
+    BASE_URL = "https://archive-api.open-meteo.com/v1/archive"
+    
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "start_date": str_start,
+        "end_date": str_end,
+        "hourly": "shortwave_radiation,direct_normal_irradiance,diffuse_radiation,temperature_2m,cloud_cover",
+        "timezone": "auto"
+    }
+
+    try:
+        response = requests.get(BASE_URL, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        hourly = data.get("hourly", {})
+        
+        # Veri listeleri (8760 saatlik veri)
+        time_list = hourly.get("time", [])
+        ghi_list = hourly.get("shortwave_radiation", []) # W/m²
+        dni_list = hourly.get("direct_normal_irradiance", []) # W/m²
+        dhi_list = hourly.get("diffuse_radiation", []) # W/m²
+        temp_list = hourly.get("temperature_2m", []) # °C
+        cloud_list = hourly.get("cloud_cover", []) # %
+        
+        if not ghi_list:
+            print("Hata: API'den boş veri döndü.")
+            return {"error": "Boş veri"}
+
+        # --- İŞLEME 1: Yıllık Toplam Potansiyel ---
+        # Saatlik W/m² verilerini toplarsak Wh/m² elde ederiz.
+        # Bunu 1000'e bölersek kWh/m² olur.
+        valid_ghi = [x for x in ghi_list if x is not None]
+        total_annual_ghi_wh = sum(valid_ghi)
+        total_annual_ghi_kwh = total_annual_ghi_wh / 1000.0
+        
+        daily_avg_kwh = total_annual_ghi_kwh / 365.0
+        
+        print(f"Yıllık Toplam Işınım: {total_annual_ghi_kwh:.2f} kWh/m²")
+
+        # --- İŞLEME 2: Aylık Gruplama (Flutter Grafikleri İçin) ---
+        monthly_data = {}
+        
+        for i, time_str in enumerate(time_list):
+            if ghi_list[i] is None: continue
+            
+            # Zaman stringi formatı: "2023-01-01T00:00"
+            # Ay bilgisini çekiyoruz (01, 02...)
+            month = time_str.split("-")[1] 
+            
+            if month not in monthly_data:
+                monthly_data[month] = {
+                    "sum_ghi": 0.0, 
+                    "sum_temp": 0.0, 
+                    "count": 0,
+                    "avg_cloud": 0.0
+                }
+            
+            monthly_data[month]["sum_ghi"] += ghi_list[i]
+            monthly_data[month]["sum_temp"] += (temp_list[i] or 0)
+            monthly_data[month]["avg_cloud"] += (cloud_list[i] or 0)
+            monthly_data[month]["count"] += 1
+            
+        # Ortalamaları hesaplayıp listeye çevir
+        processed_monthly_stats = []
+        for m in sorted(monthly_data.keys()):
+            stats = monthly_data[m]
+            
+            # O aydaki toplam üretim (kWh/m²)
+            monthly_total_kwh = stats["sum_ghi"] / 1000.0 
+            
+            # O aydaki ortalama sıcaklık
+            avg_temp = stats["sum_temp"] / stats["count"]
+            
+            processed_monthly_stats.append({
+                "month": int(m),
+                "total_production_kwh_m2": round(monthly_total_kwh, 2),
+                "avg_temperature_c": round(avg_temp, 1),
+                "avg_cloud_cover": round(stats["avg_cloud"] / stats["count"], 1)
+            })
+
+        # --- İŞLEME 3: ML İçin Ham Veri Yapılandırması ---
+        # Bu veriyi veritabanına JSON olarak kaydedebiliriz.
+        # İleride "Gelecek Tahmini" modelini eğitirken X_train olarak kullanacağız.
+        ml_ready_hourly_data = []
+        for i in range(len(time_list)):
+            ml_ready_hourly_data.append({
+                "time": time_list[i],
+                "ghi": ghi_list[i],
+                "temp": temp_list[i],
+                "cloud": cloud_list[i]
+            })
+
+        return {
+            "annual_total_ghi_kwh": total_annual_ghi_kwh,
+            "daily_avg_kwh": daily_avg_kwh,
+            "monthly_stats": processed_monthly_stats,
+            "hourly_data_count": len(ml_ready_hourly_data),
+            # "raw_data": ml_ready_hourly_data # DİKKAT: Veritabanı şişmesin diye bunu şimdilik kapalı tutuyoruz, ihtiyaç anında açacağız.
+        }
+
+    except requests.exceptions.RequestException as e:
+        print(f"API Bağlantı Hatası: {e}")
+        return {"error": str(e)}
+
+# --- SİSTEM HESAPLAMA ---
+def calculate_solar_power_production(
+    latitude: float,
+    longitude: float,
+    panel_area: float,
+    panel_efficiency: float = 0.20, # %20 Verim (Standart Modern Panel)
+    performance_ratio: float = 0.75 # Sistem Kayıpları (%25 kayıp standarttır: Kablo, Inverter, Toz)
+) -> Dict:
+    
+    # 1. Gerçek Veriyi Çek (veya veritabanından önbelleği kontrol et - İleride eklenecek)
+    data = get_historical_hourly_solar_data(latitude, longitude)
+    
+    if "error" in data:
+        return data # Hatayı yukarı fırlat
+    
+    annual_ghi = data["annual_total_ghi_kwh"] # kWh/m²
+    
+    # 2. Yıllık Enerji Üretimi Formülü:
+    # Enerji (kWh) = Alan (m²) * Işınım (kWh/m²) * Panel Verimi * Performans Oranı
+    
+    annual_energy_kwh = panel_area * annual_ghi * panel_efficiency * performance_ratio
+    
+    # Aylık verileri de sistem büyüklüğüne göre ölçekle
+    monthly_system_production = []
+    for month_stat in data["monthly_stats"]:
+        monthly_prod = panel_area * month_stat["total_production_kwh_m2"] * panel_efficiency * performance_ratio
+        
+        monthly_system_production.append({
+            "month": month_stat["month"],
+            "production_kwh": round(monthly_prod, 2),
+            "avg_temp": month_stat["avg_temperature_c"]
+        })
+
+    return {
+        "annual_potential_kwh_m2": data["annual_total_ghi_kwh"],
+        "daily_avg_potential_kwh_m2": data["daily_avg_kwh"],
+        "system_annual_production_kwh": annual_energy_kwh,
+        "monthly_breakdown": monthly_system_production,
+        "panel_efficiency": panel_efficiency,
+        "performance_ratio": performance_ratio
+    }
+
+# Uyumluluk için eski fonksiyon isimlerini koruyalım ama bu yeni sistemi kullandırtalım
+def calculate_solar_power(*args, **kwargs):
+    # Eski imzayı yakala ama yeni mantığa yönlendir
+    return calculate_solar_power_production(*args, **kwargs)
