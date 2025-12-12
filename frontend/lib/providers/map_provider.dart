@@ -8,28 +8,36 @@ import 'auth_provider.dart';
 
 enum MapLayer { none, wind, temp }
 
+// --- 1. GÜNCELLEME: Pin ekleme modunu String olarak tanımla ---
+// 'isPlacingMarker' boolean'ı yerine, ne eklediğimizi tutan bir String kullanıyoruz.
+// null = pin ekleme modu kapalı.
+typedef PinType = String;
+
 class MapProvider extends ChangeNotifier {
   final ApiService _apiService;
   final AuthProvider _authProvider;
-  
+
   List<Pin> _pins = [];
   bool _isLoading = false;
-  bool _isPlacingMarker = false;
+  // bool _isPlacingMarker = false; // <-- ESKİ
+  PinType? _placingPinType; // <-- YENİ
   MapLayer _currentLayer = MapLayer.none;
-  PinResult? _latestCalculationResult;
+  PinCalculationResponse? _latestCalculationResult;
 
   List<Pin> get pins => _pins;
   bool get isLoading => _isLoading;
-  bool get isPlacingMarker => _isPlacingMarker;
+  // bool get isPlacingMarker => _isPlacingMarker; // <-- ESKİ
+  PinType? get placingPinType => _placingPinType; // <-- YENİ
   MapLayer get currentLayer => _currentLayer;
-  PinResult? get latestCalculationResult => _latestCalculationResult;
+  PinCalculationResponse? get latestCalculationResult =>
+      _latestCalculationResult;
 
   MapProvider(this._apiService, this._authProvider) {
-    // AuthProvider'ın giriş durumu değiştiğinde pinleri yenile
     _authProvider.addListener(_handleAuthChange);
   }
-  
+
   void _handleAuthChange() {
+    // ... (değişiklik yok) ...
     if (_authProvider.isLoggedIn == true) {
       fetchPins();
     } else if (_authProvider.isLoggedIn == false) {
@@ -39,11 +47,27 @@ class MapProvider extends ChangeNotifier {
   }
 
   // --- UI İşlemleri ---
-  void togglePlacingMarkerMode() {
-    _isPlacingMarker = !_isPlacingMarker;
+  // ... (togglePlacingMarkerMode, changeMapLayer, clearCalculationResult - değişiklik yok) ...
+  // --- 2. GÜNCELLEME: 'toggle' yerine iki ayrı fonksiyon ---
+  void startPlacingMarker(PinType type) {
+    // Eğer zaten o tipte ekleme modundaysa, modu kapat
+    if (_placingPinType == type) {
+      _placingPinType = null;
+    } else {
+      _placingPinType = type;
+    }
     notifyListeners();
   }
 
+  void stopPlacingMarker() {
+    _placingPinType = null;
+    notifyListeners();
+  }
+  // --- GÜNCELLEME SONU ---
+    void setLayer(MapLayer layer) {
+    _currentLayer = layer;
+    notifyListeners();
+  }
   void changeMapLayer() {
     switch (_currentLayer) {
       case MapLayer.none:
@@ -58,7 +82,7 @@ class MapProvider extends ChangeNotifier {
     }
     notifyListeners();
   }
-  
+
   void clearCalculationResult() {
     _latestCalculationResult = null;
     notifyListeners();
@@ -66,13 +90,13 @@ class MapProvider extends ChangeNotifier {
 
   // --- API İşlemleri ---
   Future<void> fetchPins() async {
+    // ... (değişiklik yok) ...
     if (_authProvider.isLoggedIn != true) return;
     _isLoading = true;
     notifyListeners();
     try {
       _pins = await _apiService.fetchPins();
     } catch (e) {
-      // Hata yönetimi AuthProvider'a bırakılabilir (logout) veya sadece loglanabilir.
       print('Pin yüklenirken hata: $e');
     } finally {
       _isLoading = false;
@@ -80,9 +104,16 @@ class MapProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> addPin(LatLng point) async {
+  // --- 2. GÜNCELLEME: 'addPin' fonksiyonu artık tüm verileri alıyor ---
+  Future<void> addPin(
+    LatLng point,
+    String name,
+    String type,
+    double capacityMw,
+  ) async {
     try {
-      await _apiService.addPin(point);
+      // Aldığı parametreleri 'api_service'e iletiyor
+      await _apiService.addPin(point, name, type, capacityMw);
       await fetchPins(); // Yeni pini çekmek için listeyi yenile
     } catch (e) {
       print('Pin eklenirken hata: $e');
@@ -91,6 +122,7 @@ class MapProvider extends ChangeNotifier {
   }
 
   Future<void> deletePin(int pinId) async {
+    // ... (değişiklik yok) ...
     try {
       await _apiService.deletePin(pinId);
       await fetchPins(); // Silme sonrası listeyi yenile
@@ -99,12 +131,14 @@ class MapProvider extends ChangeNotifier {
       throw Exception('Pin silinemedi. Lütfen tekrar deneyin.');
     }
   }
-  
+
   Future<void> calculatePotential({
+    // ... (değişiklik yok) ...
     required double lat,
     required double lon,
     required String type,
     required double capacityMw,
+    double? panelArea,
   }) async {
     _isLoading = true;
     _latestCalculationResult = null;
@@ -115,6 +149,7 @@ class MapProvider extends ChangeNotifier {
         lon: lon,
         type: type,
         capacityMw: capacityMw,
+        panelArea: panelArea ?? 0.0,
       );
     } catch (e) {
       print('Hesaplama hatası: $e');
