@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from .database import UserEngine, SystemEngine
 from . import models
 
@@ -10,10 +11,32 @@ from .routers import pins, users, equipments, optimization # Optimization Eklend
 models.SystemBase.metadata.create_all(bind=SystemEngine)
 models.UserBase.metadata.create_all(bind=UserEngine)
 
+
+# --- STARTUP/SHUTDOWN YAŞAM DÖNGÜSÜ ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Backend başladığında çalışır
+    print("🚀 Backend başlatılıyor...")
+    
+    # Eksik günleri kontrol et ve doldur (arka planda)
+    try:
+        from .daily_updater import async_check_and_update
+        import asyncio
+        asyncio.create_task(async_check_and_update())
+    except Exception as e:
+        print(f"[DailyUpdater] Başlatma hatası: {e}")
+    
+    yield  # Uygulama çalışıyor
+    
+    # Shutdown: Backend kapanırken çalışır
+    print("👋 Backend kapatılıyor...")
+
+
 app = FastAPI(
     title="Smart Renewable Resource Planner (SRRP) API",
     description="Güneş ve Rüzgar enerjisi potansiyeli hesaplama ve planlama API'si",
-    version="2.1.0"
+    version="2.1.0",
+    lifespan=lifespan
 )
 
 # --- CORS AYARLARI ---
