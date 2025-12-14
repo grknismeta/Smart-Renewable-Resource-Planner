@@ -5,7 +5,7 @@ from .database import UserEngine, SystemEngine
 from . import models
 
 # --- ROUTERLARI IMPORT ET ---
-from .routers import pins, users, equipments, optimization # Optimization Eklendi
+from .routers import pins, users, equipments, optimization, weather  # Weather Eklendi
 
 # Veritabanı tablolarını oluştur
 models.SystemBase.metadata.create_all(bind=SystemEngine)
@@ -18,13 +18,23 @@ async def lifespan(app: FastAPI):
     # Startup: Backend başladığında çalışır
     print("🚀 Backend başlatılıyor...")
     
-    # Eksik günleri kontrol et ve doldur (arka planda)
+    import asyncio
+    
+    # 1. Günlük veri eksiklerini kontrol et ve doldur
     try:
         from .daily_updater import async_check_and_update
-        import asyncio
         asyncio.create_task(async_check_and_update())
+        print("📅 Günlük veri güncelleyici başlatıldı")
     except Exception as e:
         print(f"[DailyUpdater] Başlatma hatası: {e}")
+    
+    # 2. Şehir bazlı saatlik verileri güncelle
+    try:
+        from .hourly_collector import async_update_hourly
+        asyncio.create_task(async_update_hourly())
+        print("⏰ Saatlik veri güncelleyici başlatıldı")
+    except Exception as e:
+        print(f"[HourlyCollector] Başlatma hatası: {e}")
     
     yield  # Uygulama çalışıyor
     
@@ -53,6 +63,7 @@ app.include_router(pins.router, prefix="/pins", tags=["Pins"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(equipments.router, prefix="/equipments", tags=["Equipments"])
 app.include_router(optimization.router) # Prefix router içinde tanımlı
+app.include_router(weather.router)  # Şehir bazlı hava durumu
 
 @app.get("/")
 def read_root():

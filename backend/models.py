@@ -114,6 +114,41 @@ class WeatherData(SystemBase):
     # Genel
     temperature_mean = Column(Float)
 
+
+# --- ŞEHİR BAZLI SAATLİK VERİ ---
+class HourlyWeatherData(SystemBase):
+    """81 il için saatlik hava durumu verisi"""
+    __tablename__ = "hourly_weather_data"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    city_name = Column(String, index=True)  # Şehir adı
+    latitude = Column(Float)
+    longitude = Column(Float)
+    timestamp = Column(DateTime, index=True)  # Saat bazlı zaman damgası
+    
+    # Sıcaklık
+    temperature_2m = Column(Float)  # °C
+    apparent_temperature = Column(Float)  # Hissedilen sıcaklık
+    
+    # Rüzgar
+    wind_speed_10m = Column(Float)  # m/s
+    wind_speed_100m = Column(Float)  # m/s (türbin yüksekliği)
+    wind_direction_10m = Column(Float)  # derece
+    wind_gusts_10m = Column(Float)  # Rüzgar hamleleri
+    
+    # Güneş
+    shortwave_radiation = Column(Float)  # W/m²
+    direct_radiation = Column(Float)  # W/m²
+    diffuse_radiation = Column(Float)  # W/m²
+    
+    # Nem ve Bulut
+    relative_humidity_2m = Column(Float)  # %
+    cloud_cover = Column(Float)  # %
+    
+    # Yağış
+    precipitation = Column(Float)  # mm
+
+
 # --- LEGACY MODELLER (Eski Routers'ı kurtarmak için) ---
 # backend/routers/turbines.py ve solar_panels.py dosyaları hala bunları import ediyor.
 # Projeyi refactor edene kadar bunları silmemeliyiz.

@@ -43,7 +43,7 @@ def setup_client(timeout=120):
     cache_session = requests_cache.CachedSession('.cache', expire_after=-1)
     # timeout parametresi requests session'a geçmez, bu yüzden retry'da backoff artırıyoruz
     retry_session = retry(cache_session, retries=5, backoff_factor=0.5)
-    return openmeteo_requests.Client(session=retry_session)
+    return openmeteo_requests.Client(session=retry_session) # type: ignore
 
 def save_response_to_db(db: Session, response, lat, lon):
     """Open-Meteo Binary yanıtını işleyip DB'ye kaydeder."""

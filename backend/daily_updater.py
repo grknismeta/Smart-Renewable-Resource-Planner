@@ -55,7 +55,7 @@ def setup_client():
     """Open-Meteo client'ı hazırlar."""
     cache_session = requests_cache.CachedSession('.cache_daily', expire_after=3600)
     retry_session = retry(cache_session, retries=3, backoff_factor=0.3)
-    return openmeteo_requests.Client(session=retry_session)
+    return openmeteo_requests.Client(session=retry_session) # type: ignore
 
 
 def save_responses_to_db(db: Session, responses, batch_points):
