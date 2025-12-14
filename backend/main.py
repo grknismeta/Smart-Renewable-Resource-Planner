@@ -4,18 +4,16 @@ from .database import UserEngine, SystemEngine
 from . import models
 
 # --- ROUTERLARI IMPORT ET ---
-# DİKKAT: Eski 'turbines' ve 'solar_panels' dosyaları yerine artık 'equipments' var.
-from .routers import pins, users, equipments 
-# ----------------------------
+from .routers import pins, users, equipments, optimization # Optimization Eklendi
 
-# Veritabanı tablolarını oluştur (Eğer yoksa)
+# Veritabanı tablolarını oluştur
 models.SystemBase.metadata.create_all(bind=SystemEngine)
 models.UserBase.metadata.create_all(bind=UserEngine)
 
 app = FastAPI(
     title="Smart Renewable Resource Planner (SRRP) API",
     description="Güneş ve Rüzgar enerjisi potansiyeli hesaplama ve planlama API'si",
-    version="1.0.0"
+    version="2.1.0"
 )
 
 # --- CORS AYARLARI ---
@@ -30,10 +28,9 @@ app.add_middleware(
 # --- ROUTERLARI UYGULAMAYA EKLE ---
 app.include_router(pins.router, prefix="/pins", tags=["Pins"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
-
-# Yeni Ekipman Router'ı (Rüzgar türbinleri ve Güneş panelleri burada)
 app.include_router(equipments.router, prefix="/equipments", tags=["Equipments"])
+app.include_router(optimization.router) # Prefix router içinde tanımlı
 
 @app.get("/")
 def read_root():
-    return {"message": "SRRP API başarıyla çalışıyor! 🚀"}
+    return {"message": "SRRP API başarıyla çalışıyor! 🚀 Sistem: Optimizasyon Modülü Aktif."}

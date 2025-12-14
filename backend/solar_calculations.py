@@ -1,186 +1,80 @@
-import requests # <-- IMPORT EKLENDİ
-import statistics
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, Any, List
 
-# --- YENİ IMPORT ---
-from .ml_predictor import predict_future_production 
-# -------------------
-
-STC_TEMPERATURE = 25.0
-EXAMPLE_PANEL_SPECS = {
-    "model_name": "Standart 400W Panel",
-    "power_rating_w": 400,
-    "dimensions_m": {"length": 2.0, "width": 1.0},
-    "base_efficiency": 0.20,
-    "temp_coefficient": -0.005,
-    "is_default": True
-}
-
-def get_historical_hourly_solar_data(latitude: float, longitude: float) -> Dict[str, Any]:
-    """
-    Open-Meteo Archive API'den veri çeker VE ML ile gelecek tahmini yapar.
-    """
-    # 1. Tarih Aralığı (10 YILLIK GENİŞ VERİ SETİ)
-    end_date = datetime.now() - timedelta(days=5) 
-    days_to_fetch = 3650 # 10 Yıl
-    start_date = end_date - timedelta(days=days_to_fetch)
-    
-    str_start = start_date.strftime("%Y-%m-%d")
-    str_end = end_date.strftime("%Y-%m-%d")
-    
-    print(f"--- VERİ ÇEKİLİYOR (10 Yıllık) ---")
-    print(f"Aralık: {str_start} - {str_end}")
-    
-    BASE_URL = "https://archive-api.open-meteo.com/v1/archive"
-    params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "start_date": str_start,
-        "end_date": str_end,
-        "hourly": "shortwave_radiation,temperature_2m", 
-        "timezone": "auto"
-    }
-
-    try:
-        response = requests.get(BASE_URL, params=params)
-        response.raise_for_status() # <-- Hata kodunu yakalamak için kritik satır
-        data = response.json()
-        
-        hourly = data.get("hourly", {})
-        time_list = hourly.get("time", [])
-        ghi_list = hourly.get("shortwave_radiation", []) # W/m²
-        temp_list = hourly.get("temperature_2m", []) # °C
-        
-        if not ghi_list:
-            return {"error": "Boş veri"}
-
-        # --- 1. GEÇMİŞ VERİ ANALİZİ (NORMALİZASYON) ---
-        valid_ghi = [x for x in ghi_list if x is not None]
-        total_fetched_ghi_kwh = sum(valid_ghi) / 1000.0
-        
-        actual_days_fetched = len(time_list) / 24.0
-        if actual_days_fetched > 0:
-            daily_avg_kwh = total_fetched_ghi_kwh / actual_days_fetched
-        else:
-            daily_avg_kwh = 0.0
-        
-        annual_avg_ghi_kwh = daily_avg_kwh * 365.0
-        
-        print(f"10 Yıllık Toplam: {total_fetched_ghi_kwh:.2f} kWh/m²")
-        print(f"Yıllık Ortalama: {annual_avg_ghi_kwh:.2f} kWh/m²")
-        
-        # --- 2. AYLIK GRUPLAMA (ORTALAMA) ---
-        monthly_aggregate = {} 
-        
-        for i, time_str in enumerate(time_list):
-            if ghi_list[i] is None: continue
-            month = time_str.split("-")[1] 
-            
-            if month not in monthly_aggregate:
-                monthly_aggregate[month] = {"ghi_sum": 0.0, "temp_sum": 0.0, "hours": 0}
-            
-            monthly_aggregate[month]["ghi_sum"] += ghi_list[i]
-            monthly_aggregate[month]["temp_sum"] += (temp_list[i] or 0)
-            monthly_aggregate[month]["hours"] += 1
-            
-        processed_monthly_stats = []
-        for m in sorted(monthly_aggregate.keys()):
-            stats = monthly_aggregate[m]
-            
-            if stats["hours"] > 0:
-                avg_hourly_ghi_kw = (stats["ghi_sum"] / stats["hours"]) / 1000.0
-                avg_monthly_total_kwh = avg_hourly_ghi_kw * 24 * 30.4
-                avg_temp = stats["temp_sum"] / stats["hours"]
-            else:
-                avg_monthly_total_kwh = 0
-                avg_temp = 0
-            
-            processed_monthly_stats.append({
-                "month": int(m),
-                "total_production_kwh_m2": round(avg_monthly_total_kwh, 2),
-                "avg_temperature_c": round(avg_temp, 1)
-            })
-
-        # --- 3. ML İÇİN VERİ HAZIRLIĞI VE TAHMİN ---
-        ml_training_data = []
-        for i in range(len(time_list)):
-            if ghi_list[i] is not None:
-                ml_training_data.append({
-                    "time": time_list[i],
-                    "value": ghi_list[i] 
-                })
-        
-        future_prediction = predict_future_production(ml_training_data, resource_type="solar")
-
-        return {
-            "annual_total_ghi_kwh": annual_avg_ghi_kwh,
-            "daily_avg_kwh": daily_avg_kwh,
-            "monthly_stats": processed_monthly_stats,
-            "future_prediction": future_prediction,
-            "raw_data_for_ml": ml_training_data
-        }
-
-    except requests.exceptions.HTTPError as errh:
-        print(f"Hata: {errh}")
-        return {"error": str(errh)}
-    except requests.exceptions.RequestException as erre:
-        print(f"İstek Hatası: {erre}")
-        return {"error": str(erre)}
-    except Exception as e:
-        print(f"Genel Hata: {e}")
-        return {"error": str(e)}
-
-# --- SİSTEM HESAPLAMA ---
 def calculate_solar_power_production(
-    latitude: float,
-    longitude: float,
-    panel_area: float,
+    latitude: float, 
+    longitude: float, 
+    panel_area: float, 
     panel_efficiency: float = 0.20,
-    performance_ratio: float = 0.75
-) -> Dict:
+    weather_stats: Dict[str, Any] = None # type: ignore
+) -> Dict[str, Any]:
+    """
+    Veritabanından gelen gerçek verilerle (weather_stats) yıllık üretim hesabı yapar.
+    ML veya dış API kullanmaz. Tamamen fiziksel ve istatistikseldir.
+    """
     
-    data = get_historical_hourly_solar_data(latitude, longitude)
-    
-    if "error" in data:
-        return {"error": data["error"]}
-    
-    # 10 Yıllık ortalamaya dayalı standart hesap
-    annual_ghi = data["annual_total_ghi_kwh"]
-    annual_energy_kwh = panel_area * annual_ghi * panel_efficiency * performance_ratio
-    
-    # ML Tahminine dayalı hesap (Gelecek yıl)
-    predicted_ghi = data["future_prediction"].get("total_prediction_value", 0.0) # total_prediction_value kullanılır
-    predicted_annual_energy_kwh = panel_area * predicted_ghi * panel_efficiency * performance_ratio
+    # --- 1. Radyasyon Verisi Belirleme ---
+    if weather_stats and "annual_avg" in weather_stats and weather_stats["annual_avg"]["solar"] is not None:
+        # Veritabanında kayıtlı 'shortwave_radiation_sum' verisi MJ/m² birimindedir.
+        # Elektrik üretimi için bunu kWh/m² birimine çevirmeliyiz.
+        # 1 kWh = 3.6 MJ  =>  kWh = MJ / 3.6
+        daily_irradiance_mj = weather_stats["annual_avg"]["solar"]
+        daily_irradiance_kwh = daily_irradiance_mj / 3.6
+        
+        monthly_distribution = weather_stats.get("monthly", {})
+    else:
+        # Eğer veri yoksa (Fallback), Türkiye ortalaması veya enlem bazlı tahmin
+        print(f"Uyarı: ({latitude}, {longitude}) için DB verisi yok. Tahmini hesap yapılıyor.")
+        # Enlem arttıkça radyasyon düşer (Basit model)
+        daily_irradiance_kwh = 5.5 - ((latitude - 36) * 0.2) 
+        monthly_distribution = None
 
-    # ML Aylık Verileri İşle
-    ml_monthly_system_production = []
-    if "monthly_predictions" in data["future_prediction"]:
-        for pred in data["future_prediction"]["monthly_predictions"]:
-            prod = pred["prediction"] * panel_area * panel_efficiency * performance_ratio
-            ml_monthly_system_production.append({
-                "year": pred["year"],
-                "month": pred["month"],
-                "predicted_production_kwh": round(prod, 2)
-            })
+    # --- 2. Fiziksel Üretim Formülü ---
+    # E = A * r * H * PR
+    # PR (Performans Oranı): Sıcaklık kaybı, kablo kaybı, inverter verimi (~0.80 ideal)
+    PR = 0.80 
+    
+    # Günlük Ortalama Üretim (kWh)
+    daily_production = daily_irradiance_kwh * panel_area * panel_efficiency * PR
+    
+    # Yıllık Toplam Üretim (kWh)
+    annual_production = daily_production * 365
+    
+    # --- 3. Aylık Kırılım (Grafikler İçin) ---
+    month_names = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+    
+    monthly_preds = {}
+    
+    if monthly_distribution:
+        # Gerçek aylık verileri kullan
+        # monthly_distribution formatı: { '01': {'solar': 12.5, 'wind': 3.2}, ... }
+        sorted_months = sorted(monthly_distribution.keys())
+        
+        for i, m_code in enumerate(sorted_months):
+            if i >= 12: break # Güvenlik
+            
+            m_stats = monthly_distribution[m_code]
+            if m_stats["solar"]:
+                m_rad_kwh = m_stats["solar"] / 3.6
+                # Ay ortalama 30.4 gün
+                m_prod = m_rad_kwh * panel_area * panel_efficiency * PR * 30.4
+                monthly_preds[month_names[int(m_code)-1]] = round(m_prod, 2)
+            else:
+                monthly_preds[month_names[int(m_code)-1]] = 0
+                
+        # Eksik ay varsa doldur (Nadir durum)
+        for m in month_names:
+            if m not in monthly_preds:
+                monthly_preds[m] = round(annual_production / 12, 2)
+    else:
+        # Veri yoksa mevsimsel dağılım simülasyonu (Yazın çok, kışın az)
+        for i, m in enumerate(month_names):
+            # Basit sinüs eğrisi benzeri ağırlıklandırma
+            weight = 1 + (0.4 * (1 if 2 < i < 8 else -1))
+            monthly_preds[m] = round((annual_production / 12) * weight, 2)
 
+    # --- 4. Sonuç Dönüşü ---
     return {
-        "annual_potential_kwh_m2": annual_ghi,
-        "daily_avg_potential_kwh_m2": data["daily_avg_kwh"],
-        "system_annual_production_kwh": annual_energy_kwh,
-        "predicted_annual_production_kwh": predicted_annual_energy_kwh,
-        "monthly_breakdown": data["monthly_stats"],
-        "future_monthly_breakdown": ml_monthly_system_production,
-        "raw_data_for_ml": data["raw_data_for_ml"] # Senaryo için ham veriyi taşı
+        "daily_avg_potential_kwh_m2": round(daily_irradiance_kwh, 2),
+        "predicted_annual_production_kwh": round(annual_production, 2),
+        "month_by_month_prediction": monthly_preds
     }
-
-# Uyumluluk
-def get_annual_average_solar_potential(latitude: float, longitude: float) -> float | None:
-    data = get_historical_hourly_solar_data(latitude, longitude)
-    if "error" in data: return None
-    return data["daily_avg_kwh"]
-
-def calculate_solar_irradiance(*args, **kwargs): return 0.0
-def calculate_panel_efficiency(*args, **kwargs): return 0.0
-def get_temperature_from_coordinates(*args, **kwargs): return 0.0
-def calculate_solar_power(*args, **kwargs): return {}

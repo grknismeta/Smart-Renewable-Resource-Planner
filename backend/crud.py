@@ -121,3 +121,54 @@ def delete_pin_by_id(db: Session, pin_id: int, user_id: int):
         return True
     
     return False
+
+# --- WEATHER DATA (Sistem DB) İŞLEMLERİ ---
+
+def get_weather_stats(system_db: Session, latitude: float, longitude: float):
+    """
+    Belirli bir konumun 10 yıllık hava verisi istatistiklerini hesaplar.
+    """
+    # Grid noktasına yuvarla (Veri toplarken kullandığımız hassasiyet: 0.5)
+    lat_round = round(latitude * 2) / 2
+    lon_round = round(longitude * 2) / 2
+    
+    # 1. Genel Ortalamalar
+    stats = system_db.query(
+        func.avg(models.WeatherData.shortwave_radiation_sum).label("avg_rad"),
+        func.avg(models.WeatherData.wind_speed_mean).label("avg_wind"),
+        func.avg(models.WeatherData.temperature_mean).label("avg_temp")
+    ).filter(
+        models.WeatherData.latitude == lat_round,
+        models.WeatherData.longitude == lon_round
+    ).first()
+    
+    if not stats or stats.avg_rad is None:
+        return None # Veri yoksa None dön
+        
+    # 2. Aylık Dağılım (Mevsimsellik Analizi için)
+    # SQLite'da strftime('%m', date) ayı verir.
+    monthly_data = system_db.query(
+        func.strftime('%m', models.WeatherData.date).label("month"),
+        func.avg(models.WeatherData.shortwave_radiation_sum).label("avg_rad"),
+        func.avg(models.WeatherData.wind_speed_mean).label("avg_wind")
+    ).filter(
+        models.WeatherData.latitude == lat_round,
+        models.WeatherData.longitude == lon_round
+    ).group_by("month").order_by("month").all()
+    
+    # Aylık veriyi sözlüğe çevir { "01": {...}, "02": {...} }
+    monthly_dict = {}
+    for m in monthly_data:
+        monthly_dict[m.month] = {
+            "solar": m.avg_rad, # MJ/m2 veya kWh/m2 (birimi kontrol etmeli)
+            "wind": m.avg_wind  # m/s
+        }
+        
+    return {
+        "annual_avg": {
+            "solar": stats.avg_rad,
+            "wind": stats.avg_wind,
+            "temp": stats.avg_temp
+        },
+        "monthly": monthly_dict
+    }

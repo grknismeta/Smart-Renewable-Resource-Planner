@@ -1,27 +1,15 @@
-
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Literal, Any
-from datetime import datetime
+from datetime import datetime, date
 
-# --- EKİPMAN ŞEMALARI (YENİ) ---
-class EquipmentBase(BaseModel):
-    name: str
-    type: Literal["Solar", "Wind"]
-    rated_power_kw: float
-    efficiency: float
-    cost_per_unit: float
-    maintenance_cost_annual: float
-    specs: Dict[str, Any] = {} # Esnek teknik özellikler
+# --- AUTH & USER ---
+class Token(BaseModel):
+    access_token: str
+    token_type: str
 
-class EquipmentCreate(EquipmentBase):
-    pass
+class TokenData(BaseModel):
+    email: Optional[str] = None
 
-class EquipmentResponse(EquipmentBase):
-    id: int
-    class Config:
-        from_attributes = True
-
-# --- KULLANICI ŞEMALARI ---
 class UserBase(BaseModel):
     email: str
 
@@ -31,18 +19,28 @@ class UserCreate(UserBase):
 class UserResponse(UserBase):
     id: int
     is_active: bool
-    created_at: datetime
+    created_at: Optional[datetime] = None
     class Config:
         from_attributes = True
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
+# --- EKİPMAN ---
+class EquipmentBase(BaseModel):
+    name: str
+    type: str
+    rated_power_kw: float
+    efficiency: Optional[float] = None
+    cost_per_unit: Optional[float] = 0.0
+    specs: Optional[Dict[str, Any]] = {}
 
-class TokenData(BaseModel):
-    email: Optional[str] = None
+class EquipmentCreate(EquipmentBase):
+    pass
 
-# --- PIN ŞEMALARI ---
+class EquipmentResponse(EquipmentBase):
+    id: int
+    class Config:
+        from_attributes = True
+
+# --- PIN (HARİTA İĞNESİ) ---
 class PinBase(BaseModel):
     latitude: float
     longitude: float
@@ -50,8 +48,6 @@ class PinBase(BaseModel):
     type: Literal["Güneş Paneli", "Rüzgar Türbini"] = "Güneş Paneli"
     capacity_mw: float = 1.0
     panel_area: Optional[float] = None
-    
-    # Yeni Alan: Seçilen Ekipman ID'si
     equipment_id: Optional[int] = None
 
 class PinCreate(PinBase):
@@ -62,74 +58,54 @@ class PinResponse(PinBase):
     owner_id: int
     avg_solar_irradiance: Optional[float] = None
     avg_wind_speed: Optional[float] = None
+    created_at: Optional[datetime] = None # DB'de varsa
     
-    # Ekipman detayını da döndürebiliriz
-    equipment: Optional[EquipmentResponse] = None
-
     class Config:
         from_attributes = True
 
-# --- Enerji Hesaplama Şemaları (DÜZELTİLDİ) ---
+# --- HESAPLAMA SONUÇLARI (GRAFİK & FİNANS İÇİN) ---
+
+class FinancialAnalysis(BaseModel):
+    """Yatırım Geri Dönüş Analizi"""
+    initial_investment_usd: float
+    annual_earnings_usd: float
+    payback_period_years: float
+    roi_percentage: float
+
 class WindCalculationResponse(BaseModel):
-    """Rüzgar enerjisi hesaplama sonuçları"""
     wind_speed_m_s: float
     power_output_kw: float
     turbine_model: str
-    
-    # DÜZELTME: Bu alanları 'Optional' (seçenekli) yaptık
-    potential_kwh_annual: Optional[float] = None
-    capacity_factor: Optional[float] = None
+    potential_kwh_annual: float
+    capacity_factor: float
+    # Grafik için aylık veri: {"Ocak": 500.5, "Şubat": 450.2 ...}
+    monthly_production: Optional[Dict[str, float]] = None 
+    financials: Optional[FinancialAnalysis] = None
 
 class SolarCalculationResponse(BaseModel):
-    """Güneş enerjisi hesaplama sonuçları"""
     solar_irradiance_kw_m2: float
     temperature_celsius: float
     panel_efficiency: float
     power_output_kw: float
     panel_model: str
-
-    # DÜZELTME: Bu alanları 'Optional' (seçenekli) yaptık
-    potential_kwh_annual: Optional[float] = None
-    performance_ratio: Optional[float] = None
+    potential_kwh_annual: float
+    performance_ratio: float
+    # Grafik için aylık veri
+    monthly_production: Optional[Dict[str, float]] = None
+    financials: Optional[FinancialAnalysis] = None
 
 class PinCalculationResponse(BaseModel):
-    """
-    /pins/{pin_id}/calculate endpoint'inden dönen sonuç modeli.
-    Kaynak tipine göre wind veya solar hesaplama sonuçlarını içerir.
-    """
     resource_type: Literal["Rüzgar Türbini", "Güneş Paneli"]
     wind_calculation: Optional[WindCalculationResponse] = None
     solar_calculation: Optional[SolarCalculationResponse] = None
 
-# --- GRID ŞEMALARI (YENİ EKLENECEK) ---
-class GridBase(BaseModel):
+# --- GRID HARİTASI ---
+class GridResponse(BaseModel):
+    id: int
     latitude: float
     longitude: float
     type: str
     overall_score: float
-
-class GridResponse(GridBase):
-    id: int
-    class Config:
-        from_attributes = True
-        
-# --- SENARYO ŞEMALARI (YENİ) ---
-class ScenarioBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-    pin_id: int
-    start_date: datetime
-    end_date: datetime
-
-class ScenarioCreate(ScenarioBase):
-    pass
-
-class ScenarioResponse(ScenarioBase):
-    id: int
-    owner_id: int
-    result_data: Dict[str, Any] # ML Sonuçları burada olacak
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
     
+    class Config:
+        from_attributes = True

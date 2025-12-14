@@ -38,10 +38,11 @@ def generate_grid_points():
             points.append((round(lat, 2), round(lon, 2)))
     return points
 
-def setup_client():
+def setup_client(timeout=120):
     """Open-Meteo istemcisini cache ve retry mekanizmasıyla hazırlar."""
     cache_session = requests_cache.CachedSession('.cache', expire_after=-1)
-    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+    # timeout parametresi requests session'a geçmez, bu yüzden retry'da backoff artırıyoruz
+    retry_session = retry(cache_session, retries=5, backoff_factor=0.5)
     return openmeteo_requests.Client(session=retry_session)
 
 def save_response_to_db(db: Session, response, lat, lon):
@@ -115,8 +116,11 @@ def fetch_year_data(openmeteo, db: Session, points: list, year: int, api_url: st
     
     print(f"   📥 {year} yılı: {len(points_to_fetch)} nokta indirilecek")
     
+    # 2025 için daha küçük batch (Historical Forecast API daha yavaş)
+    current_batch_size = 3 if year == 2025 else BATCH_SIZE
+    
     # Batch'lere ayır
-    batches = [points_to_fetch[i:i + BATCH_SIZE] for i in range(0, len(points_to_fetch), BATCH_SIZE)]
+    batches = [points_to_fetch[i:i + current_batch_size] for i in range(0, len(points_to_fetch), current_batch_size)]
     total_batches = len(batches)
     
     for batch_idx, batch_points in enumerate(batches):
