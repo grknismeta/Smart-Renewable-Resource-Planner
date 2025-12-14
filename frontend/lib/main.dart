@@ -31,9 +31,7 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => ThemeProvider(),
-        ), // <-- YENİ EKLENDİ
+        ChangeNotifierProvider(create: (_) => ThemeProvider()), // <-- YENİ EKLENDİ
         ChangeNotifierProvider(
           create: (context) => AuthProvider(apiService, secureStorageService),
         ),
@@ -45,8 +43,7 @@ class MyApp extends StatelessWidget {
           update: (context, auth, map) => map!,
         ),
       ],
-      child: Consumer<ThemeProvider>(
-        // Tema değişince uygulamayı yeniden çizmek için Consumer
+      child: Consumer<ThemeProvider>( // Tema değişince uygulamayı yeniden çizmek için Consumer
         builder: (context, themeProvider, child) {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
@@ -55,9 +52,7 @@ class MyApp extends StatelessWidget {
               primarySwatch: Colors.blue,
               // Scaffold rengini themeProvider'dan alıyoruz
               scaffoldBackgroundColor: themeProvider.backgroundColor,
-              brightness: themeProvider.isDarkMode
-                  ? Brightness.dark
-                  : Brightness.light,
+              brightness: themeProvider.isDarkMode ? Brightness.dark : Brightness.light,
             ),
             home: Consumer<AuthProvider>(
               builder: (ctx, auth, _) {
