@@ -241,6 +241,52 @@ def get_best_solar_cities(
         db.close()
 
 
+@router.get("/at-time")
+def get_weather_at_time(
+    timestamp: str = Query(..., description="ISO format timestamp")
+):
+    """Belirli bir zaman için tüm şehirlerin hava durumu verisi"""
+    db = SystemSessionLocal()
+    try:
+        # Timestamp'ı parse et
+        target_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        
+        # +/- 30 dakika tolerans ile en yakın veriyi bul
+        tolerance = timedelta(minutes=30)
+        
+        results = []
+        for city in TURKEY_CITIES:
+            city_name = city["name"]
+            
+            # En yakın zaman damgasına sahip kaydı bul
+            data = db.query(HourlyWeatherData)\
+                .filter(HourlyWeatherData.city_name == city_name)\
+                .filter(HourlyWeatherData.timestamp >= target_time - tolerance)\
+                .filter(HourlyWeatherData.timestamp <= target_time + tolerance)\
+                .order_by(func.abs(
+                    func.julianday(HourlyWeatherData.timestamp) - func.julianday(target_time)
+                ))\
+                .first()
+            
+            if data:
+                results.append({
+                    "city_name": city_name,
+                    "lat": city["lat"],
+                    "lon": city["lon"],
+                    "temperature_2m": data.temperature_2m,
+                    "wind_speed_100m": data.wind_speed_100m,
+                    "wind_speed_10m": data.wind_speed_10m,
+                    "shortwave_radiation": data.shortwave_radiation,
+                    "timestamp": data.timestamp.isoformat()
+                })
+        
+        return results
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Geçersiz timestamp formatı: {str(e)}")
+    finally:
+        db.close()
+
+
 @router.post("/refresh")
 async def refresh_hourly_data():
     """Saatlik verileri manuel olarak yenile (admin)"""

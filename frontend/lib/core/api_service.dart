@@ -161,4 +161,111 @@ class ApiService {
       );
     }
   }
+
+  // --- Hava Durumu İşlemleri ---
+
+  /// Tüm şehirler için özet hava durumu verisi getir
+  Future<List<CityWeatherSummary>> fetchWeatherSummary() async {
+    final response = await http.get(Uri.parse('$_apiBaseUrl/weather/summary'));
+    if (response.statusCode == 200) {
+      List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+      return data.map((json) => CityWeatherSummary.fromJson(json)).toList();
+    } else {
+      throw Exception('Hava durumu verisi alınamadı');
+    }
+  }
+
+  /// Belirli bir zaman için şehirlerin hava durumu verisi
+  Future<List<CityWeatherData>> fetchWeatherForTime(DateTime time) async {
+    // Backend'de bu endpoint'i oluşturacağız
+    final timestamp = time.toIso8601String();
+    final response = await http.get(
+      Uri.parse('$_apiBaseUrl/weather/at-time?timestamp=$timestamp'),
+    );
+    if (response.statusCode == 200) {
+      List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+      return data.map((json) => CityWeatherData.fromJson(json)).toList();
+    } else {
+      // Hata durumunda boş liste döndür
+      return [];
+    }
+  }
+}
+
+/// Şehir bazlı anlık hava durumu verisi
+class CityWeatherData {
+  final String cityName;
+  final double lat;
+  final double lon;
+  final double temperature;
+  final double windSpeed;
+  final double? radiation;
+  final DateTime timestamp;
+
+  CityWeatherData({
+    required this.cityName,
+    required this.lat,
+    required this.lon,
+    required this.temperature,
+    required this.windSpeed,
+    this.radiation,
+    required this.timestamp,
+  });
+
+  factory CityWeatherData.fromJson(Map<String, dynamic> json) {
+    return CityWeatherData(
+      cityName: json['city_name'] ?? '',
+      lat: (json['lat'] ?? json['latitude'] ?? 0).toDouble(),
+      lon: (json['lon'] ?? json['longitude'] ?? 0).toDouble(),
+      temperature: (json['temperature_2m'] ?? json['temperature'] ?? 0)
+          .toDouble(),
+      windSpeed: (json['wind_speed_100m'] ?? json['wind_speed'] ?? 0)
+          .toDouble(),
+      radiation: json['shortwave_radiation']?.toDouble(),
+      timestamp: json['timestamp'] != null
+          ? DateTime.parse(json['timestamp'])
+          : DateTime.now(),
+    );
+  }
+}
+
+/// Şehir özet hava durumu verisi
+class CityWeatherSummary {
+  final String cityName;
+  final double lat;
+  final double lon;
+  final double? avgTemperature;
+  final double? avgWindSpeed10m;
+  final double? avgWindSpeed100m;
+  final double? totalRadiation;
+  final DateTime? lastUpdate;
+  final int recordCount;
+
+  CityWeatherSummary({
+    required this.cityName,
+    required this.lat,
+    required this.lon,
+    this.avgTemperature,
+    this.avgWindSpeed10m,
+    this.avgWindSpeed100m,
+    this.totalRadiation,
+    this.lastUpdate,
+    required this.recordCount,
+  });
+
+  factory CityWeatherSummary.fromJson(Map<String, dynamic> json) {
+    return CityWeatherSummary(
+      cityName: json['city_name'] ?? '',
+      lat: (json['lat'] ?? 0).toDouble(),
+      lon: (json['lon'] ?? 0).toDouble(),
+      avgTemperature: json['avg_temperature']?.toDouble(),
+      avgWindSpeed10m: json['avg_wind_speed_10m']?.toDouble(),
+      avgWindSpeed100m: json['avg_wind_speed_100m']?.toDouble(),
+      totalRadiation: json['total_radiation']?.toDouble(),
+      lastUpdate: json['last_update'] != null
+          ? DateTime.parse(json['last_update'])
+          : null,
+      recordCount: json['record_count'] ?? 0,
+    );
+  }
 }

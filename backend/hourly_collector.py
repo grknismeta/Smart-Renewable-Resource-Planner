@@ -52,10 +52,10 @@ DELAY_BETWEEN_BATCHES = 1.0  # İstekler arası bekleme (saniye)
 
 def _get_imports():
     """Lazy import for module compatibility"""
-    from .database import system_engine, SystemSessionLocal
+    from .database import SystemEngine, SystemSessionLocal
     from .models import HourlyWeatherData, SystemBase
     from .turkey_cities import TURKEY_CITIES
-    return system_engine, SystemSessionLocal, HourlyWeatherData, SystemBase, TURKEY_CITIES
+    return SystemEngine, SystemSessionLocal, HourlyWeatherData, SystemBase, TURKEY_CITIES
 
 
 def create_hourly_tables():

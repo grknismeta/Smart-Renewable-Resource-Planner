@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-// Provider'lar lib/providers klasöründe olduğu için ../../ ile çıkıyoruz
 import '../../providers/map_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
-// Senaryo ekranı importu
-import '../screens/scenario_screen.dart';
+import 'sidebar/sidebar_widgets.dart';
 
+/// Ana sidebar menü widget'ı
+/// Modüler alt bileşenlerden oluşur:
+/// - SidebarHeader: Logo ve menü butonu
+/// - ScenarioButton: Senaryo yönetimi butonu
+/// - DataPanel: Kaynak verileri paneli
+/// - SidebarFooter: Tema, yardım ve çıkış butonları
 class SidebarMenu extends StatefulWidget {
   const SidebarMenu({super.key});
 
@@ -15,326 +19,79 @@ class SidebarMenu extends StatefulWidget {
 }
 
 class _SidebarMenuState extends State<SidebarMenu> {
-  // Başlangıçta menü kapalı (dar)
   bool _isCollapsed = true;
+
+  static const double _collapsedWidth = 70.0;
+  static const double _expandedWidth = 280.0;
+  static const Duration _animationDuration = Duration(milliseconds: 300);
 
   @override
   Widget build(BuildContext context) {
-    // Genişlik geçiş animasyonu: Dar iken 70, açıkken 280
-    final double currentWidth = _isCollapsed ? 70.0 : 280.0;
-    
     final theme = Provider.of<ThemeProvider>(context);
     final authProvider = Provider.of<AuthProvider>(context);
-    final bool isGuest = authProvider.isLoggedIn != true; 
+    final mapProvider = Provider.of<MapProvider>(context);
+    final bool isGuest = authProvider.isLoggedIn != true;
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: currentWidth,
+      duration: _animationDuration,
+      width: _isCollapsed ? _collapsedWidth : _expandedWidth,
       color: theme.backgroundColor,
       curve: Curves.easeInOut,
-      // Overflow sorunlarını kökten çözmek için ClipRect + OverflowBox
       child: ClipRect(
         child: OverflowBox(
           alignment: Alignment.topLeft,
-          minWidth: 280, // İçeriği her zaman geniş hesapla
-          maxWidth: 280,
+          minWidth: _expandedWidth,
+          maxWidth: _expandedWidth,
           child: Column(
             children: [
-              // --- HEADER (LOGO & MENU BUTONU) ---
-              Container(
-                height: 70,
-                padding: EdgeInsets.zero,
-                alignment: Alignment.centerLeft,
-                // DÜZELTME: withValues yerine withOpacity kullanıldı
-                decoration: BoxDecoration(border: Border(bottom: BorderSide(color: theme.secondaryTextColor.withOpacity(0.1)))),
-                child: Row(
-                  children: [
-                    // Menü Butonu (Sol 70px)
-                    SizedBox(
-                      width: 70,
-                      height: 70,
-                      child: IconButton(
-                        icon: Icon(_isCollapsed ? Icons.menu : Icons.chevron_left, color: theme.secondaryTextColor),
-                        onPressed: () => setState(() => _isCollapsed = !_isCollapsed),
-                      ),
-                    ),
-                    // Logo ve Başlık
-                    Expanded(
-                      child: Row(
-                        children: [
-                          const Icon(Icons.eco, color: Colors.greenAccent),
-                          const SizedBox(width: 10),
-                          Flexible(child: Text("SRRP", style: TextStyle(color: theme.textColor, fontSize: 20, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis, maxLines: 1)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+              // Header
+              SidebarHeader(
+                theme: theme,
+                isCollapsed: _isCollapsed,
+                onToggle: () => setState(() => _isCollapsed = !_isCollapsed),
               ),
-        
-              // --- LİSTE İÇERİĞİ ---
+
+              // İçerik
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.all(12),
                   children: [
-                     // --- SENARYOLAR BUTONU (Yeni Sayfaya Yönlendirme) ---
-                     if (isGuest)
-                        // Misafir Modu
-                        _isCollapsed 
-                          ? Center(child: Tooltip(message: "Giriş Yapmalısınız", child: Icon(Icons.lock_outline, color: Colors.orange.withOpacity(0.7))))
-                          : Container(
-                              padding: const EdgeInsets.all(12),
-                              margin: const EdgeInsets.only(bottom: 20),
-                              decoration: BoxDecoration(color: theme.cardColor.withOpacity(0.5), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.orange.withOpacity(0.3))),
-                              child: Row(children: [const Icon(Icons.lock_outline, color: Colors.orange, size: 20), const SizedBox(width: 10), Expanded(child: Text("Senaryolar için giriş yapın.", style: TextStyle(color: theme.secondaryTextColor, fontSize: 12), overflow: TextOverflow.ellipsis, maxLines: 2))]),
-                            )
-                     else
-                        // Giriş Yapılmış Mod - Yönlendirme Butonu
-                        InkWell(
-                          onTap: () {
-                             // DÜZELTME: 'const' ifadesi kaldırıldı, hata giderildi.
-                             Navigator.push(context, MaterialPageRoute(builder: (context) => ScenarioScreen()));
-                          },
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            height: 50, // Sabit yükseklik
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            margin: const EdgeInsets.only(bottom: 20),
-                            decoration: _isCollapsed ? null : BoxDecoration(
-                              color: theme.cardColor,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: theme.secondaryTextColor.withOpacity(0.1))
-                            ),
-                            child: Row(
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 4.0),
-                                  child: Icon(Icons.folder_special, color: Colors.blueAccent),
-                                ),
-                                if (!_isCollapsed) ...[
-                                  const SizedBox(width: 16),
-                                  Expanded(child: Text("Senaryo Yönetimi", style: TextStyle(color: theme.textColor, fontWeight: FontWeight.w600))),
-                                  Icon(Icons.arrow_forward_ios, size: 14, color: theme.secondaryTextColor),
-                                ]
-                              ],
-                            ),
-                          ),
-                        ),
+                    // Senaryo butonu
+                    ScenarioButton(
+                      theme: theme,
+                      isGuest: isGuest,
+                      isCollapsed: _isCollapsed,
+                    ),
 
-                     if (_isCollapsed) ...[
-                        const SizedBox(height: 10),
-                        Divider(color: theme.secondaryTextColor.withOpacity(0.1), indent: 5, endIndent: 220), 
-                     ],
-                     
-                     // --- VERİLER PANELİ ---
-                     _DataPanel(theme: theme, mapProvider: Provider.of<MapProvider>(context), isCollapsed: _isCollapsed),
+                    // Dar modda divider
+                    if (_isCollapsed) ...[
+                      const SizedBox(height: 10),
+                      Divider(
+                        color: theme.secondaryTextColor.withOpacity(0.1),
+                        indent: 5,
+                        endIndent: 220,
+                      ),
+                    ],
+
+                    // Veri paneli
+                    DataPanel(
+                      theme: theme,
+                      mapProvider: mapProvider,
+                      isCollapsed: _isCollapsed,
+                    ),
                   ],
                 ),
               ),
-        
-              // --- FOOTER (TEMA & AYARLAR) ---
-              Container(
-                 padding: const EdgeInsets.symmetric(vertical: 10),
-                 decoration: BoxDecoration(border: Border(top: BorderSide(color: theme.secondaryTextColor.withOpacity(0.1)))),
-                 child: Column(
-                   children: [
-                      InkWell(
-                        onTap: theme.toggleTheme,
-                        child: Container(
-                          height: 50,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Row(
-                            children: [
-                              Icon(theme.isDarkMode ? Icons.dark_mode : Icons.light_mode, color: theme.secondaryTextColor, size: 22),
-                              if (!_isCollapsed) ...[
-                                const SizedBox(width: 16),
-                                Expanded(child: Text(theme.isDarkMode ? "Karanlık Mod" : "Aydınlık Mod", style: TextStyle(color: theme.secondaryTextColor, fontSize: 14), overflow: TextOverflow.ellipsis, maxLines: 1)),
-                                SizedBox(height: 24, child: Transform.scale(scale: 0.7, child: Switch(value: theme.isDarkMode, onChanged: (val) => theme.toggleTheme(), activeColor: Colors.blueAccent))),
-                              ]
-                            ],
-                          ),
-                        ),
-                      ),
-        
-                      ListTile(
-                        contentPadding: const EdgeInsets.only(left: 16),
-                        dense: true, 
-                        leading: Icon(Icons.help_outline, color: theme.secondaryTextColor, size: 22), 
-                        title: _isCollapsed ? null : Text("Yardım", style: TextStyle(color: theme.secondaryTextColor), overflow: TextOverflow.ellipsis), 
-                        onTap: () {}
-                      ),
-                     
-                      ListTile(
-                         contentPadding: const EdgeInsets.only(left: 16),
-                         dense: true,
-                         leading: Icon(isGuest ? Icons.person_add : Icons.logout, color: isGuest ? Colors.greenAccent : Colors.redAccent, size: 22),
-                         title: _isCollapsed ? null : Text(isGuest ? "Kayıt Ol" : "Çıkış Yap", style: TextStyle(color: isGuest ? Colors.greenAccent : Colors.redAccent, fontWeight: isGuest ? FontWeight.bold : FontWeight.normal), overflow: TextOverflow.ellipsis),
-                         onTap: () { if (isGuest) { Navigator.of(context).pushReplacementNamed('/auth'); } else { authProvider.logout(); } },
-                       ),
-                   ],
-                 ),
-              )
+
+              // Footer
+              SidebarFooter(
+                theme: theme,
+                authProvider: authProvider,
+                isCollapsed: _isCollapsed,
+              ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _DataPanel extends StatelessWidget {
-  final ThemeProvider theme;
-  final MapProvider mapProvider;
-  final bool isCollapsed;
-
-  const _DataPanel({required this.theme, required this.mapProvider, required this.isCollapsed});
-
-  @override
-  Widget build(BuildContext context) {
-    final windPins = mapProvider.pins.where((p) => p.type.contains('Rüzgar') || p.type.contains('Wind')).toList();
-    final solarPins = mapProvider.pins.where((p) => p.type.contains('Güneş') || p.type.contains('Solar')).toList();
-    
-    final windMw = windPins.fold(0.0, (sum, p) => sum + p.capacityMw);
-    final solarMw = solarPins.fold(0.0, (sum, p) => sum + p.capacityMw);
-
-    final windBgColor = const Color(0xFF1F3A58); 
-    final windFgColor = const Color(0xFF2196F3); 
-    final solarBgColor = const Color(0xFF413819); 
-    final solarFgColor = const Color(0xFFFFCA28); 
-
-    // --- DAR MOD (COLLAPSED) ---
-    if (isCollapsed) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildCollapsedStatIcon(Icons.air, windFgColor, windPins.length),
-          const SizedBox(height: 12),
-          _buildCollapsedStatIcon(Icons.wb_sunny, solarFgColor, solarPins.length),
-          const SizedBox(height: 20),
-          // DÜZELTME: withOpacity
-          Divider(color: theme.secondaryTextColor.withOpacity(0.1), indent: 5, endIndent: 220),
-          const SizedBox(height: 10),
-           ...mapProvider.pins.take(5).map((pin) {
-             bool isSolar = pin.type.contains('Güneş') || pin.type.contains('Solar');
-             return Padding(
-               padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
-               child: Container(
-                  width: 8, height: 8,
-                  decoration: BoxDecoration(
-                    color: isSolar ? solarFgColor : windFgColor,
-                    shape: BoxShape.circle,
-                  ),
-               ),
-             );
-           }),
-           if(mapProvider.pins.length > 5) 
-             Padding(padding: const EdgeInsets.only(top:4, left: 8), child: Icon(Icons.more_horiz, size: 12, color: theme.secondaryTextColor))
-        ],
-      );
-    }
-
-    // --- GENİŞ MOD (FULL) ---
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("Kaynak Verileri", style: TextStyle(color: theme.textColor, fontSize: 16, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-
-        Row(
-          children: [
-            Expanded(child: _buildStatCard("Rüzgar", windPins.length.toString(), "${windMw.toStringAsFixed(1)} MW", Icons.air, windBgColor, windFgColor)),
-            const SizedBox(width: 12),
-            Expanded(child: _buildStatCard("Güneş", solarPins.length.toString(), "${solarMw.toStringAsFixed(1)} MW", Icons.wb_sunny, solarBgColor, solarFgColor)),
-          ],
-        ),
-        
-        const SizedBox(height: 20),
-        Text("Kaynaklar", style: TextStyle(color: theme.secondaryTextColor, fontSize: 14, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-
-        if (mapProvider.pins.isEmpty)
-           Container(
-             padding: const EdgeInsets.symmetric(vertical: 20), 
-             alignment: Alignment.center, 
-             child: Column(
-               children: [
-                 // DÜZELTME: withOpacity
-                 Icon(Icons.add_location_alt_outlined, size: 30, color: theme.secondaryTextColor.withOpacity(0.3)),
-                 const SizedBox(height: 5),
-                 Text("Henüz kaynak eklenmedi", style: TextStyle(color: theme.textColor.withOpacity(0.7), fontSize: 13)), 
-               ]
-             )
-           )
-        else
-          ...mapProvider.pins.map((pin) {
-            bool isSolar = pin.type.contains('Güneş') || pin.type.contains('Solar');
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: isSolar ? solarBgColor : windBgColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: isSolar ? solarFgColor : windFgColor, width: 1.5)
-                ),
-                child: Icon(isSolar ? Icons.wb_sunny : Icons.air, color: isSolar ? solarFgColor : windFgColor, size: 14),
-              ),
-              title: Text(pin.name, style: TextStyle(color: theme.textColor, fontSize: 14, fontWeight: FontWeight.w500)),
-              subtitle: Text("${pin.capacityMw} MW", style: TextStyle(color: theme.secondaryTextColor, fontSize: 12)),
-              // DÜZELTME: withOpacity
-              trailing: IconButton(icon: Icon(Icons.delete_outline, color: theme.secondaryTextColor.withOpacity(0.7), size: 20), onPressed: () => mapProvider.deletePin(pin.id)),
-                        ),
-            );
-        }),
-      ],
-    );
-  }
-
-  Widget _buildCollapsedStatIcon(IconData icon, Color color, int count) {
-    return Container(
-      width: 40,
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
-        shape: BoxShape.circle,
-        border: Border.all(color: color, width: 1.5)
-      ),
-      child: Center(child: Text(count.toString(), style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12))),
-    );
-  }
-
-  Widget _buildStatCard(String title, String count, String capacity, IconData icon, Color bgColor, Color iconColor) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: bgColor, 
-        borderRadius: BorderRadius.circular(12), 
-        border: Border.all(color: iconColor.withOpacity(0.3)) 
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: iconColor, size: 18), 
-              const SizedBox(width: 8), 
-              Flexible(
-                child: Text(title, 
-                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              )
-            ]
-          ),
-          const SizedBox(height: 12),
-          Text(count, style: TextStyle(color: iconColor, fontSize: 22, fontWeight: FontWeight.bold)), 
-          const SizedBox(height: 2),
-          Text(capacity, style: const TextStyle(color: Colors.white70, fontSize: 11)),
-        ],
       ),
     );
   }

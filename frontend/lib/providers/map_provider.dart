@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:frontend/core/api_service.dart';
 import 'package:frontend/data/models/pin_model.dart';
 import 'auth_provider.dart';
+import 'dart:math' as math;
 
 enum MapLayer { none, wind, temp }
 
@@ -24,6 +25,10 @@ class MapProvider extends ChangeNotifier {
   MapLayer _currentLayer = MapLayer.none;
   PinCalculationResponse? _latestCalculationResult;
 
+  // Hava durumu verileri
+  List<CityWeatherData> _weatherData = [];
+  DateTime _selectedTime = DateTime.now();
+
   List<Pin> get pins => _pins;
   bool get isLoading => _isLoading;
   // bool get isPlacingMarker => _isPlacingMarker; // <-- ESKİ
@@ -31,6 +36,8 @@ class MapProvider extends ChangeNotifier {
   MapLayer get currentLayer => _currentLayer;
   PinCalculationResponse? get latestCalculationResult =>
       _latestCalculationResult;
+  List<CityWeatherData> get weatherData => _weatherData;
+  DateTime get selectedTime => _selectedTime;
 
   MapProvider(this._apiService, this._authProvider) {
     _authProvider.addListener(_handleAuthChange);
@@ -63,11 +70,13 @@ class MapProvider extends ChangeNotifier {
     _placingPinType = null;
     notifyListeners();
   }
+
   // --- GÜNCELLEME SONU ---
-    void setLayer(MapLayer layer) {
+  void setLayer(MapLayer layer) {
     _currentLayer = layer;
     notifyListeners();
   }
+
   void changeMapLayer() {
     switch (_currentLayer) {
       case MapLayer.none:
@@ -159,4 +168,64 @@ class MapProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  // --- Hava Durumu İşlemleri ---
+
+  /// Belirli bir zaman için hava durumu verilerini yükle
+  Future<void> loadWeatherForTime(DateTime time) async {
+    _selectedTime = time;
+    try {
+      _weatherData = await _apiService.fetchWeatherForTime(time);
+    } catch (e) {
+      print('Hava durumu yüklenirken hata: $e');
+    }
+    notifyListeners();
+  }
+
+  /// En yakın şehri bul (mouse hover için)
+  CityWeatherData? findNearestCity(LatLng position) {
+    if (_weatherData.isEmpty) return null;
+
+    CityWeatherData? nearest;
+    double minDistance = double.infinity;
+
+    for (final city in _weatherData) {
+      final distance = _calculateDistance(
+        position.latitude,
+        position.longitude,
+        city.lat,
+        city.lon,
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearest = city;
+      }
+    }
+
+    // 100km'den uzaksa null döndür
+    if (minDistance > 100) return null;
+    return nearest;
+  }
+
+  /// İki nokta arası mesafe (km)
+  double _calculateDistance(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const R = 6371.0; // Dünya yarıçapı (km)
+    final dLat = _toRadians(lat2 - lat1);
+    final dLon = _toRadians(lon2 - lon1);
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_toRadians(lat1)) *
+            math.cos(_toRadians(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return R * c;
+  }
+
+  double _toRadians(double degree) => degree * math.pi / 180;
 }
