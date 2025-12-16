@@ -436,3 +436,424 @@ class MapDialogs {
     );
   }
 }
+// --- YENİ: BÖLGE SEÇİM GÖSTERGESİ WIDGET'I ---
+
+/// Bölge seçim işlemini gösterir ve kontrol sağlar (Çoklu Köşe Versiyonu)
+class RegionSelectionIndicator extends StatelessWidget {
+  final List<LatLng> points;
+  final VoidCallback onCancel;
+
+  const RegionSelectionIndicator({
+    super.key,
+    required this.points,
+    required this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Provider.of<ThemeProvider>(context);
+    final mapProvider = Provider.of<MapProvider>(context);
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Başlık ve İstatistik
+          Row(
+            children: [
+              const Icon(Icons.select_all, color: Colors.blue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      points.length < 3
+                          ? 'En az 3 köşe seçin (${points.length}/3+)'
+                          : 'Bölge hazır! ${points.length} köşe seçildi.',
+                      style: TextStyle(
+                        color: theme.textColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (points.isNotEmpty)
+                      Text(
+                        'Köşeleri sürükleyerek hareket ettirebilirsiniz',
+                        style: TextStyle(
+                          color: theme.secondaryTextColor,
+                          fontSize: 11,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.red, size: 20),
+                onPressed: onCancel,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+
+          // Köşe Noktaları Listesi
+          if (points.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: List.generate(
+                    points.length,
+                    (index) => Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: _buildPointChip(
+                        index + 1,
+                        points[index],
+                        theme,
+                        () => mapProvider.removeLastPoint(),
+                        isLast: index == points.length - 1,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // Kontrol Butonları
+          if (points.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => mapProvider.removeLastPoint(),
+                      icon: const Icon(Icons.undo, size: 16),
+                      label: const Text('Son Noktayı Sil'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange,
+                        side: const BorderSide(color: Colors.orange),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (points.length >= 3)
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => mapProvider.finishRegionSelection(),
+                        icon: const Icon(Icons.check, size: 16),
+                        label: const Text('Seçimi Bitir'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _buildPointChip(
+    int number,
+    LatLng coord,
+    ThemeProvider theme,
+    VoidCallback onDelete, {
+    bool isLast = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isLast
+            ? Colors.orange.withValues(alpha: 0.1)
+            : Colors.blue.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: isLast
+              ? Colors.orange.withValues(alpha: 0.5)
+              : Colors.blue.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'K$number: ${coord.latitude.toStringAsFixed(3)}, ${coord.longitude.toStringAsFixed(3)}',
+            style: TextStyle(color: theme.textColor, fontSize: 10),
+          ),
+          if (isLast) ...[
+            const SizedBox(width: 4),
+            InkWell(
+              onTap: onDelete,
+              child: Icon(Icons.close, size: 14, color: Colors.orange),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// --- YENİ: OPTİMİZASYON DIALOG'U ---
+
+/// Optimizasyon hesaplaması dialog'u
+class OptimizationDialog {
+  OptimizationDialog._();
+
+  static void show(
+    BuildContext context,
+    MapProvider mapProvider,
+    ThemeProvider theme,
+  ) {
+    int? selectedEquipmentId;
+    bool requestedEquipments = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogContext, setStateSB) {
+            final isCalculating = mapProvider.isLoading;
+            final equipmentLoading = mapProvider.isEquipmentLoading;
+            final equipments = mapProvider.equipments;
+
+            if (!requestedEquipments &&
+                !equipmentLoading &&
+                equipments.isEmpty) {
+              requestedEquipments = true;
+              mapProvider.loadEquipments().then((_) {
+                if (dialogContext.mounted) setStateSB(() {});
+              });
+            }
+
+            selectedEquipmentId ??= equipments.isNotEmpty
+                ? equipments.first.id
+                : null;
+
+            return AlertDialog(
+              backgroundColor: theme.cardColor,
+              title: Row(
+                children: [
+                  const Icon(Icons.calculate, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text('Yerleşimi Hesapla')),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Seçilen Bölge:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: theme.textColor,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${mapProvider.selectionPoints.length} Köşe Seçildi:',
+                            style: TextStyle(
+                              color: theme.textColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          ...List.generate(
+                            mapProvider.selectionPoints.length,
+                            (index) => Padding(
+                              padding: const EdgeInsets.only(top: 4.0),
+                              child: _buildCoordRow(
+                                'Köşe ${index + 1}',
+                                mapProvider.selectionPoints[index],
+                                theme,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Türbin/Panel Modeli:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: theme.textColor,
+                            fontSize: 14,
+                          ),
+                        ),
+                        if (equipmentLoading)
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      value: selectedEquipmentId,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: theme.cardColor.withValues(alpha: 0.1),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      items: equipments
+                          .map(
+                            (e) => DropdownMenuItem<int>(
+                              value: e.id,
+                              child: Text(
+                                '${e.name} (${e.type}) • ${e.ratedPowerKw.toStringAsFixed(0)} kW',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: isCalculating
+                          ? null
+                          : (val) {
+                              setStateSB(() {
+                                selectedEquipmentId = val;
+                              });
+                            },
+                    ),
+                    if (equipments.isEmpty && !equipmentLoading)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6.0),
+                        child: Text(
+                          'Ekipman bulunamadı, lütfen sistem yöneticisine danışın.',
+                          style: TextStyle(
+                            color: Colors.orange.shade400,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isCalculating
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('İptal'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: isCalculating
+                      ? null
+                      : () async {
+                          if (selectedEquipmentId == null) {
+                            MapDialogs.showErrorDialog(
+                              dialogContext,
+                              'Lütfen bir ekipman seçin.',
+                            );
+                            return;
+                          }
+
+                          try {
+                            await mapProvider.calculateOptimization(
+                              equipmentId: selectedEquipmentId!,
+                            );
+                            if (dialogContext.mounted) {
+                              Navigator.of(dialogContext).pop();
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Optimizasyon tamamlandı! ${mapProvider.optimizationResult?.turbineCount ?? 0} türbin yerleştirildi.',
+                                  ),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (dialogContext.mounted) {
+                              MapDialogs.showErrorDialog(
+                                dialogContext,
+                                'Hata: $e',
+                              );
+                            }
+                          }
+                        },
+                  icon: isCalculating
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(Colors.white),
+                          ),
+                        )
+                      : const Icon(Icons.check),
+                  label: Text(isCalculating ? 'Hesaplanıyor...' : 'Hesapla'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  static Widget _buildCoordRow(
+    String label,
+    LatLng? coord,
+    ThemeProvider theme,
+  ) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(color: theme.secondaryTextColor, fontSize: 12),
+        ),
+        Expanded(
+          child: Text(
+            coord != null
+                ? '${coord.latitude.toStringAsFixed(4)}, ${coord.longitude.toStringAsFixed(4)}'
+                : '-',
+            style: TextStyle(color: theme.textColor, fontSize: 12),
+            textAlign: TextAlign.right,
+          ),
+        ),
+      ],
+    );
+  }
+}

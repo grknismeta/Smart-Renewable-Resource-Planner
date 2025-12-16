@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:frontend/core/api_service.dart';
 import 'package:frontend/data/models/pin_model.dart';
+import 'package:frontend/data/models/system_data_models.dart';
 import 'auth_provider.dart';
 import 'dart:math' as math;
 
@@ -29,6 +30,14 @@ class MapProvider extends ChangeNotifier {
   List<CityWeatherData> _weatherData = [];
   DateTime _selectedTime = DateTime.now();
 
+  // --- YENİ: BÖLGE SEÇİM MODUNUN STATE'İ (GÜNCELLENDİ - ÇOKLU KÖŞE) ---
+  bool _isSelectingRegion = false; // Seçim modu açık mı?
+  List<LatLng> _selectionPoints = []; // Seçilen tüm köşe noktaları
+  int? _draggingPointIndex; // Sürüklenen nokta indeksi
+  OptimizationResponse? _optimizationResult; // Optimizasyon sonuçları
+  List<Equipment> _equipments = [];
+  bool _equipmentsLoading = false;
+
   List<Pin> get pins => _pins;
   bool get isLoading => _isLoading;
   // bool get isPlacingMarker => _isPlacingMarker; // <-- ESKİ
@@ -38,6 +47,15 @@ class MapProvider extends ChangeNotifier {
       _latestCalculationResult;
   List<CityWeatherData> get weatherData => _weatherData;
   DateTime get selectedTime => _selectedTime;
+
+  // --- YENİ: GETTERS (GÜNCELLENDİ) ---
+  bool get isSelectingRegion => _isSelectingRegion;
+  List<LatLng> get selectionPoints => _selectionPoints;
+  int? get draggingPointIndex => _draggingPointIndex;
+  OptimizationResponse? get optimizationResult => _optimizationResult;
+  bool get hasValidSelection => _selectionPoints.length >= 3; // Min 3 köşe
+  List<Equipment> get equipments => _equipments;
+  bool get isEquipmentLoading => _equipmentsLoading;
 
   MapProvider(this._apiService, this._authProvider) {
     _authProvider.addListener(_handleAuthChange);
@@ -49,6 +67,20 @@ class MapProvider extends ChangeNotifier {
       fetchPins();
     } else if (_authProvider.isLoggedIn == false) {
       _pins = [];
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadEquipments({String? type, bool forceRefresh = false}) async {
+    if (_equipmentsLoading) return;
+    if (!forceRefresh && _equipments.isNotEmpty && type == null) return;
+
+    _equipmentsLoading = true;
+    notifyListeners();
+    try {
+      _equipments = await _apiService.fetchEquipments(type: type);
+    } finally {
+      _equipmentsLoading = false;
       notifyListeners();
     }
   }
@@ -69,6 +101,127 @@ class MapProvider extends ChangeNotifier {
   void stopPlacingMarker() {
     _placingPinType = null;
     notifyListeners();
+  }
+
+  // --- YENİ: BÖLGE SEÇİM METODLARI ---
+  /// Optimizasyon bölge seçim modunu başlat
+  void startSelectingRegion() {
+    _isSelectingRegion = true;
+    _selectionPoints = [];
+    _draggingPointIndex = null;
+    _optimizationResult = null;
+    notifyListeners();
+  }
+
+  /// Harita üstüne tıklama işlemi (Bölge seçim modunda) - Nokta ekle
+  void recordSelectionPoint(LatLng point) {
+    if (!_isSelectingRegion) return;
+    _selectionPoints.add(point);
+    notifyListeners();
+  }
+
+  /// Seçilen noktaları temizle
+  void clearRegionSelection() {
+    _isSelectingRegion = false;
+    _selectionPoints = [];
+    _draggingPointIndex = null;
+    _optimizationResult = null;
+    notifyListeners();
+  }
+
+  /// Son eklenen noktayı sil
+  void removeLastPoint() {
+    if (_selectionPoints.isNotEmpty) {
+      _selectionPoints.removeLast();
+      notifyListeners();
+    }
+  }
+
+  /// Seçimi bitir (hesaplamaya hazır)
+  void finishRegionSelection() {
+    if (_selectionPoints.length >= 3) {
+      _isSelectingRegion = false;
+      notifyListeners();
+    }
+  }
+
+  /// Nokta sürüklemeye başla
+  void startDraggingPoint(int index) {
+    if (index >= 0 && index < _selectionPoints.length) {
+      _draggingPointIndex = index;
+      notifyListeners();
+    }
+  }
+
+  /// Noktayı sürükle
+  void dragPoint(LatLng newPosition) {
+    if (_draggingPointIndex != null &&
+        _draggingPointIndex! >= 0 &&
+        _draggingPointIndex! < _selectionPoints.length) {
+      _selectionPoints[_draggingPointIndex!] = newPosition;
+      notifyListeners();
+    }
+  }
+
+  /// Nokta sürüklemeyi bitir
+  void endDraggingPoint() {
+    _draggingPointIndex = null;
+    notifyListeners();
+  }
+
+  /// Belirli bir indeksteki noktayı kaldır
+  void removePointAt(int index) {
+    if (index >= 0 && index < _selectionPoints.length) {
+      _selectionPoints.removeAt(index);
+      if (_draggingPointIndex == index) {
+        _draggingPointIndex = null;
+      }
+      notifyListeners();
+    }
+  }
+
+  /// Seçilen bölge için optimizasyon hesaplaması yap
+  Future<void> calculateOptimization({
+    required int equipmentId,
+    double minDistanceM = 0.0,
+  }) async {
+    if (_selectionPoints.length < 3) {
+      throw Exception('Lütfen en az 3 köşe seçin.');
+    }
+
+    _isLoading = true;
+    _optimizationResult = null;
+    notifyListeners();
+
+    try {
+      // Minimum sınırlayıcı kutu (bounding box) hesapla
+      double minLat = _selectionPoints.first.latitude;
+      double maxLat = _selectionPoints.first.latitude;
+      double minLon = _selectionPoints.first.longitude;
+      double maxLon = _selectionPoints.first.longitude;
+
+      for (final point in _selectionPoints) {
+        minLat = math.min(minLat, point.latitude);
+        maxLat = math.max(maxLat, point.latitude);
+        minLon = math.min(minLon, point.longitude);
+        maxLon = math.max(maxLon, point.longitude);
+      }
+
+      _optimizationResult = await _apiService.optimizeWindPlacement(
+        topLeftLat: maxLat,
+        topLeftLon: minLon,
+        bottomRightLat: minLat,
+        bottomRightLon: maxLon,
+        equipmentId: equipmentId,
+        minDistanceM: minDistanceM,
+      );
+    } catch (e) {
+      print('Optimizasyon hatası: $e');
+      throw Exception('Optimizasyon hesaplaması başarısız oldu.');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   // --- GÜNCELLEME SONU ---

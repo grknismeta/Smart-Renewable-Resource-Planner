@@ -12,22 +12,29 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   // --- RENK PALETİ ---
-  
+
   // Arkaplan Rengi
-  Color get backgroundColor => _isDarkMode ? const Color(0xFF1E232F) : const Color(0xFFF5F5F5);
-  
+  Color get backgroundColor =>
+      _isDarkMode ? const Color(0xFF1E232F) : const Color(0xFFF5F5F5);
+
   // Kart/Panel Rengi
   Color get cardColor => _isDarkMode ? const Color(0xFF2A3040) : Colors.white;
-  
+
   // Metin Rengi
   Color get textColor => _isDarkMode ? Colors.white : const Color(0xFF333333);
-  
+
   // İkincil Metin Rengi
-  Color get secondaryTextColor => _isDarkMode ? Colors.white70 : const Color(0xFF666666);
+  Color get secondaryTextColor =>
+      _isDarkMode ? Colors.white70 : const Color(0xFF666666);
 
   // Harita Stili (Mapbox URL ID'si)
-  String get mapStyleId => _isDarkMode ? 'mapbox/dark-v10' : 'mapbox/streets-v11';
-  
+  String get mapStyleId =>
+      _isDarkMode ? 'mapbox/dark-v10' : 'mapbox/streets-v11';
+
   // Harita Arkaplan Rengi (Yüklenirken gözüken renk)
-  Color get mapBackgroundColor => _isDarkMode ? const Color(0xFF191A1A) : const Color(0xFFEFEFEF);
+  Color get mapBackgroundColor =>
+      _isDarkMode ? const Color(0xFF191A1A) : const Color(0xFFEFEFEF);
+
+  // Sınır Rengi (Input fields vb.)
+  Color get borderColor => _isDarkMode ? Colors.white24 : Colors.black12;
 }

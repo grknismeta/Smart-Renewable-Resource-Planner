@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import '../data/models/pin_model.dart'; // Bu dosya PinCalculationResponse'u içeriyor
+import '../data/models/system_data_models.dart'; // OptimizationResponse için
+import '../data/models/scenario_model.dart'; // Scenario modelleri
 import 'secure_storage_service.dart';
 
 //
@@ -37,6 +39,25 @@ class ApiService {
       'Content-Type': 'application/json',
       if (t != null) 'Authorization': 'Bearer $t',
     };
+  }
+
+  // --- Ekipman Kataloğu ---
+
+  Future<List<Equipment>> fetchEquipments({String? type}) async {
+    final query = type != null ? '?type=$type' : '';
+    final response = await http.get(
+      Uri.parse('$_apiBaseUrl/equipments$query'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes)) as List;
+      return data.map((e) => Equipment.fromJson(e)).toList();
+    }
+
+    throw Exception(
+      'Ekipman listesi alınamadı (status: ${response.statusCode})',
+    );
   }
 
   // --- Kimlik Doğrulama İşlemleri ---
@@ -189,6 +210,94 @@ class ApiService {
       // Hata durumunda boş liste döndür
       return [];
     }
+  }
+
+  // --- Optimizasyon İşlemleri ---
+
+  /// Seçilen bölge için rüzgar türbini yerleşim optimizasyonu
+  Future<OptimizationResponse> optimizeWindPlacement({
+    required double topLeftLat,
+    required double topLeftLon,
+    required double bottomRightLat,
+    required double bottomRightLon,
+    required int equipmentId,
+    double minDistanceM = 0.0,
+  }) async {
+    final Map<String, dynamic> requestData = {
+      'top_left_lat': topLeftLat,
+      'top_left_lon': topLeftLon,
+      'bottom_right_lat': bottomRightLat,
+      'bottom_right_lon': bottomRightLon,
+      'equipment_id': equipmentId,
+      'min_distance_m': minDistanceM,
+    };
+
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/optimization/wind-placement'),
+      headers: await _getHeaders(),
+      body: json.encode(requestData),
+    );
+
+    if (response.statusCode == 200) {
+      final jsonResponse = json.decode(utf8.decode(response.bodyBytes));
+      return OptimizationResponse.fromJson(jsonResponse);
+    } else {
+      throw Exception(
+        'Optimizasyon hesaplaması başarısız (Status code: ${response.statusCode})',
+      );
+    }
+  }
+
+  // --- Raporlama ---
+
+  Future<RegionalReport> fetchRegionalReport({
+    required String region,
+    required String type,
+    int limit = 80,
+  }) async {
+    final uri = Uri.parse('$_apiBaseUrl/reports/regional').replace(
+      queryParameters: {'region': region, 'type': type, 'limit': '$limit'},
+    );
+
+    final response = await http.get(uri, headers: await _getHeaders());
+
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
+      return RegionalReport.fromJson(data);
+    }
+
+    throw Exception('Rapor verisi alınamadı (status: ${response.statusCode})');
+  }
+
+  // --- Senaryolar ---
+
+  Future<List<Scenario>> fetchScenarios() async {
+    final response = await http.get(
+      Uri.parse('$_apiBaseUrl/scenarios/'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes)) as List;
+      return data.map((e) => Scenario.fromJson(e)).toList();
+    }
+
+    throw Exception('Senaryolar yüklenemedi (status: ${response.statusCode})');
+  }
+
+  Future<Scenario> createScenario(ScenarioCreate scenario) async {
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/scenarios/'),
+      headers: await _getHeaders(),
+      body: json.encode(scenario.toJson()),
+    );
+
+    if (response.statusCode == 201) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
+      return Scenario.fromJson(data);
+    }
+
+    throw Exception('Senaryo oluşturulamadı (status: ${response.statusCode})');
   }
 }
 

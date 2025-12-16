@@ -63,6 +63,45 @@ class _SidebarMenuState extends State<SidebarMenu> {
                       isCollapsed: _isCollapsed,
                     ),
 
+                    const SizedBox(height: 10),
+
+                    InkWell(
+                      onTap: () => Navigator.of(context).pushNamed('/reports'),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: _isCollapsed ? 8 : 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.cardColor.withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: theme.secondaryTextColor.withOpacity(0.1),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.assessment,
+                              color: Colors.lightBlueAccent,
+                            ),
+                            if (!_isCollapsed) ...[
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Raporlar',
+                                  style: TextStyle(
+                                    color: theme.textColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+
                     // Dar modda divider
                     if (_isCollapsed) ...[
                       const SizedBox(height: 10),
