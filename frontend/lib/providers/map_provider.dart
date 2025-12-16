@@ -59,29 +59,66 @@ class MapProvider extends ChangeNotifier {
 
   MapProvider(this._apiService, this._authProvider) {
     _authProvider.addListener(_handleAuthChange);
+    // AuthProvider'ın mevcut durumunu kontrol et (constructor'ın çalışması sırasında notifyListeners yapılmayabilir)
+    print(
+      '[MapProvider constructor] _authProvider.isLoggedIn: ${_authProvider.isLoggedIn}',
+    );
+    if (_authProvider.isLoggedIn == true) {
+      print(
+        '[MapProvider constructor] Kullanıcı zaten logged in, pins yükleniyor...',
+      );
+      fetchPins();
+    }
   }
 
   void _handleAuthChange() {
     // ... (değişiklik yok) ...
+    print(
+      '[MapProvider._handleAuthChange] isLoggedIn durumu değişti: ${_authProvider.isLoggedIn}',
+    );
     if (_authProvider.isLoggedIn == true) {
+      print(
+        '[MapProvider._handleAuthChange] Kullanıcı giriş yaptı, fetchPins çağrılıyor...',
+      );
       fetchPins();
     } else if (_authProvider.isLoggedIn == false) {
+      print(
+        '[MapProvider._handleAuthChange] Kullanıcı çıkış yaptı, pins sıfırlanıyor',
+      );
       _pins = [];
       notifyListeners();
     }
   }
 
   Future<void> loadEquipments({String? type, bool forceRefresh = false}) async {
-    if (_equipmentsLoading) return;
-    if (!forceRefresh && _equipments.isNotEmpty && type == null) return;
+    print(
+      '[MapProvider.loadEquipments] Çağrıldı: type=$type, forceRefresh=$forceRefresh',
+    );
+    if (_equipmentsLoading) {
+      print('[MapProvider.loadEquipments] Zaten yükleniyor, atlanıyor');
+      return;
+    }
+    if (!forceRefresh && _equipments.isNotEmpty && type == null) {
+      print(
+        '[MapProvider.loadEquipments] Zaten yüklü, atlanıyor: ${_equipments.length} ekipman',
+      );
+      return;
+    }
 
     _equipmentsLoading = true;
     notifyListeners();
+    print('[MapProvider.loadEquipments] Loading başladı...');
     try {
       _equipments = await _apiService.fetchEquipments(type: type);
+      print(
+        '[MapProvider.loadEquipments] Başarılı: ${_equipments.length} ekipman yüklendi',
+      );
+    } catch (e) {
+      print('[MapProvider.loadEquipments] Hata: $e');
     } finally {
       _equipmentsLoading = false;
       notifyListeners();
+      print('[MapProvider.loadEquipments] Loading bitti');
     }
   }
 
@@ -253,13 +290,20 @@ class MapProvider extends ChangeNotifier {
   // --- API İşlemleri ---
   Future<void> fetchPins() async {
     // ... (değişiklik yok) ...
-    if (_authProvider.isLoggedIn != true) return;
+    print(
+      '[MapProvider] fetchPins() çağrıldı, isLoggedIn: ${_authProvider.isLoggedIn}',
+    );
+    if (_authProvider.isLoggedIn != true) {
+      print('[MapProvider] isLoggedIn != true, fetchPins iptal edildi');
+      return;
+    }
     _isLoading = true;
     notifyListeners();
     try {
       _pins = await _apiService.fetchPins();
+      print('[MapProvider] fetchPins başarılı, ${_pins.length} pin yüklendi');
     } catch (e) {
-      print('Pin yüklenirken hata: $e');
+      print('[MapProvider] Pin yüklenirken hata: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -272,10 +316,11 @@ class MapProvider extends ChangeNotifier {
     String name,
     String type,
     double capacityMw,
+    int? equipmentId, // Ekipman ID'si eklendi
   ) async {
     try {
       // Aldığı parametreleri 'api_service'e iletiyor
-      await _apiService.addPin(point, name, type, capacityMw);
+      await _apiService.addPin(point, name, type, capacityMw, equipmentId);
       await fetchPins(); // Yeni pini çekmek için listeyi yenile
     } catch (e) {
       print('Pin eklenirken hata: $e');

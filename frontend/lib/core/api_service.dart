@@ -44,14 +44,20 @@ class ApiService {
   // --- Ekipman Kataloğu ---
 
   Future<List<Equipment>> fetchEquipments({String? type}) async {
+    print('[ApiService.fetchEquipments] Çağrıldı: type=$type');
     final query = type != null ? '?type=$type' : '';
+    print('[ApiService.fetchEquipments] URL: $_apiBaseUrl/equipments$query');
     final response = await http.get(
       Uri.parse('$_apiBaseUrl/equipments$query'),
       headers: await _getHeaders(),
     );
 
+    print(
+      '[ApiService.fetchEquipments] Response status: ${response.statusCode}',
+    );
     if (response.statusCode == 200) {
       final data = json.decode(utf8.decode(response.bodyBytes)) as List;
+      print('[ApiService.fetchEquipments] ${data.length} ekipman alındı');
       return data.map((e) => Equipment.fromJson(e)).toList();
     }
 
@@ -96,12 +102,17 @@ class ApiService {
 
   Future<List<Pin>> fetchPins() async {
     // ... (değişiklik yok) ...
+    print('[ApiService.fetchPins] API çağrısı yapılıyor: $_apiBaseUrl/pins/');
     final response = await http.get(
       Uri.parse('$_apiBaseUrl/pins/'),
       headers: await _getHeaders(),
     );
+    print('[ApiService.fetchPins] Response status: ${response.statusCode}');
     if (response.statusCode == 200) {
       List<dynamic> pinsJson = json.decode(utf8.decode(response.bodyBytes));
+      print(
+        '[ApiService.fetchPins] ${pinsJson.length} pin JSON den parse edildi',
+      );
       return pinsJson.map((json) => Pin.fromJson(json)).toList();
     } else if (response.statusCode == 401) {
       throw Exception('Yetki hatası. Lütfen tekrar giriş yapın.');
@@ -118,6 +129,7 @@ class ApiService {
     String name,
     String type,
     double capacityMw,
+    int? equipmentId, // Ekipman ID'si eklendi
   ) async {
     // 'Pin' constructor'ı yerine 'Map' oluştur
     final Map<String, dynamic> pinData = {
@@ -126,6 +138,7 @@ class ApiService {
       'name': name, // <-- Artık dinamik
       'type': type, // <-- Artık dinamik
       'capacity_mw': capacityMw, // <-- Artık dinamik
+      if (equipmentId != null) 'equipment_id': equipmentId, // Ekipman ID'si
     };
 
     final response = await http.post(

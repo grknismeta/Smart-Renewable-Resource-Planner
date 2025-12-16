@@ -41,6 +41,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    // MapProvider constructor zaten AuthProvider'ı kontrol ediyor ve pins'i yüklemek için dinlemeyi ayarladı
     // İlk yüklemede hava durumu verilerini çek
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final mapProvider = Provider.of<MapProvider>(context, listen: false);
@@ -89,7 +90,13 @@ class _MapScreenState extends State<MapScreen> {
     final isWideScreen = screenWidth > 600;
 
     // Marker listesi oluştur (Kaynaklar)
+    print(
+      '[MapScreen.build] mapProvider.pins.length: ${mapProvider.pins.length}',
+    );
     final markers = mapProvider.pins.map((pin) {
+      print(
+        '[MapScreen.build] Marker oluşturuluyor: ${pin.name} (${pin.type}) at (${pin.latitude}, ${pin.longitude})',
+      );
       return Marker(
         width: 50.0,
         height: 50.0,
@@ -100,6 +107,7 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
     }).toList();
+    print('[MapScreen.build] Toplam ${markers.length} marker oluşturuldu');
 
     // Optimizasyon sonucu marker'ları ekle (Türbin noktaları)
     if (mapProvider.optimizationResult != null) {

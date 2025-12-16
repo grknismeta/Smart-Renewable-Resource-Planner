@@ -102,6 +102,15 @@ class _SidebarMenuState extends State<SidebarMenu> {
                       ),
                     ),
 
+                    const SizedBox(height: 10),
+
+                    // Pinler Paneli
+                    PinsPanel(
+                      theme: theme,
+                      mapProvider: mapProvider,
+                      isCollapsed: _isCollapsed,
+                    ),
+
                     // Dar modda divider
                     if (_isCollapsed) ...[
                       const SizedBox(height: 10),

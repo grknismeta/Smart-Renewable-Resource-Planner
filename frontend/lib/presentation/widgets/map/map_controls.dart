@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../providers/map_provider.dart';
 import '../../../providers/theme_provider.dart';
 import 'map_constants.dart';
@@ -11,28 +12,64 @@ class MapDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.cardColor.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: theme.secondaryTextColor.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Row(
-        children: [
-          _buildStatItem("Total Output", "0.0 MW", Colors.greenAccent),
-          const SizedBox(width: 20),
-          Container(
-            width: 1,
-            height: 30,
-            color: theme.secondaryTextColor.withValues(alpha: 0.2),
+    return Consumer<MapProvider>(
+      builder: (context, mapProvider, _) {
+        // Pin sayılarını hesapla
+        final windPins = mapProvider.pins
+            .where((p) => p.type == 'Rüzgar Türbini')
+            .length;
+        final solarPins = mapProvider.pins
+            .where((p) => p.type == 'Güneş Paneli')
+            .length;
+        final totalCapacity = mapProvider.pins.fold<double>(
+          0,
+          (sum, pin) => sum + pin.capacityMw,
+        );
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.cardColor.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: theme.secondaryTextColor.withValues(alpha: 0.1),
+            ),
           ),
-          const SizedBox(width: 20),
-          _buildStatItem("Capacity", "0 MW", theme.textColor),
-        ],
-      ),
+          child: Row(
+            children: [
+              _buildStatItem(
+                'Rüzgar',
+                '$windPins',
+                windPins > 0 ? Colors.blueAccent : theme.secondaryTextColor,
+              ),
+              const SizedBox(width: 20),
+              Container(
+                width: 1,
+                height: 30,
+                color: theme.secondaryTextColor.withValues(alpha: 0.2),
+              ),
+              const SizedBox(width: 20),
+              _buildStatItem(
+                'Güneş',
+                '$solarPins',
+                solarPins > 0 ? Colors.orangeAccent : theme.secondaryTextColor,
+              ),
+              const SizedBox(width: 20),
+              Container(
+                width: 1,
+                height: 30,
+                color: theme.secondaryTextColor.withValues(alpha: 0.2),
+              ),
+              const SizedBox(width: 20),
+              _buildStatItem(
+                'Kapasite',
+                '${totalCapacity.toStringAsFixed(1)} MW',
+                Colors.greenAccent,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
