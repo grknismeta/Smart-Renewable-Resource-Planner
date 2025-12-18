@@ -24,7 +24,6 @@ class _ReportScreenState extends State<ReportScreen> {
   final MapController _mapController = MapController();
   String _region = 'Tümü';
   String _type = 'Wind';
-  RegionalSite? _selectedSite;
   int? _selectedScenarioId; // Yeni: Seçili senaryo
 
   @override
@@ -250,7 +249,6 @@ class _ReportScreenState extends State<ReportScreen> {
   }
 
   void _onSiteFocused(RegionalSite site) {
-    setState(() => _selectedSite = site);
     _mapController.move(LatLng(site.latitude, site.longitude), 8.0);
   }
 }

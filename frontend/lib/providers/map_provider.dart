@@ -1,6 +1,7 @@
 // lib/providers/map_provider.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:frontend/core/api_service.dart';
 import 'package:frontend/data/models/pin_model.dart';
@@ -68,11 +69,11 @@ class MapProvider extends ChangeNotifier {
   MapProvider(this._apiService, this._authProvider) {
     _authProvider.addListener(_handleAuthChange);
     // AuthProvider'ın mevcut durumunu kontrol et (constructor'ın çalışması sırasında notifyListeners yapılmayabilir)
-    print(
+    debugPrint(
       '[MapProvider constructor] _authProvider.isLoggedIn: ${_authProvider.isLoggedIn}',
     );
     if (_authProvider.isLoggedIn == true) {
-      print(
+      debugPrint(
         '[MapProvider constructor] Kullanıcı zaten logged in, pins yükleniyor...',
       );
       fetchPins();
@@ -90,16 +91,16 @@ class MapProvider extends ChangeNotifier {
 
   void _handleAuthChange() {
     // ... (değişiklik yok) ...
-    print(
+    debugPrint(
       '[MapProvider._handleAuthChange] isLoggedIn durumu değişti: ${_authProvider.isLoggedIn}',
     );
     if (_authProvider.isLoggedIn == true) {
-      print(
+      debugPrint(
         '[MapProvider._handleAuthChange] Kullanıcı giriş yaptı, fetchPins çağrılıyor...',
       );
       fetchPins();
     } else if (_authProvider.isLoggedIn == false) {
-      print(
+      debugPrint(
         '[MapProvider._handleAuthChange] Kullanıcı çıkış yaptı, pins sıfırlanıyor',
       );
       _pins = [];
@@ -108,15 +109,15 @@ class MapProvider extends ChangeNotifier {
   }
 
   Future<void> loadEquipments({String? type, bool forceRefresh = false}) async {
-    print(
+    debugPrint(
       '[MapProvider.loadEquipments] Çağrıldı: type=$type, forceRefresh=$forceRefresh',
     );
     if (_equipmentsLoading) {
-      print('[MapProvider.loadEquipments] Zaten yükleniyor, atlanıyor');
+      debugPrint('[MapProvider.loadEquipments] Zaten yükleniyor, atlanıyor');
       return;
     }
     if (!forceRefresh && _equipments.isNotEmpty && type == null) {
-      print(
+      debugPrint(
         '[MapProvider.loadEquipments] Zaten yüklü, atlanıyor: ${_equipments.length} ekipman',
       );
       return;
@@ -124,18 +125,18 @@ class MapProvider extends ChangeNotifier {
 
     _equipmentsLoading = true;
     notifyListeners();
-    print('[MapProvider.loadEquipments] Loading başladı...');
+    debugPrint('[MapProvider.loadEquipments] Loading başladı...');
     try {
       _equipments = await _apiService.fetchEquipments(type: type);
-      print(
+      debugPrint(
         '[MapProvider.loadEquipments] Başarılı: ${_equipments.length} ekipman yüklendi',
       );
     } catch (e) {
-      print('[MapProvider.loadEquipments] Hata: $e');
+      debugPrint('[MapProvider.loadEquipments] Hata: $e');
     } finally {
       _equipmentsLoading = false;
       notifyListeners();
-      print('[MapProvider.loadEquipments] Loading bitti');
+      debugPrint('[MapProvider.loadEquipments] Loading bitti');
     }
   }
 
@@ -270,7 +271,7 @@ class MapProvider extends ChangeNotifier {
         minDistanceM: minDistanceM,
       );
     } catch (e) {
-      print('Optimizasyon hatası: $e');
+      debugPrint('Optimizasyon hatası: $e');
       throw Exception('Optimizasyon hesaplaması başarısız oldu.');
     } finally {
       _isLoading = false;
@@ -307,20 +308,22 @@ class MapProvider extends ChangeNotifier {
   // --- API İşlemleri ---
   Future<void> fetchPins() async {
     // ... (değişiklik yok) ...
-    print(
+    debugPrint(
       '[MapProvider] fetchPins() çağrıldı, isLoggedIn: ${_authProvider.isLoggedIn}',
     );
     if (_authProvider.isLoggedIn != true) {
-      print('[MapProvider] isLoggedIn != true, fetchPins iptal edildi');
+      debugPrint('[MapProvider] isLoggedIn != true, fetchPins iptal edildi');
       return;
     }
     _isLoading = true;
     notifyListeners();
     try {
       _pins = await _apiService.fetchPins();
-      print('[MapProvider] fetchPins başarılı, ${_pins.length} pin yüklendi');
+      debugPrint(
+        '[MapProvider] fetchPins başarılı, ${_pins.length} pin yüklendi',
+      );
     } catch (e) {
-      print('[MapProvider] Pin yüklenirken hata: $e');
+      debugPrint('[MapProvider] Pin yüklenirken hata: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -340,7 +343,7 @@ class MapProvider extends ChangeNotifier {
       await _apiService.addPin(point, name, type, capacityMw, equipmentId);
       await fetchPins(); // Yeni pini çekmek için listeyi yenile
     } catch (e) {
-      print('Pin eklenirken hata: $e');
+      debugPrint('Pin eklenirken hata: $e');
       throw Exception('Pin eklenemedi. Lütfen tekrar deneyin.');
     }
   }
@@ -351,7 +354,7 @@ class MapProvider extends ChangeNotifier {
       await _apiService.deletePin(pinId);
       await fetchPins(); // Silme sonrası listeyi yenile
     } catch (e) {
-      print('Pin silinirken hata: $e');
+      debugPrint('Pin silinirken hata: $e');
       throw Exception('Pin silinemedi. Lütfen tekrar deneyin.');
     }
   }
@@ -376,7 +379,7 @@ class MapProvider extends ChangeNotifier {
         panelArea: panelArea ?? 0.0,
       );
     } catch (e) {
-      print('Hesaplama hatası: $e');
+      debugPrint('Hesaplama hatası: $e');
       throw Exception('Hesaplama yapılamadı.');
     } finally {
       _isLoading = false;
@@ -392,7 +395,7 @@ class MapProvider extends ChangeNotifier {
     try {
       _weatherData = await _apiService.fetchWeatherForTime(time);
     } catch (e) {
-      print('Hava durumu yüklenirken hata: $e');
+      debugPrint('Hava durumu yüklenirken hata: $e');
     }
     notifyListeners();
   }

@@ -117,7 +117,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                           onChanged: (val) {
                             setDialogState(() {
                               if (val == true) {
-                                selectedPinIds.add(pin.id!);
+                                selectedPinIds.add(pin.id);
                               } else {
                                 selectedPinIds.remove(pin.id);
                               }

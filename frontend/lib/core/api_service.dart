@@ -11,7 +11,7 @@ import 'secure_storage_service.dart';
 //
 import 'dart:io' show Platform; // Platform tespiti için eklendi
 import 'package:flutter/foundation.dart'
-    show kIsWeb; // Web tespiti için eklendi
+    show kIsWeb, debugPrint; // Web tespiti ve debugPrint
 
 String get _apiBaseUrl {
   if (kIsWeb) {
@@ -44,20 +44,22 @@ class ApiService {
   // --- Ekipman Kataloğu ---
 
   Future<List<Equipment>> fetchEquipments({String? type}) async {
-    print('[ApiService.fetchEquipments] Çağrıldı: type=$type');
+    debugPrint('[ApiService.fetchEquipments] Çağrıldı: type=$type');
     final query = type != null ? '?type=$type' : '';
-    print('[ApiService.fetchEquipments] URL: $_apiBaseUrl/equipments$query');
+    debugPrint(
+      '[ApiService.fetchEquipments] URL: $_apiBaseUrl/equipments$query',
+    );
     final response = await http.get(
       Uri.parse('$_apiBaseUrl/equipments$query'),
       headers: await _getHeaders(),
     );
 
-    print(
+    debugPrint(
       '[ApiService.fetchEquipments] Response status: ${response.statusCode}',
     );
     if (response.statusCode == 200) {
       final data = json.decode(utf8.decode(response.bodyBytes)) as List;
-      print('[ApiService.fetchEquipments] ${data.length} ekipman alındı');
+      debugPrint('[ApiService.fetchEquipments] ${data.length} ekipman alındı');
       return data.map((e) => Equipment.fromJson(e)).toList();
     }
 
@@ -102,15 +104,19 @@ class ApiService {
 
   Future<List<Pin>> fetchPins() async {
     // ... (değişiklik yok) ...
-    print('[ApiService.fetchPins] API çağrısı yapılıyor: $_apiBaseUrl/pins/');
+    debugPrint(
+      '[ApiService.fetchPins] API çağrısı yapılıyor: $_apiBaseUrl/pins/',
+    );
     final response = await http.get(
       Uri.parse('$_apiBaseUrl/pins/'),
       headers: await _getHeaders(),
     );
-    print('[ApiService.fetchPins] Response status: ${response.statusCode}');
+    debugPrint(
+      '[ApiService.fetchPins] Response status: ${response.statusCode}',
+    );
     if (response.statusCode == 200) {
       List<dynamic> pinsJson = json.decode(utf8.decode(response.bodyBytes));
-      print(
+      debugPrint(
         '[ApiService.fetchPins] ${pinsJson.length} pin JSON den parse edildi',
       );
       return pinsJson.map((json) => Pin.fromJson(json)).toList();

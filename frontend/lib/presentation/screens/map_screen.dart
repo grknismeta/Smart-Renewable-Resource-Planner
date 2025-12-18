@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/map_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../widgets/sidebar_menu.dart';
+import '../widgets/sidebar/sidebar_widgets.dart';
 import '../widgets/map/map_widgets.dart';
 
 class MapScreen extends StatefulWidget {
@@ -24,13 +24,8 @@ class _MapScreenState extends State<MapScreen> {
   bool _showLayersPanel = false;
   String _selectedBaseMap = 'dark';
   // Zaman slider penceresinin üst sınırı (sabit referans)
-  DateTime _timeWindowEnd = DateTime.now();
-
   // Mouse hover için
   LatLng? _hoverPosition;
-
-  // Zaman çizelgesi için
-  DateTime _selectedTime = DateTime.now();
 
   // Türkiye sınırları
   static const double _minLat = 35.5;
@@ -90,11 +85,11 @@ class _MapScreenState extends State<MapScreen> {
     final isWideScreen = screenWidth > 600;
 
     // Marker listesi oluştur (Kaynaklar)
-    print(
+    debugPrint(
       '[MapScreen.build] mapProvider.pins.length: ${mapProvider.pins.length}',
     );
     final markers = mapProvider.pins.map((pin) {
-      print(
+      debugPrint(
         '[MapScreen.build] Marker oluşturuluyor: ${pin.name} (${pin.type}) at (${pin.latitude}, ${pin.longitude})',
       );
       return Marker(
@@ -107,7 +102,7 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
     }).toList();
-    print('[MapScreen.build] Toplam ${markers.length} marker oluşturuldu');
+    debugPrint('[MapScreen.build] Toplam ${markers.length} marker oluşturuldu');
 
     // Optimizasyon sonucu marker'ları ekle (Türbin noktaları)
     if (mapProvider.optimizationResult != null) {
@@ -150,7 +145,6 @@ class _MapScreenState extends State<MapScreen> {
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (isWideScreen) const SidebarMenu(),
           Expanded(
             child: Stack(
               children: [
@@ -180,13 +174,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: _buildHoverInfo(theme, mapProvider),
                   ),
 
-                // --- ZAMAN ÇİZELGESİ (ALT) ---
-                Positioned(
-                  bottom: 100,
-                  left: 20,
-                  right: 20,
-                  child: _buildTimeSlider(theme, mapProvider),
-                ),
+                // Timeline removed — sidebar moved to bottom sheet instead.
 
                 // --- PIN YERLEŞTIRME UYARISI ---
                 if (mapProvider.placingPinType != null)
@@ -222,6 +210,8 @@ class _MapScreenState extends State<MapScreen> {
                     onZoomOut: _zoomOut,
                   ),
                 ),
+                // Sidebar launcher (replaces inline wide-screen sidebar)
+                Positioned(top: 80, left: 20, child: SidebarLauncher()),
               ],
             ),
           ),
@@ -350,7 +340,7 @@ class _MapScreenState extends State<MapScreen> {
 
                 mapProvider.dragPoint(newPoint);
               } catch (e) {
-                print('Drag hatası: $e');
+                debugPrint('Drag hatası: $e');
               }
             },
             onPanEnd: (_) => mapProvider.endDraggingPoint(),
@@ -439,17 +429,52 @@ class _MapScreenState extends State<MapScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        // Kaynak ekleme butonları
+        // Tek 'Ekle' butonu: tip seçimi bottom sheet ile
         Row(
           children: [
-            ResourceActionButton(
-              type: 'Rüzgar Türbini',
-              onTap: () => mapProvider.startPlacingMarker('Rüzgar Türbini'),
-            ),
-            const SizedBox(width: 12),
-            ResourceActionButton(
-              type: 'Güneş Paneli',
-              onTap: () => mapProvider.startPlacingMarker('Güneş Paneli'),
+            GestureDetector(
+              onTap: () {
+                showModalBottomSheet(
+                  context: context,
+                  backgroundColor: theme.cardColor,
+                  builder: (ctx) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.solar_power),
+                          title: const Text('Güneş Paneli'),
+                          onTap: () {
+                            Navigator.of(ctx).pop();
+                            mapProvider.startPlacingMarker('Güneş Paneli');
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.wind_power),
+                          title: const Text('Rüzgar Türbini'),
+                          onTap: () {
+                            Navigator.of(ctx).pop();
+                            mapProvider.startPlacingMarker('Rüzgar Türbini');
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+              child: Container(
+                width: 50,
+                height: 50,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: theme.cardColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: theme.secondaryTextColor.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Icon(Icons.add, color: theme.textColor),
+              ),
             ),
           ],
         ),
@@ -562,129 +587,7 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  /// Zaman çizelgesi slider'ı
-  Widget _buildTimeSlider(ThemeProvider theme, MapProvider mapProvider) {
-    // Gün seçimi: sadece seçilen günün verisi yüklensin.
-    // Pencereyi gün bazında sabitle (ör: son 30 gün)
-    final windowEndDay = DateTime(
-      _timeWindowEnd.year,
-      _timeWindowEnd.month,
-      _timeWindowEnd.day,
-    );
-    const daysBack = 30;
-    final minDate = windowEndDay.subtract(const Duration(days: daysBack));
-    final maxDate = windowEndDay;
-
-    final selectedDay = DateTime(
-      _selectedTime.year,
-      _selectedTime.month,
-      _selectedTime.day,
-    );
-
-    final minMs = minDate.millisecondsSinceEpoch.toDouble();
-    final maxMs = maxDate.millisecondsSinceEpoch.toDouble();
-    final selMs = selectedDay.millisecondsSinceEpoch.toDouble();
-    final clampedMs = selMs.clamp(minMs, maxMs) as double;
-    final displayDate = DateTime.fromMillisecondsSinceEpoch(clampedMs.toInt());
-    final totalDays = maxDate.difference(minDate).inDays;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.cardColor.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: theme.secondaryTextColor.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Zaman Çizelgesi',
-                style: TextStyle(
-                  color: theme.textColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                _formatDate(displayDate),
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 12),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: Colors.blueAccent,
-              inactiveTrackColor: theme.secondaryTextColor.withValues(
-                alpha: 0.3,
-              ),
-              thumbColor: Colors.blueAccent,
-              overlayColor: Colors.blueAccent.withValues(alpha: 0.2),
-            ),
-            child: Slider(
-              value: clampedMs,
-              min: minMs,
-              max: maxMs,
-              divisions: totalDays,
-              onChanged: (value) {
-                // Değeri en yakın güne oturt
-                const dayMs = 86400000; // 24*60*60*1000
-                final steps = ((value - minMs) / dayMs).round();
-                final snappedMs = (minMs + steps * dayMs).clamp(minMs, maxMs);
-                final chosenDate = DateTime.fromMillisecondsSinceEpoch(
-                  snappedMs.toInt(),
-                );
-
-                // Backend toleransı için öğlen 12:00 gönder
-                final requestTime = DateTime(
-                  chosenDate.year,
-                  chosenDate.month,
-                  chosenDate.day,
-                  12,
-                );
-
-                setState(() {
-                  _selectedTime = chosenDate;
-                });
-                mapProvider.loadWeatherForTime(requestTime);
-              },
-            ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '-$daysBack gün',
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 10),
-              ),
-              TextButton(
-                onPressed: () {
-                  final now = DateTime.now();
-                  setState(() {
-                    final today = DateTime(now.year, now.month, now.day);
-                    _timeWindowEnd = today;
-                    _selectedTime = today;
-                  });
-                  final noon = DateTime(now.year, now.month, now.day, 12);
-                  mapProvider.loadWeatherForTime(noon);
-                },
-                child: const Text('Bugün', style: TextStyle(fontSize: 12)),
-              ),
-              Text(
-                'Bugün',
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 10),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  // Timeline removed
 
   String _formatDate(DateTime dt) {
     // Basit: GG/AA
@@ -693,21 +596,7 @@ class _MapScreenState extends State<MapScreen> {
     return '$d/$m';
   }
 
-  String _formatDateTime(DateTime dt) {
-    final now = DateTime.now();
-    final diff = dt.difference(now);
-
-    String prefix = '';
-    if (diff.inHours.abs() < 1) {
-      prefix = 'Şimdi';
-    } else if (diff.isNegative) {
-      prefix = '${diff.inHours.abs()} saat önce';
-    } else {
-      prefix = '${diff.inHours} saat sonra';
-    }
-
-    return '$prefix - ${dt.day}/${dt.month} ${dt.hour.toString().padLeft(2, '0')}:00';
-  }
+  // Removed unused _formatDateTime helper.
 
   /// Haritayı Türkiye sınırları içinde tut
   void _constrainToTurkey(LatLng? center) {

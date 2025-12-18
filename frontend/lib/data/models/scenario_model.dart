@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 class Scenario {
   final int id;
@@ -45,7 +46,7 @@ class Scenario {
             );
           }
         } catch (e) {
-          print('pin_ids parse hatası: $e');
+          debugPrint('pin_ids parse hatası: $e');
         }
       }
     }

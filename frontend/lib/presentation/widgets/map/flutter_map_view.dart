@@ -13,9 +13,7 @@ import 'package:provider/provider.dart';
 import '../../../providers/map_provider.dart';
 import '../../../providers/theme_provider.dart';
 import '../../features/map/viewmodels/map_screen_viewmodel.dart';
-import 'map_constants.dart';
 import 'map_widgets.dart';
-import 'map_dialogs.dart';
 
 /// Flutter Map rendering widget - separated for clarity
 class FlutterMapView extends StatefulWidget {
@@ -269,7 +267,7 @@ class _FlutterMapViewState extends State<FlutterMapView> {
 
       mapProvider.dragPoint(newPoint);
     } catch (e) {
-      print('Drag error: $e');
+      debugPrint('Drag error: $e');
     }
   }
 

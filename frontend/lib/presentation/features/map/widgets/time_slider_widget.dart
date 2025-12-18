@@ -45,7 +45,7 @@ class _TimeSliderWidgetState extends State<TimeSliderWidget> {
     final minMs = minDate.millisecondsSinceEpoch.toDouble();
     final maxMs = maxDate.millisecondsSinceEpoch.toDouble();
     final selMs = selectedDay.millisecondsSinceEpoch.toDouble();
-    final clampedMs = selMs.clamp(minMs, maxMs) as double;
+    final clampedMs = selMs.clamp(minMs, maxMs);
     final displayDate = DateTime.fromMillisecondsSinceEpoch(clampedMs.toInt());
     final totalDays = maxDate.difference(minDate).inDays;
 

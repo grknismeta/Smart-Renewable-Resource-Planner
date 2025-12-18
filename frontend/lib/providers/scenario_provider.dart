@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../core/api_service.dart';
 import '../data/models/scenario_model.dart';
 
@@ -22,7 +23,7 @@ class ScenarioProvider extends ChangeNotifier {
     try {
       _scenarios = await _apiService.fetchScenarios();
     } catch (e) {
-      print('Senaryolar yüklenemedi: $e');
+      debugPrint('Senaryolar yüklenemedi: $e');
       _scenarios = [];
     } finally {
       _isLoading = false;
@@ -38,7 +39,7 @@ class ScenarioProvider extends ChangeNotifier {
       final newScenario = await _apiService.createScenario(scenarioCreate);
       _scenarios.insert(0, newScenario);
     } catch (e) {
-      print('Senaryo oluşturulamadı: $e');
+      debugPrint('Senaryo oluşturulamadı: $e');
       rethrow;
     } finally {
       _isLoading = false;
@@ -60,7 +61,7 @@ class ScenarioProvider extends ChangeNotifier {
         }
       }
     } catch (e) {
-      print('Senaryo hesaplanamadı: $e');
+      debugPrint('Senaryo hesaplanamadı: $e');
       rethrow;
     } finally {
       _isLoading = false;

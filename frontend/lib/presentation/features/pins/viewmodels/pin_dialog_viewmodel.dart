@@ -4,7 +4,6 @@
 // UI'dan tamamen bağımsız, test edilebilir
 
 import 'package:flutter/foundation.dart';
-import '../../../../data/models/pin_model.dart';
 import '../../../../data/models/system_data_models.dart';
 import '../../../../providers/map_provider.dart';
 
