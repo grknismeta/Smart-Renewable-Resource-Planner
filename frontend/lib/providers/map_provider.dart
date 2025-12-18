@@ -29,6 +29,10 @@ class MapProvider extends ChangeNotifier {
   // Hava durumu verileri
   List<CityWeatherData> _weatherData = [];
   DateTime _selectedTime = DateTime.now();
+  // 7 günlük özet ve şehir serileri için durum
+  List<CityWeatherSummary> _weatherSummary = [];
+  List<CityWeatherData> _cityHourly = [];
+  String? _cityHourlyName;
 
   // --- YENİ: BÖLGE SEÇİM MODUNUN STATE'İ (GÜNCELLENDİ - ÇOKLU KÖŞE) ---
   bool _isSelectingRegion = false; // Seçim modu açık mı?
@@ -47,6 +51,9 @@ class MapProvider extends ChangeNotifier {
       _latestCalculationResult;
   List<CityWeatherData> get weatherData => _weatherData;
   DateTime get selectedTime => _selectedTime;
+  List<CityWeatherSummary> get weatherSummary => _weatherSummary;
+  List<CityWeatherData> get cityHourly => _cityHourly;
+  String? get cityHourlyName => _cityHourlyName;
 
   // --- YENİ: GETTERS (GÜNCELLENDİ) ---
   bool get isSelectingRegion => _isSelectingRegion;
@@ -56,6 +63,7 @@ class MapProvider extends ChangeNotifier {
   bool get hasValidSelection => _selectionPoints.length >= 3; // Min 3 köşe
   List<Equipment> get equipments => _equipments;
   bool get isEquipmentLoading => _equipmentsLoading;
+  bool get equipmentsLoading => _equipmentsLoading;
 
   MapProvider(this._apiService, this._authProvider) {
     _authProvider.addListener(_handleAuthChange);
@@ -69,6 +77,15 @@ class MapProvider extends ChangeNotifier {
       );
       fetchPins();
     }
+    // Ülke genelinde özet (7 gün) ön yükleme
+    _loadWeatherSummarySafe();
+  }
+
+  Future<void> _loadWeatherSummarySafe() async {
+    try {
+      _weatherSummary = await _apiService.fetchWeatherSummary(hours: 168);
+      notifyListeners();
+    } catch (_) {}
   }
 
   void _handleAuthChange() {
@@ -376,6 +393,17 @@ class MapProvider extends ChangeNotifier {
       _weatherData = await _apiService.fetchWeatherForTime(time);
     } catch (e) {
       print('Hava durumu yüklenirken hata: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Belirli bir şehir için 7 günlük saatlik verileri yükle
+  Future<void> loadCityWeekly(String cityName) async {
+    try {
+      _cityHourlyName = cityName;
+      _cityHourly = await _apiService.fetchCityHourly(cityName, hours: 168);
+    } catch (e) {
+      _cityHourly = [];
     }
     notifyListeners();
   }

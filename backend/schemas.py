@@ -145,18 +145,20 @@ class RegionalReportResponse(BaseModel):
 class ScenarioCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    pin_id: int
-    start_date: datetime
-    end_date: datetime
+    pin_ids: List[int] = []  # Artık birden fazla pin desteklenir
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
 
 class ScenarioResponse(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
-    pin_id: int
+    pin_ids: List[int] = []
+    # Geriye dönük uyumluluk için
+    pin_id: Optional[int] = None
     owner_id: int
-    start_date: datetime
-    end_date: datetime
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     result_data: Optional[Dict[str, Any]] = None
     created_at: Optional[datetime] = None
     

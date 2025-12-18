@@ -9,7 +9,7 @@ from .database import SystemSessionLocal as SessionLocal
 from . import models, schemas
 # Solar ve Wind fonksiyonlarını import ettiğimizden emin olalım
 from .solar_calculations import get_historical_hourly_solar_data
-from .wind_calculations import get_historical_hourly_wind_data
+from .wind_calculations import get_wind_speed_from_coordinates
 
 # --- TÜRKİYE SINIRLARI ve GRID AYARLARI ---
 TURKEY_BOUNDS = {
@@ -104,7 +104,7 @@ def perform_grid_analysis(db: Session, resource_type: str):
                     if resource_type == "Solar":
                         data_result = get_historical_hourly_solar_data(lat, lon)
                     elif resource_type == "Wind":
-                        data_result = get_historical_hourly_wind_data(lat, lon)
+                        data_result = get_wind_speed_from_coordinates(lat, lon)
                     else:
                         data_result = {"error": "Bilinmeyen kaynak tipi"}
                         

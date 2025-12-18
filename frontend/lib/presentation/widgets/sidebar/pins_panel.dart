@@ -27,7 +27,7 @@ class PinsPanel extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Icon(
           Icons.location_on,
-          color: theme.secondaryTextColor.withOpacity(0.6),
+          color: theme.secondaryTextColor.withValues(alpha: 0.6),
         ),
       );
     }
@@ -44,9 +44,11 @@ class PinsPanel extends StatelessWidget {
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: theme.cardColor.withOpacity(0.4),
+        color: theme.cardColor.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.secondaryTextColor.withOpacity(0.1)),
+        border: Border.all(
+          color: theme.secondaryTextColor.withValues(alpha: 0.1),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -69,7 +71,7 @@ class PinsPanel extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: theme.backgroundColor.withOpacity(0.5),
+                  color: theme.backgroundColor.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -155,7 +157,7 @@ class PinsPanel extends StatelessWidget {
         Text(
           '($count)',
           style: TextStyle(
-            color: theme.secondaryTextColor.withOpacity(0.6),
+            color: theme.secondaryTextColor.withValues(alpha: 0.6),
             fontSize: 10,
           ),
         ),
@@ -174,9 +176,12 @@ class PinsPanel extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
-              color: theme.backgroundColor.withOpacity(0.3),
+              color: theme.backgroundColor.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: accentColor.withOpacity(0.2), width: 1),
+              border: Border.all(
+                color: accentColor.withValues(alpha: 0.2),
+                width: 1,
+              ),
             ),
             child: Row(
               children: [
@@ -214,7 +219,7 @@ class PinsPanel extends StatelessWidget {
                 ),
                 Icon(
                   Icons.chevron_right,
-                  color: theme.secondaryTextColor.withOpacity(0.4),
+                  color: theme.secondaryTextColor.withValues(alpha: 0.4),
                   size: 16,
                 ),
               ],

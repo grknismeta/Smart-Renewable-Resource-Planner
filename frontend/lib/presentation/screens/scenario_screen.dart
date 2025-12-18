@@ -41,9 +41,9 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
 
     final nameController = TextEditingController();
     final descController = TextEditingController();
-    int? selectedPinId = pins.first.id;
-    DateTime startDate = DateTime.now();
-    DateTime endDate = DateTime.now().add(const Duration(days: 365));
+    List<int> selectedPinIds = []; // Birden fazla pin seçilebilir
+    DateTime? startDate = DateTime.now().add(const Duration(days: -365));
+    DateTime? endDate = DateTime.now();
 
     showDialog(
       context: context,
@@ -82,23 +82,51 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<int>(
-                  value: selectedPinId,
-                  dropdownColor: theme.cardColor,
-                  decoration: InputDecoration(
-                    labelText: 'Kaynak Seç',
-                    labelStyle: TextStyle(color: theme.secondaryTextColor),
+                Text(
+                  'Kaynakları Seç (Birden fazla seçilebilir)',
+                  style: TextStyle(
+                    color: theme.secondaryTextColor,
+                    fontSize: 14,
                   ),
-                  items: pins.map((pin) {
-                    return DropdownMenuItem(
-                      value: pin.id,
-                      child: Text(
-                        '${pin.name} (${pin.type})',
-                        style: TextStyle(color: theme.textColor),
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (val) => setDialogState(() => selectedPinId = val),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 150),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: theme.secondaryTextColor),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: pins.length,
+                      itemBuilder: (ctx, i) {
+                        final pin = pins[i];
+                        final isSelected = selectedPinIds.contains(pin.id);
+                        return CheckboxListTile(
+                          title: Text(
+                            '${pin.name} (${pin.type})',
+                            style: TextStyle(
+                              color: theme.textColor,
+                              fontSize: 13,
+                            ),
+                          ),
+                          value: isSelected,
+                          activeColor: Colors.blueAccent,
+                          onChanged: (val) {
+                            setDialogState(() {
+                              if (val == true) {
+                                selectedPinIds.add(pin.id!);
+                              } else {
+                                selectedPinIds.remove(pin.id);
+                              }
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 ListTile(
@@ -107,14 +135,16 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                     style: TextStyle(color: theme.textColor, fontSize: 14),
                   ),
                   subtitle: Text(
-                    '${startDate.day}/${startDate.month}/${startDate.year}',
+                    startDate != null
+                        ? '${startDate!.day}/${startDate!.month}/${startDate!.year}'
+                        : 'Tarihi seçin',
                     style: TextStyle(color: theme.secondaryTextColor),
                   ),
                   trailing: Icon(Icons.calendar_today, color: theme.textColor),
                   onTap: () async {
                     final picked = await showDatePicker(
                       context: ctx,
-                      initialDate: startDate,
+                      initialDate: startDate ?? DateTime.now(),
                       firstDate: DateTime(2020),
                       lastDate: DateTime(2030),
                     );
@@ -129,15 +159,17 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                     style: TextStyle(color: theme.textColor, fontSize: 14),
                   ),
                   subtitle: Text(
-                    '${endDate.day}/${endDate.month}/${endDate.year}',
+                    endDate != null
+                        ? '${endDate!.day}/${endDate!.month}/${endDate!.year}'
+                        : 'Tarihi seçin',
                     style: TextStyle(color: theme.secondaryTextColor),
                   ),
                   trailing: Icon(Icons.calendar_today, color: theme.textColor),
                   onTap: () async {
                     final picked = await showDatePicker(
                       context: ctx,
-                      initialDate: endDate,
-                      firstDate: startDate,
+                      initialDate: endDate ?? DateTime.now(),
+                      firstDate: startDate ?? DateTime(2020),
                       lastDate: DateTime(2030),
                     );
                     if (picked != null) {
@@ -161,7 +193,12 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                 backgroundColor: Colors.blueAccent,
               ),
               onPressed: () async {
-                if (nameController.text.isEmpty || selectedPinId == null) {
+                if (nameController.text.isEmpty || selectedPinIds.isEmpty) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(
+                      content: Text('En az bir kaynak seçmelisiniz!'),
+                    ),
+                  );
                   return;
                 }
 
@@ -170,7 +207,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                   description: descController.text.isEmpty
                       ? null
                       : descController.text,
-                  pinId: selectedPinId!,
+                  pinIds: selectedPinIds,
                   startDate: startDate,
                   endDate: endDate,
                 );
@@ -220,17 +257,21 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-              _InfoRow(
-                'Başlangıç',
-                '${scenario.startDate.day}/${scenario.startDate.month}/${scenario.startDate.year}',
-                theme,
-              ),
-              _InfoRow(
-                'Bitiş',
-                '${scenario.endDate.day}/${scenario.endDate.month}/${scenario.endDate.year}',
-                theme,
-              ),
-              _InfoRow('Pin ID', '${scenario.pinId}', theme),
+              if (scenario.startDate != null)
+                _InfoRow(
+                  'Başlangıç',
+                  '${scenario.startDate!.day}/${scenario.startDate!.month}/${scenario.startDate!.year}',
+                  theme,
+                ),
+              if (scenario.endDate != null)
+                _InfoRow(
+                  'Bitiş',
+                  '${scenario.endDate!.day}/${scenario.endDate!.month}/${scenario.endDate!.year}',
+                  theme,
+                ),
+              _InfoRow('Pin Sayısı', '${scenario.pinIds.length}', theme),
+              if (scenario.pinIds.isNotEmpty)
+                _InfoRow('Pin IDler', scenario.pinIds.join(', '), theme),
               const SizedBox(height: 16),
               if (scenario.resultData != null) ...[
                 Text(
@@ -244,7 +285,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.2),
+                    color: Colors.black.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -266,6 +307,37 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Kapat'),
           ),
+          if (scenario.startDate != null && scenario.endDate != null)
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orangeAccent,
+              ),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  final sp = Provider.of<ScenarioProvider>(
+                    context,
+                    listen: false,
+                  );
+                  await sp.calculateScenario(scenario.id);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Senaryo hesaplandı!')),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Hesaplama hatası: $e')),
+                    );
+                  }
+                }
+              },
+              child: const Text(
+                'Hesapla',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
@@ -307,7 +379,9 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                             Icon(
                               Icons.science_outlined,
                               size: 80,
-                              color: theme.secondaryTextColor.withOpacity(0.3),
+                              color: theme.secondaryTextColor.withValues(
+                                alpha: 0.3,
+                              ),
                             ),
                             const SizedBox(height: 16),
                             Text(
@@ -321,8 +395,8 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                             Text(
                               'Yeni bir senaryo oluşturmak için + tuşuna basın',
                               style: TextStyle(
-                                color: theme.secondaryTextColor.withOpacity(
-                                  0.7,
+                                color: theme.secondaryTextColor.withValues(
+                                  alpha: 0.7,
                                 ),
                                 fontSize: 14,
                               ),
@@ -376,7 +450,9 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
   }
 
   Widget _buildScenarioCard(Scenario scenario, ThemeProvider theme) {
-    final duration = scenario.endDate.difference(scenario.startDate).inDays;
+    final duration = scenario.startDate != null && scenario.endDate != null
+        ? scenario.endDate!.difference(scenario.startDate!).inDays
+        : 0;
 
     return GestureDetector(
       onTap: () => _showScenarioDetail(scenario, theme),
@@ -389,16 +465,16 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
+                color: Colors.white.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withOpacity(0.12)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
               ),
               child: Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.blueAccent.withOpacity(0.2),
+                      color: Colors.blueAccent.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -433,9 +509,13 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                           ),
                         const SizedBox(height: 8),
                         Text(
-                          '$duration gün · Pin #${scenario.pinId}',
+                          duration > 0
+                              ? '$duration gün · ${scenario.pinIds.length} kaynak'
+                              : '${scenario.pinIds.length} kaynak',
                           style: TextStyle(
-                            color: theme.secondaryTextColor.withOpacity(0.7),
+                            color: theme.secondaryTextColor.withValues(
+                              alpha: 0.7,
+                            ),
                             fontSize: 12,
                           ),
                         ),

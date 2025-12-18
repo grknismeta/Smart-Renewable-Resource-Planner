@@ -20,6 +20,7 @@ class Pin {
   final double? panelAzimuth;
   final int? turbineModelId;
   final int? panelModelId;
+  final int? equipmentId;
 
   Pin({
     required this.id,
@@ -35,6 +36,7 @@ class Pin {
     this.panelAzimuth,
     this.turbineModelId,
     this.panelModelId,
+    this.equipmentId,
   });
 
   // Backend'e (POST /pins/ veya POST /pins/calculate) göndermek için
@@ -52,6 +54,7 @@ class Pin {
       'panel_azimuth': panelAzimuth,
       'turbine_model_id': turbineModelId,
       'panel_model_id': panelModelId,
+      'equipment_id': equipmentId,
     };
   }
 
@@ -73,6 +76,7 @@ class Pin {
       panelAzimuth: (json['panel_azimuth'] as num?)?.toDouble(),
       turbineModelId: json['turbine_model_id'] as int?,
       panelModelId: json['panel_model_id'] as int?,
+      equipmentId: json['equipment_id'] as int?,
     );
   }
 }

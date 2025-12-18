@@ -73,10 +73,12 @@ class _SidebarMenuState extends State<SidebarMenu> {
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: theme.cardColor.withOpacity(0.6),
+                          color: theme.cardColor.withValues(alpha: 0.6),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: theme.secondaryTextColor.withOpacity(0.1),
+                            color: theme.secondaryTextColor.withValues(
+                              alpha: 0.1,
+                            ),
                           ),
                         ),
                         child: Row(
@@ -115,7 +117,7 @@ class _SidebarMenuState extends State<SidebarMenu> {
                     if (_isCollapsed) ...[
                       const SizedBox(height: 10),
                       Divider(
-                        color: theme.secondaryTextColor.withOpacity(0.1),
+                        color: theme.secondaryTextColor.withValues(alpha: 0.1),
                         indent: 5,
                         endIndent: 220,
                       ),

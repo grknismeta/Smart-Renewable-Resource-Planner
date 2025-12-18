@@ -146,9 +146,13 @@ class MapDialogs {
                     Consumer<MapProvider>(
                       builder: (context, provider, _) {
                         final equipmentType = _getEquipmentType(selectedType);
-                        // Tip değiştiğinde ekipmanları reload et
-                        if (provider.equipments.isEmpty) {
-                          provider.loadEquipments(type: equipmentType);
+
+                        // Build sırasında setState çağrılmaması için post-frame callback kullan
+                        if (provider.equipments.isEmpty &&
+                            !provider.equipmentsLoading) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            provider.loadEquipments(type: equipmentType);
+                          });
                         }
 
                         final filteredEquipments = provider.equipments
@@ -333,10 +337,14 @@ class MapDialogs {
     String selectedType = pinType;
     int? selectedEquipmentId;
 
-    // Ekipmanları hemen yükle
+    // Ekipmanları dialog açıldıktan sonra yükle
     final mapProvider = Provider.of<MapProvider>(context, listen: false);
     final equipmentType = selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
-    mapProvider.loadEquipments(type: equipmentType);
+
+    // Post-frame callback ile state değişikliğini ertele
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      mapProvider.loadEquipments(type: equipmentType);
+    });
 
     showDialog(
       context: context,
@@ -414,10 +422,10 @@ class MapDialogs {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
+                            color: Colors.orange.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: Colors.orange.withOpacity(0.3),
+                              color: Colors.orange.withValues(alpha: 0.3),
                             ),
                           ),
                           child: Row(

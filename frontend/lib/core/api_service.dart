@@ -199,8 +199,13 @@ class ApiService {
   // --- Hava Durumu İşlemleri ---
 
   /// Tüm şehirler için özet hava durumu verisi getir
-  Future<List<CityWeatherSummary>> fetchWeatherSummary() async {
-    final response = await http.get(Uri.parse('$_apiBaseUrl/weather/summary'));
+  Future<List<CityWeatherSummary>> fetchWeatherSummary({
+    int hours = 168,
+  }) async {
+    final uri = Uri.parse(
+      '$_apiBaseUrl/weather/summary',
+    ).replace(queryParameters: {'hours': '$hours'});
+    final response = await http.get(uri);
     if (response.statusCode == 200) {
       List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
       return data.map((json) => CityWeatherSummary.fromJson(json)).toList();
@@ -222,6 +227,25 @@ class ApiService {
     } else {
       // Hata durumunda boş liste döndür
       return [];
+    }
+  }
+
+  /// Belirli bir şehir için son N saatlik (varsayılan 7 gün) veri
+  Future<List<CityWeatherData>> fetchCityHourly(
+    String cityName, {
+    int hours = 168,
+  }) async {
+    final uri = Uri.parse(
+      '$_apiBaseUrl/weather/cities/$cityName/hourly',
+    ).replace(queryParameters: {'hours': '$hours'});
+    final response = await http.get(uri);
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+      return data.map((e) => CityWeatherData.fromJson(e)).toList();
+    } else {
+      throw Exception(
+        'Şehir saatlik verisi alınamadı (status: ${response.statusCode})',
+      );
     }
   }
 
@@ -311,6 +335,20 @@ class ApiService {
     }
 
     throw Exception('Senaryo oluşturulamadı (status: ${response.statusCode})');
+  }
+
+  Future<Scenario> calculateScenario(int scenarioId) async {
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/scenarios/$scenarioId/calculate'),
+      headers: await _getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
+      return Scenario.fromJson(data);
+    }
+
+    throw Exception('Senaryo hesaplanamadı (status: ${response.statusCode})');
   }
 }
 

@@ -29,15 +29,18 @@ class _AuthScreenState extends State<AuthScreen> {
 
   void _submit() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Lütfen e-posta ve şifre giriniz."), backgroundColor: Colors.orange),
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Lütfen e-posta ve şifre giriniz."),
+          backgroundColor: Colors.orange,
+        ),
       );
       return;
     }
 
     setState(() => _isLoading = true);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
+
     try {
       if (_isLoginMode) {
         // --- GİRİŞ YAP ---
@@ -55,7 +58,7 @@ class _AuthScreenState extends State<AuthScreen> {
           _emailController.text,
           _passwordController.text,
         );
-        
+
         // Kayıt sonrası otomatik giriş
         await authProvider.login(
           _emailController.text,
@@ -64,7 +67,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Kayıt ve Giriş Başarılı!"), backgroundColor: Colors.green),
+            const SnackBar(
+              content: Text("Kayıt ve Giriş Başarılı!"),
+              backgroundColor: Colors.green,
+            ),
           );
         }
       }
@@ -74,12 +80,14 @@ class _AuthScreenState extends State<AuthScreen> {
         // Misafir modundan geldiysek veya normal açılışsa, anasayfaya yönlendir ve geçmişi temizle.
         Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
       }
-
     } catch (e) {
       if (!mounted) return;
       String errorMessage = e.toString().replaceAll("Exception:", "").trim();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("İşlem Hatası: $errorMessage"), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text("İşlem Hatası: $errorMessage"),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -88,7 +96,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
   void _continueAsGuest() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Misafir olarak devam ediliyor..."), backgroundColor: Colors.blue),
+      const SnackBar(
+        content: Text("Misafir olarak devam ediliyor..."),
+        backgroundColor: Colors.blue,
+      ),
     );
     Navigator.of(context).pushReplacementNamed('/map');
   }
@@ -96,25 +107,28 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: false, 
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           FlutterMap(
             options: MapOptions(
               initialCenter: _center,
               initialZoom: 6.0,
-              interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
+              interactionOptions: const InteractionOptions(
+                flags: InteractiveFlag.none,
+              ),
               cameraConstraint: CameraConstraint.contain(bounds: _turkeyBounds),
             ),
             children: [
               TileLayer(
                 tileProvider: CancellableNetworkTileProvider(),
-                urlTemplate: 'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                urlTemplate:
+                    'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
               ),
             ],
           ),
 
-          Container(color: Colors.black.withOpacity(0.3)),
+          Container(color: Colors.black.withValues(alpha: 0.3)),
 
           Center(
             child: SingleChildScrollView(
@@ -128,23 +142,29 @@ class _AuthScreenState extends State<AuthScreen> {
                     width: 380,
                     padding: const EdgeInsets.all(30),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E232F).withOpacity(0.75),
+                      color: const Color(0xFF1E232F).withValues(alpha: 0.75),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.1),
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.3),
+                          color: Colors.black.withValues(alpha: 0.3),
                           blurRadius: 20,
                           spreadRadius: 5,
-                        )
+                        ),
                       ],
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.eco, size: 50, color: Colors.greenAccent),
+                        const Icon(
+                          Icons.eco,
+                          size: 50,
+                          color: Colors.greenAccent,
+                        ),
                         const SizedBox(height: 10),
-                        
+
                         Text(
                           _isLoginMode ? "SRRP Giriş" : "SRRP Kayıt Ol",
                           style: const TextStyle(
@@ -157,7 +177,10 @@ class _AuthScreenState extends State<AuthScreen> {
                         const SizedBox(height: 5),
                         Text(
                           "Akıllı Yenilenebilir Kaynak Planlayıcı",
-                          style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7)),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.7),
+                          ),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 30),
@@ -175,7 +198,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           icon: Icons.lock_outline,
                           isPassword: true,
                         ),
-                        
+
                         if (!_isLoginMode) ...[
                           const SizedBox(height: 15),
                           _buildGlassTextField(
@@ -194,20 +217,34 @@ class _AuthScreenState extends State<AuthScreen> {
                           child: ElevatedButton(
                             onPressed: _isLoading ? null : _submit,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _isLoginMode ? Colors.blueAccent : Colors.green,
+                              backgroundColor: _isLoginMode
+                                  ? Colors.blueAccent
+                                  : Colors.green,
                               foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                               elevation: 5,
                             ),
                             child: _isLoading
-                                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
                                 : Text(
                                     _isLoginMode ? "Giriş Yap" : "Kayıt Ol",
-                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                           ),
                         ),
-                        
+
                         const SizedBox(height: 20),
 
                         Wrap(
@@ -215,8 +252,12 @@ class _AuthScreenState extends State<AuthScreen> {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Text(
-                              _isLoginMode ? "Hesabın yok mu? " : "Zaten hesabın var mı? ",
-                              style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                              _isLoginMode
+                                  ? "Hesabın yok mu? "
+                                  : "Zaten hesabın var mı? ",
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.7),
+                              ),
                             ),
                             GestureDetector(
                               onTap: () {
@@ -226,11 +267,13 @@ class _AuthScreenState extends State<AuthScreen> {
                                 });
                               },
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8.0,
+                                ),
                                 child: Text(
                                   _isLoginMode ? "Kayıt Ol" : "Giriş Yap",
                                   style: const TextStyle(
-                                    color: Colors.white, 
+                                    color: Colors.white,
                                     fontWeight: FontWeight.bold,
                                     decoration: TextDecoration.underline,
                                   ),
@@ -245,18 +288,21 @@ class _AuthScreenState extends State<AuthScreen> {
                           child: Text(
                             "Giriş Yapmadan Devam Et",
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.5),
+                              color: Colors.white.withValues(alpha: 0.5),
                               fontSize: 12,
                             ),
                           ),
                         ),
-                        
+
                         if (_isLoginMode)
                           TextButton(
                             onPressed: () {},
                             child: Text(
                               "Şifremi Unuttum",
-                              style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12),
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.4),
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                       ],
@@ -279,9 +325,9 @@ class _AuthScreenState extends State<AuthScreen> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
+        color: Colors.white.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
       ),
       child: TextField(
         controller: controller,
@@ -290,9 +336,12 @@ class _AuthScreenState extends State<AuthScreen> {
         decoration: InputDecoration(
           prefixIcon: Icon(icon, color: Colors.white70),
           hintText: hintText,
-          hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 15,
+          ),
         ),
       ),
     );

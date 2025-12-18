@@ -46,6 +46,28 @@ class ScenarioProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> calculateScenario(int scenarioId) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final updatedScenario = await _apiService.calculateScenario(scenarioId);
+      final index = _scenarios.indexWhere((s) => s.id == scenarioId);
+      if (index != -1) {
+        _scenarios[index] = updatedScenario;
+        if (_selectedScenario?.id == scenarioId) {
+          _selectedScenario = updatedScenario;
+        }
+      }
+    } catch (e) {
+      print('Senaryo hesaplanamadı: $e');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   void selectScenario(Scenario scenario) {
     _selectedScenario = scenario;
     notifyListeners();
