@@ -22,7 +22,31 @@ def predict_future_production(
     # 1. Veri Hazırlığı
     df = pd.DataFrame(hourly_data)
     df['time'] = pd.to_datetime(df['time'])
-    target_col = 'value'
+
+    # Hedef sütunu tespit et (geriye dönük uyumluluk için birden fazla isim desteklenir)
+    # Solar için genellikle 'ghi' (shortwave_radiation), bazı akışlarda 'value' kullanılıyor.
+    target_candidates = [
+        'value',
+        'ghi',
+        'shortwave_radiation',
+        'power',
+        'wind_speed_100m',
+        'wind_speed',
+    ]
+
+    target_col: Optional[str] = None
+    for col in target_candidates:
+        if col in df.columns:
+            target_col = col
+            break
+
+    if target_col is None:
+        # Açık ve kullanıcı-dostu bir hata döndürerek 500 yerine kontrollü yanıt verelim
+        return {
+            "error": "ML eğitim hedefi için uygun sütun bulunamadı",
+            "expected_any_of": target_candidates,
+            "available_columns": list(df.columns)
+        }
     
     # Özellik Mühendisliği (Feature Engineering)
     # Pylance hatalarını susturmak için # type: ignore kullanıyoruz

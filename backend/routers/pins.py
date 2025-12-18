@@ -53,7 +53,9 @@ def read_pins_for_user(
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
     user_id = cast(int, current_user.id)
-    return crud.get_pins_by_owner(db, owner_id=user_id, skip=skip, limit=limit)
+    pins = crud.get_pins_by_owner(db, owner_id=user_id, skip=skip, limit=limit)
+    print(f'[Pins Router] GET /pins/ - user_id={user_id}, {len(pins)} pin döndürüldü')
+    return pins
 
 @router.post("/calculate", response_model=PinCalculationResponse)
 def calculate_pin_potential(

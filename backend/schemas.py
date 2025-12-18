@@ -109,3 +109,58 @@ class GridResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+# --- RAPORLAMA ---
+
+class RegionalSite(BaseModel):
+    city: str
+    district: Optional[str] = None
+    type: str
+    latitude: float
+    longitude: float
+    overall_score: float
+    annual_potential_kwh_m2: Optional[float] = None
+    avg_wind_speed_ms: Optional[float] = None
+    annual_solar_irradiance_kwh_m2: Optional[float] = None
+    rank: int
+
+
+class RegionalStats(BaseModel):
+    max_score: float
+    min_score: float
+    avg_score: float
+    site_count: int
+
+
+class RegionalReportResponse(BaseModel):
+    region: str
+    type: Literal["Solar", "Wind"]
+    generated_at: datetime
+    period_days: int = 365
+    items: List[RegionalSite]
+    stats: Optional[RegionalStats] = None
+
+# --- SENARYO ---
+
+class ScenarioCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    pin_ids: List[int] = []  # Artık birden fazla pin desteklenir
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+
+class ScenarioResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    pin_ids: List[int] = []
+    # Geriye dönük uyumluluk için
+    pin_id: Optional[int] = None
+    owner_id: int
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    result_data: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True

@@ -31,10 +31,17 @@ def create_user(db: Session, user: schemas.UserCreate):
 
 def get_equipments(db: Session, type: Optional[str] = None, skip: int = 0, limit: int = 100):
     # db: SystemSession olmalı
+    print(f'[CRUD.get_equipments] type={type}, skip={skip}, limit={limit}')
     query = db.query(models.Equipment)
+    total_count = query.count()
+    print(f'[CRUD.get_equipments] Toplam equipment sayısı: {total_count}')
     if type:
         query = query.filter(models.Equipment.type == type)
-    return query.offset(skip).limit(limit).all()
+        filtered_count = query.count()
+        print(f'[CRUD.get_equipments] {type} filtresi sonrası: {filtered_count}')
+    result = query.offset(skip).limit(limit).all()
+    print(f'[CRUD.get_equipments] Döndürülen: {len(result)} ekipman')
+    return result
 
 def get_equipment(db: Session, equipment_id: int):
     # db: SystemSession olmalı

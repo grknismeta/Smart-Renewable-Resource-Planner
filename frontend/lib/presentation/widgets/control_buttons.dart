@@ -35,23 +35,41 @@ class ControlButtons extends StatelessWidget {
         ),
         const SizedBox(height: 10),
 
-        // --- 2. GÜNCELLEME: Güneş Paneli Ekle Butonu ---
+        // --- 2. GÜNCELLEME: Tek "Ekle" Butonu - Tip dropdown ile seçim
         FloatingActionButton(
-          heroTag: 'btn_solar',
-          onPressed: () => mapProvider.startPlacingMarker('Güneş Paneli'),
-          tooltip: 'Güneş Paneli Ekle',
-          backgroundColor: placingSolar ? Colors.amber : Colors.blueGrey,
-          child: const Icon(Icons.solar_power),
-        ),
-        const SizedBox(height: 10),
-
-        // --- 3. GÜNCELLEME: Rüzgar Türbini Ekle Butonu ---
-        FloatingActionButton(
-          heroTag: 'btn_wind',
-          onPressed: () => mapProvider.startPlacingMarker('Rüzgar Türbini'),
-          tooltip: 'Rüzgar Türbini Ekle',
-          backgroundColor: placingWind ? Colors.blue : Colors.blueGrey,
-          child: const Icon(Icons.wind_power),
+          heroTag: 'btn_add',
+          onPressed: () {
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: Theme.of(context).cardColor,
+              builder: (ctx) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.solar_power),
+                      title: const Text('Güneş Paneli'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        mapProvider.startPlacingMarker('Güneş Paneli');
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.wind_power),
+                      title: const Text('Rüzgar Türbini'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        mapProvider.startPlacingMarker('Rüzgar Türbini');
+                      },
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+          tooltip: 'Ekle',
+          backgroundColor: isPlacing ? Colors.green : Colors.blueGrey,
+          child: const Icon(Icons.add),
         ),
 
         // --- 4. GÜNCELLEME: Ekleme Modu Aktifse "İptal" Butonu Göster ---

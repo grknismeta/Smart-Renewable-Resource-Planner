@@ -120,12 +120,19 @@ def get_city_latest_data(city_name: str):
 
 
 @router.get("/summary", response_model=List[CitySummary])
-def get_all_cities_summary():
-    """Tüm şehirler için özet bilgi getir"""
+def get_all_cities_summary(
+    hours: int = Query(
+        default=168,
+        ge=1,
+        le=720,
+        description="Özet için saat aralığı (varsayılan 7 gün = 168 saat)",
+    )
+):
+    """Tüm şehirler için özet bilgi getir (varsayılan son 7 gün)."""
     db = SystemSessionLocal()
     try:
-        # Son 24 saat için özet hesapla
-        cutoff = datetime.now() - timedelta(hours=24)
+        # İstenen saat aralığı için özet hesapla
+        cutoff = datetime.now() - timedelta(hours=hours)
         
         summaries = []
         for city in TURKEY_CITIES:

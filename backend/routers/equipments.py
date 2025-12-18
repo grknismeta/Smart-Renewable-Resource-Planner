@@ -19,7 +19,9 @@ def read_equipments(
     Sistemde kayıtlı rüzgar türbini ve güneş paneli modellerini listeler.
     Opsiyonel olarak 'type' (Solar/Wind) ile filtreleme yapılabilir.
     """
+    print(f'[Equipments Router] GET /equipments/ - type={type}, user_id={current_user.id}')
     equipments = crud.get_equipments(db, type=type, skip=skip, limit=limit)
+    print(f'[Equipments Router] {len(equipments)} ekipman döndürülüyor')
     return equipments
 
 @router.get("/{equipment_id}", response_model=schemas.EquipmentResponse)

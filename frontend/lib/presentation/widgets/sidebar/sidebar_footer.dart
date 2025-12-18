@@ -23,7 +23,9 @@ class SidebarFooter extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(color: theme.secondaryTextColor.withOpacity(0.1)),
+          top: BorderSide(
+            color: theme.secondaryTextColor.withValues(alpha: 0.1),
+          ),
         ),
       ),
       child: Column(

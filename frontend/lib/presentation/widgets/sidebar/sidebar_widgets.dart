@@ -3,3 +3,5 @@ export 'sidebar_header.dart';
 export 'sidebar_footer.dart';
 export 'data_panel.dart';
 export 'scenario_button.dart';
+export 'pins_panel.dart';
+export 'sidebar_launcher.dart';

@@ -20,6 +20,7 @@ class Pin {
   final double? panelAzimuth;
   final int? turbineModelId;
   final int? panelModelId;
+  final int? equipmentId;
 
   Pin({
     required this.id,
@@ -35,6 +36,7 @@ class Pin {
     this.panelAzimuth,
     this.turbineModelId,
     this.panelModelId,
+    this.equipmentId,
   });
 
   // Backend'e (POST /pins/ veya POST /pins/calculate) göndermek için
@@ -52,6 +54,7 @@ class Pin {
       'panel_azimuth': panelAzimuth,
       'turbine_model_id': turbineModelId,
       'panel_model_id': panelModelId,
+      'equipment_id': equipmentId,
     };
   }
 
@@ -61,7 +64,9 @@ class Pin {
       id: json['id'] as int,
       latitude: (json['latitude'] as num).toDouble(),
       longitude: (json['longitude'] as num).toDouble(),
-      name: json['name'] as String,
+      name:
+          (json['name'] ?? json['title'] ?? 'Yeni Kaynak')
+              as String, // 'name' or 'title' with fallback
       type: json['type'] as String,
       capacityMw: (json['capacity_mw'] as num).toDouble(),
       ownerId: json['owner_id'] as int,
@@ -71,6 +76,7 @@ class Pin {
       panelAzimuth: (json['panel_azimuth'] as num?)?.toDouble(),
       turbineModelId: json['turbine_model_id'] as int?,
       panelModelId: json['panel_model_id'] as int?,
+      equipmentId: json['equipment_id'] as int?,
     );
   }
 }
@@ -85,6 +91,9 @@ class SolarCalculationResponse {
   final double panelEfficiency;
   final double powerOutputKw;
   final String panelModel;
+  final double potentialKwhAnnual;
+  final double performanceRatio;
+  final Map<String, double>? monthlyProduction;
 
   SolarCalculationResponse({
     required this.solarIrradianceKwM2,
@@ -92,7 +101,16 @@ class SolarCalculationResponse {
     required this.panelEfficiency,
     required this.powerOutputKw,
     required this.panelModel,
+    required this.potentialKwhAnnual,
+    required this.performanceRatio,
+    this.monthlyProduction,
   });
+
+  // Haftalık üretim (yıllık / 52)
+  double get potentialKwhWeekly => potentialKwhAnnual / 52;
+
+  // Aylık ortalama üretim (yıllık / 12)
+  double get potentialKwhMonthly => potentialKwhAnnual / 12;
 
   factory SolarCalculationResponse.fromJson(Map<String, dynamic> json) {
     return SolarCalculationResponse(
@@ -101,6 +119,15 @@ class SolarCalculationResponse {
       panelEfficiency: (json['panel_efficiency'] as num).toDouble(),
       powerOutputKw: (json['power_output_kw'] as num).toDouble(),
       panelModel: json['panel_model'] as String,
+      potentialKwhAnnual: (json['potential_kwh_annual'] as num).toDouble(),
+      performanceRatio: (json['performance_ratio'] as num).toDouble(),
+      monthlyProduction: json['monthly_production'] != null
+          ? Map<String, double>.from(
+              (json['monthly_production'] as Map).map(
+                (k, v) => MapEntry(k.toString(), (v as num).toDouble()),
+              ),
+            )
+          : null,
     );
   }
 }
@@ -109,18 +136,39 @@ class WindCalculationResponse {
   final double windSpeedMS;
   final double powerOutputKw;
   final String turbineModel;
+  final double potentialKwhAnnual;
+  final double capacityFactor;
+  final Map<String, double>? monthlyProduction;
 
   WindCalculationResponse({
     required this.windSpeedMS,
     required this.powerOutputKw,
     required this.turbineModel,
+    required this.potentialKwhAnnual,
+    required this.capacityFactor,
+    this.monthlyProduction,
   });
+
+  // Haftalık üretim (yıllık / 52)
+  double get potentialKwhWeekly => potentialKwhAnnual / 52;
+
+  // Aylık ortalama üretim (yıllık / 12)
+  double get potentialKwhMonthly => potentialKwhAnnual / 12;
 
   factory WindCalculationResponse.fromJson(Map<String, dynamic> json) {
     return WindCalculationResponse(
       windSpeedMS: (json['wind_speed_m_s'] as num).toDouble(),
       powerOutputKw: (json['power_output_kw'] as num).toDouble(),
       turbineModel: json['turbine_model'] as String,
+      potentialKwhAnnual: (json['potential_kwh_annual'] as num).toDouble(),
+      capacityFactor: (json['capacity_factor'] as num).toDouble(),
+      monthlyProduction: json['monthly_production'] != null
+          ? Map<String, double>.from(
+              (json['monthly_production'] as Map).map(
+                (k, v) => MapEntry(k.toString(), (v as num).toDouble()),
+              ),
+            )
+          : null,
     );
   }
 }

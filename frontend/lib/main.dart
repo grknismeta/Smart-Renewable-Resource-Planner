@@ -10,11 +10,15 @@ import 'core/secure_storage_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/map_provider.dart';
 import 'providers/theme_provider.dart'; // <-- YENİ EKLENDİ
+import 'providers/report_provider.dart';
+import 'providers/scenario_provider.dart';
 
 // Ekranlar
 import 'presentation/screens/splash_screen.dart';
 import 'presentation/screens/auth_screen.dart';
 import 'presentation/screens/map_screen.dart';
+import 'presentation/screens/report_screen.dart';
+import 'presentation/screens/scenario_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,10 +35,14 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()), // <-- YENİ EKLENDİ
+        ChangeNotifierProvider(
+          create: (_) => ThemeProvider(),
+        ), // <-- YENİ EKLENDİ
         ChangeNotifierProvider(
           create: (context) => AuthProvider(apiService, secureStorageService),
         ),
+        ChangeNotifierProvider(create: (_) => ReportProvider(apiService)),
+        ChangeNotifierProvider(create: (_) => ScenarioProvider(apiService)),
         ChangeNotifierProxyProvider<AuthProvider, MapProvider>(
           create: (context) => MapProvider(
             apiService,
@@ -43,7 +51,8 @@ class MyApp extends StatelessWidget {
           update: (context, auth, map) => map!,
         ),
       ],
-      child: Consumer<ThemeProvider>( // Tema değişince uygulamayı yeniden çizmek için Consumer
+      child: Consumer<ThemeProvider>(
+        // Tema değişince uygulamayı yeniden çizmek için Consumer
         builder: (context, themeProvider, child) {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
@@ -52,7 +61,9 @@ class MyApp extends StatelessWidget {
               primarySwatch: Colors.blue,
               // Scaffold rengini themeProvider'dan alıyoruz
               scaffoldBackgroundColor: themeProvider.backgroundColor,
-              brightness: themeProvider.isDarkMode ? Brightness.dark : Brightness.light,
+              brightness: themeProvider.isDarkMode
+                  ? Brightness.dark
+                  : Brightness.light,
             ),
             home: Consumer<AuthProvider>(
               builder: (ctx, auth, _) {
@@ -69,6 +80,8 @@ class MyApp extends StatelessWidget {
             routes: {
               '/auth': (context) => const AuthScreen(),
               '/map': (context) => const MapScreen(),
+              '/reports': (context) => const ReportScreen(),
+              '/scenarios': (context) => const ScenarioScreen(),
             },
           );
         },

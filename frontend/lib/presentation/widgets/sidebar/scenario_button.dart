@@ -30,7 +30,7 @@ class ScenarioButton extends StatelessWidget {
           message: "Giriş Yapmalısınız",
           child: Icon(
             Icons.lock_outline,
-            color: Colors.orange.withOpacity(0.7),
+            color: Colors.orange.withValues(alpha: 0.7),
           ),
         ),
       );
@@ -40,9 +40,9 @@ class ScenarioButton extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
-        color: theme.cardColor.withOpacity(0.5),
+        color: theme.cardColor.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
@@ -80,7 +80,7 @@ class ScenarioButton extends StatelessWidget {
                 color: theme.cardColor,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: theme.secondaryTextColor.withOpacity(0.1),
+                  color: theme.secondaryTextColor.withValues(alpha: 0.1),
                 ),
               ),
         child: Row(

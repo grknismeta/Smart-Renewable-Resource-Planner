@@ -22,7 +22,9 @@ class SidebarHeader extends StatelessWidget {
       alignment: Alignment.centerLeft,
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(color: theme.secondaryTextColor.withOpacity(0.1)),
+          bottom: BorderSide(
+            color: theme.secondaryTextColor.withValues(alpha: 0.1),
+          ),
         ),
       ),
       child: Row(

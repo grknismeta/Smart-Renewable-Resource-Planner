@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
 import 'package:latlong2/latlong.dart';
@@ -6,7 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/map_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../widgets/sidebar_menu.dart';
+import '../widgets/sidebar/sidebar_widgets.dart';
 import '../widgets/map/map_widgets.dart';
 
 class MapScreen extends StatefulWidget {
@@ -18,15 +19,13 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
+  final GlobalKey<State> _mapKey = GlobalKey<State>();
 
   bool _showLayersPanel = false;
   String _selectedBaseMap = 'dark';
-
+  // Zaman slider penceresinin üst sınırı (sabit referans)
   // Mouse hover için
   LatLng? _hoverPosition;
-
-  // Zaman çizelgesi için
-  DateTime _selectedTime = DateTime.now();
 
   // Türkiye sınırları
   static const double _minLat = 35.5;
@@ -37,6 +36,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    // MapProvider constructor zaten AuthProvider'ı kontrol ediyor ve pins'i yüklemek için dinlemeyi ayarladı
     // İlk yüklemede hava durumu verilerini çek
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final mapProvider = Provider.of<MapProvider>(context, listen: false);
@@ -46,6 +46,18 @@ class _MapScreenState extends State<MapScreen> {
 
   void _handleMapTap(TapPosition tapPosition, LatLng point) async {
     final mapProvider = Provider.of<MapProvider>(context, listen: false);
+
+    // Bölge seçim modundaysa
+    if (mapProvider.isSelectingRegion) {
+      final clamped = LatLng(
+        point.latitude.clamp(_minLat, _maxLat),
+        point.longitude.clamp(_minLon, _maxLon),
+      );
+      mapProvider.recordSelectionPoint(clamped);
+      return;
+    }
+
+    // Pin yerleştirme modundaysa
     if (mapProvider.placingPinType != null) {
       MapDialogs.showAddPinDialog(context, point, mapProvider.placingPinType!);
     }
@@ -72,8 +84,14 @@ class _MapScreenState extends State<MapScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isWideScreen = screenWidth > 600;
 
-    // Marker listesi oluştur
+    // Marker listesi oluştur (Kaynaklar)
+    debugPrint(
+      '[MapScreen.build] mapProvider.pins.length: ${mapProvider.pins.length}',
+    );
     final markers = mapProvider.pins.map((pin) {
+      debugPrint(
+        '[MapScreen.build] Marker oluşturuluyor: ${pin.name} (${pin.type}) at (${pin.latitude}, ${pin.longitude})',
+      );
       return Marker(
         width: 50.0,
         height: 50.0,
@@ -84,6 +102,37 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
     }).toList();
+    debugPrint('[MapScreen.build] Toplam ${markers.length} marker oluşturuldu');
+
+    // Optimizasyon sonucu marker'ları ekle (Türbin noktaları)
+    if (mapProvider.optimizationResult != null) {
+      final optimizedMarkers = mapProvider.optimizationResult!.points.map((
+        point,
+      ) {
+        return Marker(
+          width: 40.0,
+          height: 40.0,
+          point: LatLng(point.latitude, point.longitude),
+          child: Tooltip(
+            message:
+                'Rüzgar: ${point.windSpeedMs.toStringAsFixed(1)} m/s\nÜretim: ${point.annualProductionKwh.toStringAsFixed(0)} kWh',
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.blue,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.lightBlueAccent, width: 2),
+              ),
+              child: const Icon(
+                Icons.wind_power,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+          ),
+        );
+      }).toList();
+      markers.addAll(optimizedMarkers);
+    }
 
     return Scaffold(
       appBar: isWideScreen
@@ -96,7 +145,6 @@ class _MapScreenState extends State<MapScreen> {
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (isWideScreen) const SidebarMenu(),
           Expanded(
             child: Stack(
               children: [
@@ -126,13 +174,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: _buildHoverInfo(theme, mapProvider),
                   ),
 
-                // --- ZAMAN ÇİZELGESİ (ALT) ---
-                Positioned(
-                  bottom: 100,
-                  left: 20,
-                  right: 20,
-                  child: _buildTimeSlider(theme, mapProvider),
-                ),
+                // Timeline removed — sidebar moved to bottom sheet instead.
 
                 // --- PIN YERLEŞTIRME UYARISI ---
                 if (mapProvider.placingPinType != null)
@@ -146,6 +188,18 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                   ),
 
+                // --- BÖLGE SEÇİM UYARISI ---
+                if (mapProvider.isSelectingRegion)
+                  Positioned(
+                    bottom: mapProvider.placingPinType != null ? 280 : 180,
+                    left: 0,
+                    right: 0,
+                    child: RegionSelectionIndicator(
+                      points: mapProvider.selectionPoints,
+                      onCancel: mapProvider.clearRegionSelection,
+                    ),
+                  ),
+
                 // --- ZOOM KONTROLLERI ---
                 Positioned(
                   bottom: 40,
@@ -156,6 +210,8 @@ class _MapScreenState extends State<MapScreen> {
                     onZoomOut: _zoomOut,
                   ),
                 ),
+                // Sidebar launcher (replaces inline wide-screen sidebar)
+                Positioned(top: 80, left: 20, child: SidebarLauncher()),
               ],
             ),
           ),
@@ -172,6 +228,9 @@ class _MapScreenState extends State<MapScreen> {
     // Hava durumu katman circle'larını oluştur
     final weatherCircles = _buildWeatherCircles(mapProvider);
 
+    // Seçim dikdörtgeni oluştur
+    final polygons = _buildSelectionPolygons(mapProvider);
+
     return MouseRegion(
       onHover: (event) {
         // Mouse pozisyonunu LatLng'e çevir
@@ -184,14 +243,17 @@ class _MapScreenState extends State<MapScreen> {
       },
       onExit: (_) => setState(() => _hoverPosition = null),
       child: FlutterMap(
+        key: _mapKey,
         mapController: _mapController,
         options: MapOptions(
-          initialCenter: const LatLng(
-            MapConstants.turkeyCenterLat,
-            MapConstants.turkeyCenterLon,
+          initialCameraFit: CameraFit.bounds(
+            bounds: LatLngBounds(
+              const LatLng(_minLat, _minLon),
+              const LatLng(_maxLat, _maxLon),
+            ),
+            padding: const EdgeInsets.all(12),
           ),
-          initialZoom: 6.5, // Biraz daha yakın başla
-          minZoom: 6.0, // Daha az uzaklaşabilsin
+          minZoom: 5.8,
           maxZoom: MapConstants.maxZoom,
           // Türkiye sınırları dışına çıkılmasını engelle
           onPositionChanged: (position, hasGesture) {
@@ -214,11 +276,109 @@ class _MapScreenState extends State<MapScreen> {
           ),
           // Hava durumu katmanı
           if (weatherCircles.isNotEmpty) CircleLayer(circles: weatherCircles),
+          // Bölge seçim polygon'u
+          if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
+          // Bölge seçim köşe noktaları (sürüklenebilir)
+          MarkerLayer(markers: _buildSelectionPointMarkers(mapProvider)),
           // Pinler
           MarkerLayer(markers: markers),
         ],
       ),
     );
+  }
+
+  /// Bölge seçimi için çokgen polygon'u oluştur (sürüklenebilir köşelerle)
+  List<Polygon> _buildSelectionPolygons(MapProvider mapProvider) {
+    if (mapProvider.selectionPoints.isEmpty) return [];
+
+    return [
+      Polygon(
+        points: mapProvider.selectionPoints,
+        color: Colors.blue.withValues(alpha: 0.3),
+        borderColor: Colors.blue,
+        borderStrokeWidth: 2,
+      ),
+    ];
+  }
+
+  /// Seçim köşe noktaları için marker'ları oluştur (sürüklenebilir)
+  List<Marker> _buildSelectionPointMarkers(MapProvider mapProvider) {
+    if (mapProvider.selectionPoints.isEmpty) return [];
+
+    return List.generate(mapProvider.selectionPoints.length, (index) {
+      final point = mapProvider.selectionPoints[index];
+      final isDragging = mapProvider.draggingPointIndex == index;
+
+      return Marker(
+        width: isDragging ? 56 : 48,
+        height: isDragging ? 56 : 48,
+        point: point,
+        child: Tooltip(
+          message: 'Sürükle | Uzun basıp tut: Sil',
+          child: GestureDetector(
+            onPanStart: (_) => mapProvider.startDraggingPoint(index),
+            onPanUpdate: (details) {
+              try {
+                // Haritanın render box'ını al
+                final renderBox =
+                    _mapKey.currentContext?.findRenderObject() as RenderBox?;
+                if (renderBox == null) return;
+
+                // Global pozisyonu harita local'ine çevir
+                final localPosition = renderBox.globalToLocal(
+                  details.globalPosition,
+                );
+
+                // Harita kamerasından çevir
+                final camera = _mapController.camera;
+                var newPoint = camera.offsetToCrs(localPosition);
+                // Sınırlar içinde tut
+                newPoint = LatLng(
+                  newPoint.latitude.clamp(_minLat, _maxLat),
+                  newPoint.longitude.clamp(_minLon, _maxLon),
+                );
+
+                mapProvider.dragPoint(newPoint);
+              } catch (e) {
+                debugPrint('Drag hatası: $e');
+              }
+            },
+            onPanEnd: (_) => mapProvider.endDraggingPoint(),
+            onLongPress: () {
+              HapticFeedback.mediumImpact();
+              mapProvider.removePointAt(index);
+            },
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDragging ? Colors.orange : Colors.blue,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isDragging ? Colors.orangeAccent : Colors.lightBlue,
+                  width: isDragging ? 4 : 3,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    blurRadius: isDragging ? 12 : 8,
+                    spreadRadius: isDragging ? 2 : 0,
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: isDragging ? 14 : 12,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    });
   }
 
   /// Hava durumu verilerine göre circle marker'ları oluştur
@@ -269,20 +429,86 @@ class _MapScreenState extends State<MapScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        // Kaynak ekleme butonları
+        // Tek 'Ekle' butonu: tip seçimi bottom sheet ile
         Row(
           children: [
-            ResourceActionButton(
-              type: 'Rüzgar Türbini',
-              onTap: () => mapProvider.startPlacingMarker('Rüzgar Türbini'),
-            ),
-            const SizedBox(width: 12),
-            ResourceActionButton(
-              type: 'Güneş Paneli',
-              onTap: () => mapProvider.startPlacingMarker('Güneş Paneli'),
+            GestureDetector(
+              onTap: () {
+                showModalBottomSheet(
+                  context: context,
+                  backgroundColor: theme.cardColor,
+                  builder: (ctx) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.solar_power),
+                          title: const Text('Güneş Paneli'),
+                          onTap: () {
+                            Navigator.of(ctx).pop();
+                            mapProvider.startPlacingMarker('Güneş Paneli');
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.wind_power),
+                          title: const Text('Rüzgar Türbini'),
+                          onTap: () {
+                            Navigator.of(ctx).pop();
+                            mapProvider.startPlacingMarker('Rüzgar Türbini');
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+              child: Container(
+                width: 50,
+                height: 50,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: theme.cardColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: theme.secondaryTextColor.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Icon(Icons.add, color: theme.textColor),
+              ),
             ),
           ],
         ),
+        const SizedBox(height: 10),
+
+        // --- YENİ: OPTİMİZASYON BUTONLARI ---
+        if (mapProvider.isSelectingRegion)
+          FloatingActionButton.extended(
+            heroTag: 'optimization_calculate',
+            backgroundColor: Colors.blue,
+            onPressed: mapProvider.hasValidSelection
+                ? () async {
+                    final theme = Provider.of<ThemeProvider>(
+                      context,
+                      listen: false,
+                    );
+                    await mapProvider.loadEquipments();
+                    if (!mounted) return;
+                    OptimizationDialog.show(context, mapProvider, theme);
+                  }
+                : null,
+            icon: const Icon(Icons.calculate),
+            label: const Text('Hesapla'),
+          )
+        else
+          FloatingActionButton.extended(
+            heroTag: 'optimization_select',
+            backgroundColor: Colors.blue,
+            onPressed: () {
+              mapProvider.startSelectingRegion();
+            },
+            icon: const Icon(Icons.select_all),
+            label: const Text('Bölge Seç'),
+          ),
         const SizedBox(height: 10),
 
         // Katman paneli toggle
@@ -361,106 +587,16 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  /// Zaman çizelgesi slider'ı
-  Widget _buildTimeSlider(ThemeProvider theme, MapProvider mapProvider) {
-    final now = DateTime.now();
-    final minTime = now.subtract(const Duration(hours: 72));
-    final maxTime = now.add(const Duration(hours: 72));
+  // Timeline removed
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.cardColor.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: theme.secondaryTextColor.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Zaman Çizelgesi',
-                style: TextStyle(
-                  color: theme.textColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                _formatDateTime(_selectedTime),
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 12),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: Colors.blueAccent,
-              inactiveTrackColor: theme.secondaryTextColor.withValues(
-                alpha: 0.3,
-              ),
-              thumbColor: Colors.blueAccent,
-              overlayColor: Colors.blueAccent.withValues(alpha: 0.2),
-            ),
-            child: Slider(
-              value: _selectedTime.millisecondsSinceEpoch.toDouble(),
-              min: minTime.millisecondsSinceEpoch.toDouble(),
-              max: maxTime.millisecondsSinceEpoch.toDouble(),
-              divisions: 144, // Her 1 saat için bir bölüm
-              onChanged: (value) {
-                setState(() {
-                  _selectedTime = DateTime.fromMillisecondsSinceEpoch(
-                    value.toInt(),
-                  );
-                });
-                // Seçilen zamana göre verileri güncelle
-                mapProvider.loadWeatherForTime(_selectedTime);
-              },
-            ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '-72 saat',
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 10),
-              ),
-              TextButton(
-                onPressed: () {
-                  setState(() => _selectedTime = DateTime.now());
-                  mapProvider.loadWeatherForTime(DateTime.now());
-                },
-                child: const Text('Şimdi', style: TextStyle(fontSize: 12)),
-              ),
-              Text(
-                '+72 saat',
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 10),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+  String _formatDate(DateTime dt) {
+    // Basit: GG/AA
+    final d = dt.day.toString().padLeft(2, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    return '$d/$m';
   }
 
-  String _formatDateTime(DateTime dt) {
-    final now = DateTime.now();
-    final diff = dt.difference(now);
-
-    String prefix = '';
-    if (diff.inHours.abs() < 1) {
-      prefix = 'Şimdi';
-    } else if (diff.isNegative) {
-      prefix = '${diff.inHours.abs()} saat önce';
-    } else {
-      prefix = '${diff.inHours} saat sonra';
-    }
-
-    return '$prefix - ${dt.day}/${dt.month} ${dt.hour.toString().padLeft(2, '0')}:00';
-  }
+  // Removed unused _formatDateTime helper.
 
   /// Haritayı Türkiye sınırları içinde tut
   void _constrainToTurkey(LatLng? center) {

@@ -55,7 +55,7 @@ class DataPanel extends StatelessWidget {
         _buildCollapsedStatIcon(Icons.wb_sunny, solarFgColor, solarCount),
         const SizedBox(height: 20),
         Divider(
-          color: theme.secondaryTextColor.withOpacity(0.1),
+          color: theme.secondaryTextColor.withValues(alpha: 0.1),
           indent: 5,
           endIndent: 220,
         ),
@@ -106,7 +106,7 @@ class DataPanel extends StatelessWidget {
       width: 40,
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withValues(alpha: 0.2),
         shape: BoxShape.circle,
         border: Border.all(color: color, width: 1.5),
       ),
@@ -173,6 +173,21 @@ class DataPanel extends StatelessWidget {
 
         const SizedBox(height: 20),
 
+        // 7 Günlük En İyi Rüzgar (Ülke Geneli)
+        if (mapProvider.weatherSummary.isNotEmpty) ...[
+          Text(
+            "7 Gün – En İyi Rüzgar",
+            style: TextStyle(
+              color: theme.secondaryTextColor,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ..._buildTopWindCities(),
+          const SizedBox(height: 16),
+        ],
+
         // Kaynaklar listesi başlığı
         Text(
           "Kaynaklar",
@@ -193,6 +208,43 @@ class DataPanel extends StatelessWidget {
     );
   }
 
+  List<Widget> _buildTopWindCities() {
+    final sorted = [...mapProvider.weatherSummary]
+      ..sort(
+        (a, b) => (b.avgWindSpeed100m ?? 0).compareTo(a.avgWindSpeed100m ?? 0),
+      );
+
+    final top = sorted.take(3).toList();
+    return top.map((c) {
+      final v = c.avgWindSpeed100m;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.wind_power,
+              color: Colors.lightBlueAccent,
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                c.cityName,
+                style: TextStyle(color: theme.textColor, fontSize: 12),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (v != null)
+              Text(
+                '${v.toStringAsFixed(1)} m/s',
+                style: TextStyle(color: theme.secondaryTextColor, fontSize: 12),
+              ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
   Widget _buildEmptyState() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 20),
@@ -202,13 +254,13 @@ class DataPanel extends StatelessWidget {
           Icon(
             Icons.add_location_alt_outlined,
             size: 30,
-            color: theme.secondaryTextColor.withOpacity(0.3),
+            color: theme.secondaryTextColor.withValues(alpha: 0.3),
           ),
           const SizedBox(height: 5),
           Text(
             "Henüz kaynak eklenmedi",
             style: TextStyle(
-              color: theme.textColor.withOpacity(0.7),
+              color: theme.textColor.withValues(alpha: 0.7),
               fontSize: 13,
             ),
           ),
@@ -256,7 +308,7 @@ class _StatCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: fgColor.withOpacity(0.3)),
+        border: Border.all(color: fgColor.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -353,7 +405,7 @@ class _PinListItem extends StatelessWidget {
         trailing: IconButton(
           icon: Icon(
             Icons.delete_outline,
-            color: theme.secondaryTextColor.withOpacity(0.7),
+            color: theme.secondaryTextColor.withValues(alpha: 0.7),
             size: 20,
           ),
           onPressed: onDelete,
