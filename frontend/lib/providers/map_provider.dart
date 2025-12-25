@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:frontend/core/api_service.dart';
 import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/data/models/system_data_models.dart';
+import 'package:frontend/data/models/irradiance_model.dart';
 import 'auth_provider.dart';
 import 'dart:math' as math;
 
@@ -35,6 +36,12 @@ class MapProvider extends ChangeNotifier {
   List<CityWeatherData> _cityHourly = [];
   String? _cityHourlyName;
 
+  // Işınım verileri
+  List<IrradianceData> _irradianceData = [];
+  List<CitySolarSummary> _solarSummary = [];
+  String? _selectedCityForIrradiance;
+  bool _isLoadingIrradiance = false;
+
   // --- YENİ: BÖLGE SEÇİM MODUNUN STATE'İ (GÜNCELLENDİ - ÇOKLU KÖŞE) ---
   bool _isSelectingRegion = false; // Seçim modu açık mı?
   List<LatLng> _selectionPoints = []; // Seçilen tüm köşe noktaları
@@ -55,6 +62,12 @@ class MapProvider extends ChangeNotifier {
   List<CityWeatherSummary> get weatherSummary => _weatherSummary;
   List<CityWeatherData> get cityHourly => _cityHourly;
   String? get cityHourlyName => _cityHourlyName;
+
+  // Işınım verileri getters
+  List<IrradianceData> get irradianceData => _irradianceData;
+  List<CitySolarSummary> get solarSummary => _solarSummary;
+  String? get selectedCityForIrradiance => _selectedCityForIrradiance;
+  bool get isLoadingIrradiance => _isLoadingIrradiance;
 
   // --- YENİ: GETTERS (GÜNCELLENDİ) ---
   bool get isSelectingRegion => _isSelectingRegion;
@@ -456,5 +469,107 @@ class MapProvider extends ChangeNotifier {
     return R * c;
   }
 
-  double _toRadians(double degree) => degree * math.pi / 180;
+  double _toRadians(double degrees) {
+    return degrees * math.pi / 180.0;
+  }
+
+  // --- Işınım Veri İşlemleri ---
+
+  /// Belirli bir şehir için ışınım verilerini yükle
+  Future<void> loadCityIrradiance(String cityName, {int hours = 168}) async {
+    _isLoadingIrradiance = true;
+    _selectedCityForIrradiance = cityName;
+    notifyListeners();
+
+    try {
+      debugPrint('[MapProvider.loadCityIrradiance] Yükleniyor: $cityName');
+      _irradianceData = await _apiService.fetchCityIrradiance(
+        cityName,
+        hours: hours,
+      );
+      debugPrint(
+        '[MapProvider.loadCityIrradiance] ${_irradianceData.length} kayıt yüklendi',
+      );
+    } catch (e) {
+      debugPrint('[MapProvider.loadCityIrradiance] Hata: $e');
+      _irradianceData = [];
+    } finally {
+      _isLoadingIrradiance = false;
+      notifyListeners();
+    }
+  }
+
+  /// Tüm şehirler için güneş ışınım özet verilerini yükle
+  Future<void> loadSolarSummary({int hours = 168}) async {
+    _isLoadingIrradiance = true;
+    notifyListeners();
+
+    try {
+      debugPrint('[MapProvider.loadSolarSummary] Yükleniyor...');
+      _solarSummary = await _apiService.fetchSolarSummary(hours: hours);
+      debugPrint(
+        '[MapProvider.loadSolarSummary] ${_solarSummary.length} şehir yüklendi',
+      );
+    } catch (e) {
+      debugPrint('[MapProvider.loadSolarSummary] Hata: $e');
+      _solarSummary = [];
+    } finally {
+      _isLoadingIrradiance = false;
+      notifyListeners();
+    }
+  }
+
+  /// En iyi güneş potansiyeline sahip şehirleri yükle
+  Future<List<Map<String, dynamic>>> loadBestSolarCities({
+    int limit = 10,
+  }) async {
+    try {
+      debugPrint('[MapProvider.loadBestSolarCities] Yükleniyor...');
+      final cities = await _apiService.fetchBestSolarCities(limit: limit);
+      debugPrint(
+        '[MapProvider.loadBestSolarCities] ${cities.length} şehir yüklendi',
+      );
+      return cities;
+    } catch (e) {
+      debugPrint('[MapProvider.loadBestSolarCities] Hata: $e');
+      return [];
+    }
+  }
+
+  /// Seçili şehir için günlük ortalama ışınım (kWh/m²)
+  double? get averageDailyIrradiance {
+    if (_irradianceData.isEmpty) return null;
+
+    final validData = _irradianceData
+        .where((d) => d.shortwaveRadiation != null)
+        .toList();
+
+    if (validData.isEmpty) return null;
+
+    final sum = validData.fold<double>(
+      0.0,
+      (prev, curr) => prev + (curr.shortwaveRadiation! / 1000.0),
+    );
+
+    return sum / validData.length;
+  }
+
+  /// Seçili şehir için toplam ışınım (kWh/m²)
+  double? get totalIrradiance {
+    if (_irradianceData.isEmpty) return null;
+
+    return _irradianceData
+        .where((d) => d.shortwaveRadiation != null)
+        .fold<double>(
+          0.0,
+          (prev, curr) => prev + (curr.shortwaveRadiation! / 1000.0),
+        );
+  }
+
+  /// Işınım verilerini temizle
+  void clearIrradianceData() {
+    _irradianceData = [];
+    _selectedCityForIrradiance = null;
+    notifyListeners();
+  }
 }

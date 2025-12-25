@@ -123,6 +123,12 @@ def delete_pin_by_id(db: Session, pin_id: int, user_id: int):
     ).first()
     
     if db_pin:
+        # Önce ilişkili scenarios'ları güncelle (pin_id'yi null yap)
+        db.query(models.Scenario).filter(
+            models.Scenario.pin_id == pin_id
+        ).update({"pin_id": None}, synchronize_session=False)
+        
+        # Sonra pin'i sil
         db.delete(db_pin)
         db.commit()
         return True

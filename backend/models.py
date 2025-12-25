@@ -38,7 +38,7 @@ class Pin(UserBase):
     owner = relationship("User", back_populates="pins")
     
     analysis = relationship("PinAnalysis", back_populates="pin", uselist=False, cascade="all, delete-orphan")
-    scenarios = relationship("Scenario", back_populates="pin")
+    scenarios = relationship("Scenario", back_populates="pin", cascade="all, delete-orphan", foreign_keys="Scenario.pin_id", passive_deletes=True)
 
     # --- LEGACY UYUMLULUK (Eski router'ların patlamaması için geçici) ---
     # Eski kodlar pin.turbine_model_id ararsa hata almamaları için:
@@ -59,8 +59,6 @@ class Scenario(UserBase):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
     description = Column(Text, nullable=True)
-    # Artık pin_ids JSON array olarak saklanıyor (birden fazla pin destekler)
-    pin_ids = Column(JSON, default=[])
     # Geriye dönük uyumluluk için pin_id kalsın (nullable)
     pin_id = Column(Integer, ForeignKey("pins.id"), nullable=True)
     pin = relationship("Pin", back_populates="scenarios")
