@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import '../data/models/pin_model.dart'; // Bu dosya PinCalculationResponse'u içeriyor
 import '../data/models/system_data_models.dart'; // OptimizationResponse için
 import '../data/models/scenario_model.dart'; // Scenario modelleri
+import '../data/models/irradiance_model.dart'; // Işınım veri modelleri
 import 'secure_storage_service.dart';
 
 //
@@ -255,6 +256,95 @@ class ApiService {
     }
   }
 
+  // --- Işınım (Irradiance) İşlemleri ---
+
+  /// Belirli bir şehir için ışınım verileri
+  Future<List<IrradianceData>> fetchCityIrradiance(
+    String cityName, {
+    int hours = 168,
+  }) async {
+    debugPrint(
+      '[ApiService.fetchCityIrradiance] Çağrıldı: city=$cityName, hours=$hours',
+    );
+    final uri = Uri.parse(
+      '$_apiBaseUrl/weather/cities/$cityName/hourly',
+    ).replace(queryParameters: {'hours': '$hours'});
+
+    final response = await http.get(uri);
+    debugPrint(
+      '[ApiService.fetchCityIrradiance] Response status: ${response.statusCode}',
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+      debugPrint(
+        '[ApiService.fetchCityIrradiance] ${data.length} kayıt alındı',
+      );
+      return data.map((e) => IrradianceData.fromJson(e)).toList();
+    } else {
+      throw Exception(
+        'Işınım verisi alınamadı (status: ${response.statusCode})',
+      );
+    }
+  }
+
+  /// En iyi güneş potansiyeline sahip şehirler
+  Future<List<Map<String, dynamic>>> fetchBestSolarCities({
+    int limit = 10,
+  }) async {
+    debugPrint('[ApiService.fetchBestSolarCities] Çağrıldı: limit=$limit');
+    final uri = Uri.parse(
+      '$_apiBaseUrl/weather/best-solar',
+    ).replace(queryParameters: {'limit': '$limit'});
+
+    final response = await http.get(uri);
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+      debugPrint(
+        '[ApiService.fetchBestSolarCities] ${data.length} şehir alındı',
+      );
+      return data.cast<Map<String, dynamic>>();
+    } else {
+      throw Exception(
+        'En iyi güneş şehirleri alınamadı (status: ${response.statusCode})',
+      );
+    }
+  }
+
+  /// Tüm şehirler için ışınım özet verisi
+  Future<List<CitySolarSummary>> fetchSolarSummary({int hours = 168}) async {
+    debugPrint('[ApiService.fetchSolarSummary] Çağrıldı: hours=$hours');
+
+    // Weather summary endpoint'ini kullanıp ışınım verilerini çıkaracağız
+    final summaries = await fetchWeatherSummary(hours: hours);
+
+    // CityWeatherSummary'den CitySolarSummary'ye dönüştür
+    return summaries.map((weather) {
+      // totalRadiation zaten kWh/m² cinsinden
+      final dailyKwhM2 = weather.totalRadiation != null
+          ? weather.totalRadiation! /
+                1000.0 // W'den kW'ye
+          : null;
+
+      return CitySolarSummary(
+        cityName: weather.cityName,
+        latitude: weather.lat,
+        longitude: weather.lon,
+        lastUpdate: weather.lastUpdate,
+        recordCount: weather.recordCount,
+        avgShortwaveRadiation: weather.totalRadiation != null
+            ? weather.totalRadiation! / weather.recordCount
+            : null,
+        avgDirectRadiation: null, // Summary'de yok
+        avgDiffuseRadiation: null, // Summary'de yok
+        totalDailyIrradianceKwhM2: dailyKwhM2,
+        avgCloudCover: null, // Summary'de yok
+        avgTemperature: weather.avgTemperature,
+      );
+    }).toList();
+  }
+
   // --- Optimizasyon İşlemleri ---
 
   /// Seçilen bölge için rüzgar türbini yerleşim optimizasyonu
@@ -368,6 +458,15 @@ class CityWeatherData {
   final double? radiation;
   final DateTime timestamp;
 
+  // Genişletilmiş ışınım verileri
+  final double? shortwaveRadiation;
+  final double? directRadiation;
+  final double? diffuseRadiation;
+  final double? directNormalIrradiance;
+  final double? cloudCover;
+  final double? windSpeed10m;
+  final double? relativeHumidity;
+
   CityWeatherData({
     required this.cityName,
     required this.lat,
@@ -376,6 +475,13 @@ class CityWeatherData {
     required this.windSpeed,
     this.radiation,
     required this.timestamp,
+    this.shortwaveRadiation,
+    this.directRadiation,
+    this.diffuseRadiation,
+    this.directNormalIrradiance,
+    this.cloudCover,
+    this.windSpeed10m,
+    this.relativeHumidity,
   });
 
   factory CityWeatherData.fromJson(Map<String, dynamic> json) {
@@ -391,7 +497,29 @@ class CityWeatherData {
       timestamp: json['timestamp'] != null
           ? DateTime.parse(json['timestamp'])
           : DateTime.now(),
+      // Genişletilmiş alanlar
+      shortwaveRadiation: json['shortwave_radiation']?.toDouble(),
+      directRadiation: json['direct_radiation']?.toDouble(),
+      diffuseRadiation: json['diffuse_radiation']?.toDouble(),
+      directNormalIrradiance: json['direct_normal_irradiance']?.toDouble(),
+      cloudCover: json['cloud_cover']?.toDouble(),
+      windSpeed10m: json['wind_speed_10m']?.toDouble(),
+      relativeHumidity: json['relative_humidity_2m']?.toDouble(),
     );
+  }
+
+  /// Günlük ışınım değeri (kWh/m²)
+  double? get dailyIrradianceKwhM2 {
+    if (shortwaveRadiation == null) return null;
+    return shortwaveRadiation! / 1000.0;
+  }
+
+  /// Işınım kalitesi (0-100)
+  double? get irradianceQuality {
+    if (shortwaveRadiation == null || shortwaveRadiation! == 0) return null;
+    if (directRadiation == null) return null;
+    final ratio = directRadiation! / shortwaveRadiation!;
+    return (ratio * 100).clamp(0, 100);
   }
 }
 

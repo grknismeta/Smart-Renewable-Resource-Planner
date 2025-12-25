@@ -57,6 +57,21 @@ def read_pins_for_user(
     print(f'[Pins Router] GET /pins/ - user_id={user_id}, {len(pins)} pin döndürüldü')
     return pins
 
+@router.delete("/{pin_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_pin(
+    pin_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """Pin silme endpoint'i"""
+    user_id = cast(int, current_user.id)
+    success = crud.delete_pin_by_id(db, pin_id=pin_id, user_id=user_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pin bulunamadı veya bu kullanıcıya ait değil."
+        )
+
 @router.post("/calculate", response_model=PinCalculationResponse)
 def calculate_pin_potential(
     pin_data: PinBase, 
