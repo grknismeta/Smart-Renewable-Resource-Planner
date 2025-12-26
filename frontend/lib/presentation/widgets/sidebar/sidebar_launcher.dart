@@ -48,12 +48,15 @@ class SidebarLauncher extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        if (isLandscape && !isNarrow) {
-          return DraggableScrollableSheet(
-            initialChildSize: 0.4,
-            minChildSize: 0.2,
+        final initialSize = isLandscape && !isNarrow ? 0.4 : 0.25;
+        return SafeArea(
+          top: false,
+          child: DraggableScrollableSheet(
+            initialChildSize: initialSize,
+            minChildSize: 0.15,
             maxChildSize: 0.95,
             expand: false,
             builder: (context, scrollController) {
@@ -67,7 +70,12 @@ class SidebarLauncher extends StatelessWidget {
                 child: SingleChildScrollView(
                   controller: scrollController,
                   child: Padding(
-                    padding: const EdgeInsets.all(12.0),
+                    padding: EdgeInsets.only(
+                      left: 12.0,
+                      right: 12.0,
+                      top: 12.0,
+                      bottom: 12.0 + mq.viewPadding.bottom,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -114,62 +122,6 @@ class SidebarLauncher extends StatelessWidget {
                 ),
               );
             },
-          );
-        }
-
-        return Container(
-          height: mq.size.height * 0.9,
-          decoration: BoxDecoration(
-            color: theme.backgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: theme.secondaryTextColor.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    children: [
-                      ScenarioButton(
-                        theme: theme,
-                        isGuest: isGuest,
-                        isCollapsed: false,
-                      ),
-                      const SizedBox(height: 10),
-                      PinsPanel(
-                        theme: theme,
-                        mapProvider: mapProvider,
-                        isCollapsed: false,
-                      ),
-                      const SizedBox(height: 10),
-                      DataPanel(
-                        theme: theme,
-                        mapProvider: mapProvider,
-                        isCollapsed: false,
-                      ),
-                      const SizedBox(height: 10),
-                      SidebarFooter(
-                        theme: theme,
-                        authProvider: authProvider,
-                        isCollapsed: false,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ),
         );
       },

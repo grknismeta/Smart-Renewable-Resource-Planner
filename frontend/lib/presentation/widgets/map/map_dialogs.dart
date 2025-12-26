@@ -333,15 +333,12 @@ class MapDialogs {
     String pinType,
   ) {
     final theme = Provider.of<ThemeProvider>(context, listen: false);
+    final mapProvider = Provider.of<MapProvider>(context, listen: false);
     final nameController = TextEditingController(text: 'Yeni Kaynak');
     String selectedType = pinType;
     int? selectedEquipmentId;
 
-    // Ekipmanları dialog açıldıktan sonra yükle
-    final mapProvider = Provider.of<MapProvider>(context, listen: false);
     final equipmentType = selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
-
-    // Post-frame callback ile state değişikliğini ertele
     WidgetsBinding.instance.addPostFrameCallback((_) {
       mapProvider.loadEquipments(type: equipmentType);
     });
@@ -350,9 +347,8 @@ class MapDialogs {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => Consumer<MapProvider>(
-        builder: (context, mapProvider, child) {
-          // Seçili tipteki ekipmanları filtrele
-          final availableEquipments = mapProvider.equipments
+        builder: (context, provider, child) {
+          final availableEquipments = provider.equipments
               .where(
                 (e) =>
                     e.type ==
@@ -361,178 +357,224 @@ class MapDialogs {
               .toList();
 
           return StatefulBuilder(
-            builder: (dialogContext, setStateSB) {
-              return AlertDialog(
+            builder: (sbContext, setStateSB) {
+              return Dialog(
                 backgroundColor: theme.cardColor,
-                title: Text(
-                  'Yeni ${selectedType == "Güneş Paneli" ? "Güneş Paneli" : "Rüzgar Türbini"} Ekle',
-                  style: TextStyle(color: theme.textColor),
-                ),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Konum: ${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}',
-                        style: TextStyle(
-                          color: theme.secondaryTextColor,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 15),
-                      _buildTextField(nameController, 'Kaynak Adı', theme),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: selectedType,
-                        dropdownColor: theme.cardColor,
-                        style: TextStyle(color: theme.textColor),
-                        decoration: _inputDecoration('Kaynak Tipi', theme),
-                        items: ['Güneş Paneli', 'Rüzgar Türbini']
-                            .map(
-                              (t) => DropdownMenuItem(value: t, child: Text(t)),
-                            )
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setStateSB(() {
-                              selectedType = val;
-                              selectedEquipmentId =
-                                  null; // Tip değişince seçimi sıfırla
-                            });
-                            // Yeni tipteki ekipmanları yükle
-                            final newType = val == 'Güneş Paneli'
-                                ? 'Solar'
-                                : 'Wind';
-                            mapProvider.loadEquipments(
-                              type: newType,
-                              forceRefresh: true,
-                            );
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Ekipman Seçimi
-                      if (mapProvider.isEquipmentLoading)
-                        const Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: CircularProgressIndicator(),
-                        )
-                      else if (availableEquipments.isEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.orange.withValues(alpha: 0.3),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: 500,
+                    maxHeight: MediaQuery.of(sbContext).size.height * 0.8,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(
+                            'Yeni ${selectedType == "Güneş Paneli" ? "Güneş Paneli" : "Rüzgar Türbini"} Ekle',
+                            style: TextStyle(
+                              color: theme.textColor,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                          child: Row(
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                Icons.warning_amber,
-                                color: Colors.orange,
-                                size: 20,
+                              Text(
+                                'Konum: ${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}',
+                                style: TextStyle(
+                                  color: theme.secondaryTextColor,
+                                  fontSize: 12,
+                                ),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Model bulunamadı',
+                              const SizedBox(height: 15),
+                              _buildTextField(nameController, 'Kaynak Adı', theme),
+                              const SizedBox(height: 16),
+                              DropdownButtonFormField<String>(
+                                value: selectedType,
+                                dropdownColor: theme.cardColor,
+                                style: TextStyle(color: theme.textColor),
+                                decoration: _inputDecoration('Kaynak Tipi', theme),
+                                items: ['Güneş Paneli', 'Rüzgar Türbini']
+                                    .map((t) =>
+                                        DropdownMenuItem(value: t, child: Text(t)))
+                                    .toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setStateSB(() {
+                                      selectedType = val;
+                                      selectedEquipmentId = null;
+                                    });
+                                    final newType =
+                                        val == 'Güneş Paneli' ? 'Solar' : 'Wind';
+                                    provider.loadEquipments(
+                                      type: newType,
+                                      forceRefresh: true,
+                                    );
+                                  }
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              if (provider.isEquipmentLoading)
+                                const Padding(
+                                  padding: EdgeInsets.all(16.0),
+                                  child: CircularProgressIndicator(),
+                                )
+                              else if (availableEquipments.isEmpty)
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.orange.withValues(alpha: 0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.warning_amber,
+                                        color: Colors.orange,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Bu kategori için uygun model bulunamadı.',
+                                          style: TextStyle(
+                                            color: theme.textColor,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else
+                                DropdownButtonFormField<int>(
+                                  value: selectedEquipmentId,
+                                  dropdownColor: theme.cardColor,
                                   style: TextStyle(
                                     color: theme.textColor,
-                                    fontSize: 12,
+                                    fontSize: 13,
                                   ),
+                                  isExpanded: true,
+                                  menuMaxHeight: 300,
+                                  decoration: _inputDecoration(
+                                    selectedType == 'Güneş Paneli'
+                                        ? 'Panel Modeli'
+                                        : 'Türbin Modeli',
+                                    theme,
+                                  ),
+                                  items: availableEquipments.map((equipment) {
+                                    return DropdownMenuItem<int>(
+                                      value: equipment.id,
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  equipment.name,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: theme.textColor,
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${equipment.ratedPowerKw >= 1000 ? (equipment.ratedPowerKw / 1000).toStringAsFixed(2) : equipment.ratedPowerKw.toStringAsFixed(1)} ${equipment.ratedPowerKw >= 1000 ? 'MW' : 'kW'}',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: theme
+                                                        .secondaryTextColor,
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (val) {
+                                    setStateSB(() =>
+                                        selectedEquipmentId = val);
+                                  },
+                                  validator: (val) {
+                                    if (val == null)
+                                      return 'Lütfen bir model seçin';
+                                    return null;
+                                  },
                                 ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 16,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(dialogContext).pop(),
+                                child: const Text('İptal'),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed: selectedEquipmentId == null
+                                    ? null
+                                    : () async {
+                                        try {
+                                          final selectedEquipment =
+                                              availableEquipments.firstWhere(
+                                            (e) =>
+                                                e.id == selectedEquipmentId,
+                                          );
+                                          final capacityMw =
+                                              selectedEquipment.ratedPowerKw /
+                                                  1000.0;
+                                          await provider.addPin(
+                                            point,
+                                            nameController.text,
+                                            selectedType,
+                                            capacityMw,
+                                            selectedEquipmentId,
+                                          );
+                                          Navigator.of(dialogContext).pop();
+                                        } catch (e) {
+                                          showErrorDialog(
+                                            context,
+                                            e.toString(),
+                                          );
+                                        }
+                                      },
+                                child: const Text('Kaydet'),
                               ),
                             ],
                           ),
-                        )
-                      else
-                        DropdownButtonFormField<int>(
-                          value: selectedEquipmentId,
-                          dropdownColor: theme.cardColor,
-                          style: TextStyle(
-                            color: theme.textColor,
-                            fontSize: 13,
-                          ),
-                          decoration: _inputDecoration(
-                            selectedType == 'Güneş Paneli'
-                                ? 'Panel Modeli'
-                                : 'Türbin Modeli',
-                            theme,
-                          ),
-                          items: availableEquipments.map((equipment) {
-                            return DropdownMenuItem<int>(
-                              value: equipment.id,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    equipment.name,
-                                    style: TextStyle(
-                                      color: theme.textColor,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${equipment.ratedPowerKw >= 1000 ? (equipment.ratedPowerKw / 1000).toStringAsFixed(2) : equipment.ratedPowerKw.toStringAsFixed(1)} ${equipment.ratedPowerKw >= 1000 ? 'MW' : 'kW'}',
-                                    style: TextStyle(
-                                      color: theme.secondaryTextColor,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (val) {
-                            setStateSB(() => selectedEquipmentId = val);
-                          },
-                          validator: (val) {
-                            if (val == null) return 'Lütfen bir model seçin';
-                            return null;
-                          },
                         ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: const Text('İptal'),
-                  ),
-                  ElevatedButton(
-                    onPressed: selectedEquipmentId == null
-                        ? null
-                        : () async {
-                            try {
-                              // Seçili ekipmanı bul
-                              final selectedEquipment = availableEquipments
-                                  .firstWhere(
-                                    (e) => e.id == selectedEquipmentId,
-                                  );
-
-                              // Kapasiteyi kW'den MW'ye çevir
-                              final capacityMw =
-                                  selectedEquipment.ratedPowerKw / 1000;
-
-                              await mapProvider.addPin(
-                                point,
-                                nameController.text,
-                                selectedType,
-                                capacityMw,
-                                selectedEquipmentId, // Ekipman ID'sini gönder
-                              );
-                              Navigator.of(dialogContext).pop();
-                            } catch (e) {
-                              showErrorDialog(context, e.toString());
-                            }
-                          },
-                    child: const Text('Kaydet'),
-                  ),
-                ],
               );
             },
           );
@@ -623,29 +665,6 @@ class MapDialogs {
     );
   }
 
-  /// Result row builder helper
-  static Widget _buildResultRow(
-    String title,
-    String value,
-    ThemeProvider theme,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text('$title:', style: TextStyle(color: theme.secondaryTextColor)),
-          Text(
-            value,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: theme.textColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 // --- YENİ: BÖLGE SEÇİM GÖSTERGESİ WIDGET'I ---
 

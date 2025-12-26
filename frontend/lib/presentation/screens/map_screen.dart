@@ -81,6 +81,18 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  void _constrainToTurkey(LatLng center) {
+    final clampedLat = center.latitude.clamp(_minLat, _maxLat);
+    final clampedLon = center.longitude.clamp(_minLon, _maxLon);
+
+    if (clampedLat != center.latitude || clampedLon != center.longitude) {
+      _mapController.move(
+        LatLng(clampedLat, clampedLon),
+        _mapController.camera.zoom,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final mapProvider = Provider.of<MapProvider>(context);
@@ -174,9 +186,64 @@ class _MapScreenState extends State<MapScreen> {
                   Positioned(
                     bottom: 40,
                     right: 20,
-                    child: _buildIrradianceLegend(theme),
+                    child: LegendWidget(
+                      theme: theme,
+                      title: 'Işınım Yoğunluğu',
+                      titleFontSize: 11,
+                      unit: 'kWh/m²/yıl',
+                      gradientColors: [
+                        Colors.blue.shade900,
+                        Colors.blue.shade500,
+                        Colors.green.shade500,
+                        Colors.orange.shade500,
+                        Colors.red.shade500,
+                      ],
+                      minLabel: '0',
+                      maxLabel: '2200',
+                    ),
                   ),
 
+                // --- RÜZGAR HARITASI RENK ÖLÇEĞI (SAĞ ALT) ---
+                if (mapProvider.currentLayer == MapLayer.wind)
+                  Positioned(
+                    bottom: 40,
+                    right: 20,
+                    child: LegendWidget(
+                      theme: theme,
+                      title: 'Rüzgar Hızı',
+                      unit: 'm/s',
+                      gradientColors: [
+                        Colors.green.shade300,
+                        Colors.green,
+                        Colors.yellow,
+                        Colors.orange,
+                        Colors.red,
+                      ],
+                      minLabel: '0',
+                      maxLabel: '15+',
+                    ),
+                  ),
+
+                // --- SICAKLIK HARITASI RENK ÖLÇEĞI (SAĞ ALT) ---
+                if (mapProvider.currentLayer == MapLayer.temp)
+                  Positioned(
+                    bottom: 40,
+                    right: 20,
+                    child: LegendWidget(
+                      theme: theme,
+                      title: 'Sıcaklık',
+                      unit: '°C',
+                      gradientColors: [
+                        Colors.blue.shade900,
+                        Colors.blue.shade400,
+                        Colors.green,
+                        Colors.orange,
+                        Colors.red,
+                      ],
+                      minLabel: '-10',
+                      maxLabel: '40+',
+                    ),
+                  ),
                 // --- MOUSE HOVER BİLGİSİ ---
                 if (_hoverPosition != null &&
                     mapProvider.currentLayer != MapLayer.none)
@@ -186,7 +253,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: _buildHoverInfo(theme, mapProvider),
                   ),
 
-                // Timeline removed — sidebar moved to bottom sheet instead.
+                //
 
                 // --- PIN YERLEŞTIRME UYARISI ---
                 if (mapProvider.placingPinType != null)
@@ -214,8 +281,8 @@ class _MapScreenState extends State<MapScreen> {
 
                 // --- ZOOM KONTROLLERI ---
                 Positioned(
-                  bottom: 40,
-                  right: 20,
+                  bottom: 80, // Ölçeğin üstünde
+                  left: 20,
                   child: ZoomControls(
                     theme: theme,
                     onZoomIn: _zoomIn,
@@ -458,8 +525,8 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Işınım değerine göre renk (mavi -> kırmızı)
   Color _getIrradianceColor(double irradiance) {
-    // 0-3000 kWh/m²/yıl aralığında renk
-    final normalized = (irradiance / 3000).clamp(0.0, 1.0);
+    // 0-2200 kWh/m²/yıl aralığında renk (Türkiye için daha gerçekçi)
+    final normalized = (irradiance / 2200).clamp(0.0, 1.0);
 
     if (normalized < 0.2) return Colors.blue.shade900;
     if (normalized < 0.4) return Colors.blue.shade500;
@@ -477,7 +544,7 @@ class _MapScreenState extends State<MapScreen> {
     // Harita üzerine grid olarak ışınım verilerini göster
     final polygons = mapProvider.solarSummary.map((city) {
       final irradiance = city.totalDailyIrradianceKwhM2 ?? 0;
-      final color = _getIrradianceColor(irradiance * 365); // Yıllık potansiyel
+      final color = _getIrradianceColor(irradiance); // Zaten yıllık kWh/m²
 
       return Polygon(
         points: _getGridCellPoints(city.latitude, city.longitude),
@@ -499,74 +566,6 @@ class _MapScreenState extends State<MapScreen> {
       LatLng(lat + cellSize / 2, lon + cellSize / 2),
       LatLng(lat - cellSize / 2, lon + cellSize / 2),
     ];
-  }
-
-  /// Işınım haritası için renk ölçeği göster
-  Widget _buildIrradianceLegend(ThemeProvider theme) {
-    return Container(
-      width: 280,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.cardColor.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.secondaryTextColor.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Güneş Işınımı Yoğunluğu',
-            style: TextStyle(
-              color: theme.textColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Renk gradient
-          Container(
-            height: 24,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(4),
-              gradient: LinearGradient(
-                colors: [
-                  Colors.blue.shade900,
-                  Colors.blue.shade500,
-                  Colors.green.shade500,
-                  Colors.orange.shade500,
-                  Colors.red.shade500,
-                ],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Min-Max labels
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '0',
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 11),
-              ),
-              Text(
-                '3000',
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 11),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'kWh/m²/yıl',
-            style: TextStyle(color: theme.secondaryTextColor, fontSize: 10),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildControlsColumn(MapProvider mapProvider, ThemeProvider theme) {
@@ -622,24 +621,20 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-
-        // --- YENİ: OPTİMİZASYON BUTONLARI ---
+        const SizedBox(height: 6),
         if (mapProvider.isSelectingRegion)
           FloatingActionButton.extended(
-            heroTag: 'optimization_calculate',
-            backgroundColor: Colors.blue,
-            onPressed: mapProvider.hasValidSelection
-                ? () async {
-                    final theme = Provider.of<ThemeProvider>(
-                      context,
-                      listen: false,
-                    );
-                    await mapProvider.loadEquipments();
-                    if (!mounted) return;
-                    OptimizationDialog.show(context, mapProvider, theme);
-                  }
-                : null,
+            heroTag: 'optimization_run',
+            backgroundColor: Colors.green,
+            onPressed: () async {
+              final themeProv = Provider.of<ThemeProvider>(
+                context,
+                listen: false,
+              );
+              await mapProvider.loadEquipments();
+              if (!mounted) return;
+              OptimizationDialog.show(context, mapProvider, themeProv);
+            },
             icon: const Icon(Icons.calculate),
             label: const Text('Hesapla'),
           )
@@ -682,7 +677,6 @@ class _MapScreenState extends State<MapScreen> {
   Widget _buildHoverInfo(ThemeProvider theme, MapProvider mapProvider) {
     if (_hoverPosition == null) return const SizedBox.shrink();
 
-    // En yakın şehri bul
     final nearestCity = mapProvider.findNearestCity(_hoverPosition!);
     if (nearestCity == null) return const SizedBox.shrink();
 
@@ -729,50 +723,5 @@ class _MapScreenState extends State<MapScreen> {
         ],
       ),
     );
-  }
-
-  // Timeline removed
-
-  String _formatDate(DateTime dt) {
-    // Basit: GG/AA
-    final d = dt.day.toString().padLeft(2, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    return '$d/$m';
-  }
-
-  // Removed unused _formatDateTime helper.
-
-  /// Haritayı Türkiye sınırları içinde tut
-  void _constrainToTurkey(LatLng? center) {
-    if (center == null) return;
-
-    double newLat = center.latitude;
-    double newLon = center.longitude;
-    bool needsUpdate = false;
-
-    // Enlem sınırları
-    if (newLat < _minLat) {
-      newLat = _minLat;
-      needsUpdate = true;
-    } else if (newLat > _maxLat) {
-      newLat = _maxLat;
-      needsUpdate = true;
-    }
-
-    // Boylam sınırları
-    if (newLon < _minLon) {
-      newLon = _minLon;
-      needsUpdate = true;
-    } else if (newLon > _maxLon) {
-      newLon = _maxLon;
-      needsUpdate = true;
-    }
-
-    // Sınır dışına çıkıldıysa geri çek
-    if (needsUpdate) {
-      Future.microtask(() {
-        _mapController.move(LatLng(newLat, newLon), _mapController.camera.zoom);
-      });
-    }
   }
 }

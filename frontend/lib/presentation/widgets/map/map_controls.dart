@@ -157,11 +157,12 @@ class ZoomControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        _buildZoomButton(Icons.add, onZoomIn),
-        const SizedBox(height: 8),
         _buildZoomButton(Icons.remove, onZoomOut),
+        const SizedBox(width: 8),
+        _buildZoomButton(Icons.add, onZoomIn),
       ],
     );
   }
@@ -176,7 +177,7 @@ class ZoomControls extends StatelessWidget {
       child: IconButton(
         icon: Icon(icon, color: theme.textColor),
         onPressed: onTap,
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
     );
   }

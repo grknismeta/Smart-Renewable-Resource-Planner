@@ -330,7 +330,7 @@ class ApiService {
       // Yıllık potansiyel (kWh/m²/yıl) - ortalamadan hesapla
       // Ortalama W/m² * 24 saat * 365 gün / 1000 = kWh/m²/yıl
       final dailyKwhM2 = avgRadiationWm2 != null
-          ? (avgRadiationWm2! * 24 * 365) / 1000.0
+          ? (avgRadiationWm2 * 24 * 365) / 1000.0
           : null;
 
       return CitySolarSummary(
