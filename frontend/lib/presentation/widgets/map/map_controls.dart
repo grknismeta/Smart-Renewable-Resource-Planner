@@ -127,7 +127,7 @@ class PlacementIndicator extends StatelessWidget {
             Icon(Icons.touch_app, color: fgColor),
             const SizedBox(width: 8),
             Text(
-              "$placingPinType Eklemek için Haritaya Dokunun",
+              "⚡ Enerji Kaynağı Ekle",
               style: TextStyle(fontWeight: FontWeight.bold, color: fgColor),
             ),
             const SizedBox(width: 10),

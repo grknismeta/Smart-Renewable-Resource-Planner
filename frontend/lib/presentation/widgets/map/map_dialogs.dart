@@ -3,13 +3,18 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../../data/models/pin_model.dart';
+import '../../../data/models/system_data_models.dart';
 import '../../../providers/map_provider.dart';
 import '../../../providers/theme_provider.dart';
-import 'map_constants.dart';
 import 'energy_output_widget.dart';
+import 'map_constants.dart';
 
 /// Pin ile ilgili tüm dialog işlemlerini yöneten yardımcı sınıf
 class MapDialogs {
+  // ... (diğer metodlar) ...
+
+  // (showAddPinDialog ve diğer helper metodlar zaten eklendi, sadece hatalı importları ve style hatasını düzeltiyoruz)
+  // ...
   MapDialogs._();
 
   /// Hata dialog'u gösterir
@@ -42,7 +47,7 @@ class MapDialogs {
     int? selectedEquipmentId = pin.equipmentId;
 
     // Equipment tipine göre determiner
-    String _getEquipmentType(String pinType) {
+    String getEquipmentType(String pinType) {
       return pinType == 'Güneş Paneli' ? 'Solar' : 'Wind';
     }
 
@@ -131,7 +136,7 @@ class MapDialogs {
                             selectedType = newValue;
                             selectedEquipmentId =
                                 null; // Type değişince modeli reset et
-                            final equipmentType = _getEquipmentType(
+                            final equipmentType = getEquipmentType(
                               selectedType,
                             );
                             mapProvider.loadEquipments(
@@ -145,7 +150,7 @@ class MapDialogs {
                     const SizedBox(height: 16),
                     Consumer<MapProvider>(
                       builder: (context, provider, _) {
-                        final equipmentType = _getEquipmentType(selectedType);
+                        final equipmentType = getEquipmentType(selectedType);
 
                         // Build sırasında setState çağrılmaması için post-frame callback kullan
                         if (provider.equipments.isEmpty &&
@@ -308,8 +313,9 @@ class MapDialogs {
                                 );
                               }
                             } catch (e) {
-                              if (ctx.mounted)
+                              if (ctx.mounted) {
                                 showErrorDialog(ctx, e.toString());
+                              }
                             }
                           },
                         ),
@@ -338,9 +344,10 @@ class MapDialogs {
     String selectedType = pinType;
     int? selectedEquipmentId;
 
-    final equipmentType = selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
+    // Başlangıçta equipment'ları yükle
+    final initialType = selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      mapProvider.loadEquipments(type: equipmentType);
+      mapProvider.loadEquipments(type: initialType);
     });
 
     showDialog(
@@ -348,222 +355,216 @@ class MapDialogs {
       barrierDismissible: false,
       builder: (dialogContext) => Consumer<MapProvider>(
         builder: (context, provider, child) {
-          final availableEquipments = provider.equipments
-              .where(
-                (e) =>
-                    e.type ==
-                    (selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind'),
-              )
-              .toList();
-
           return StatefulBuilder(
             builder: (sbContext, setStateSB) {
+              final activeType = selectedType == 'Güneş Paneli'
+                  ? 'Solar'
+                  : 'Wind';
+              final availableEquipments = provider.equipments
+                  .where((e) => e.type == activeType)
+                  .toList();
+
+              Equipment? selectedEquipment;
+              if (selectedEquipmentId != null) {
+                try {
+                  selectedEquipment = availableEquipments.firstWhere(
+                    (e) => e.id == selectedEquipmentId,
+                  );
+                } catch (_) {}
+              }
+
               return Dialog(
                 backgroundColor: theme.cardColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                insetPadding: const EdgeInsets.all(16),
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: 500,
-                    maxHeight: MediaQuery.of(sbContext).size.height * 0.8,
-                  ),
+                  constraints: const BoxConstraints(maxWidth: 400),
                   child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Text(
-                            'Yeni ${selectedType == "Güneş Paneli" ? "Güneş Paneli" : "Rüzgar Türbini"} Ekle',
-                            style: TextStyle(
-                              color: theme.textColor,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                        // --- Header ---
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color:
+                                    (selectedType == 'Güneş Paneli'
+                                            ? Colors.orange
+                                            : Colors.blue)
+                                        .withValues(alpha: 0.2),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                selectedType == 'Güneş Paneli'
+                                    ? Icons.wb_sunny
+                                    : Icons.wind_power,
+                                color: selectedType == 'Güneş Paneli'
+                                    ? Colors.orange
+                                    : Colors.blue,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Yeni Kaynak Ekle',
+                                style: TextStyle(
+                                  color: theme.textColor,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.close,
+                                color: theme.secondaryTextColor,
+                              ),
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+
+                        // --- Location Info ---
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.backgroundColor.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: theme.secondaryTextColor.withValues(
+                                alpha: 0.1,
+                              ),
                             ),
                           ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
+                          child: Row(
                             children: [
+                              Icon(
+                                Icons.location_on,
+                                size: 16,
+                                color: theme.secondaryTextColor,
+                              ),
+                              const SizedBox(width: 8),
                               Text(
-                                'Konum: ${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}',
+                                '${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}',
                                 style: TextStyle(
                                   color: theme.secondaryTextColor,
-                                  fontSize: 12,
+                                  fontSize: 13,
                                 ),
                               ),
-                              const SizedBox(height: 15),
-                              _buildTextField(
-                                nameController,
-                                'Kaynak Adı',
-                                theme,
-                              ),
-                              const SizedBox(height: 16),
-                              DropdownButtonFormField<String>(
-                                value: selectedType,
-                                dropdownColor: theme.cardColor,
-                                style: TextStyle(color: theme.textColor),
-                                decoration: _inputDecoration(
-                                  'Kaynak Tipi',
-                                  theme,
-                                ),
-                                items: ['Güneş Paneli', 'Rüzgar Türbini']
-                                    .map(
-                                      (t) => DropdownMenuItem(
-                                        value: t,
-                                        child: Text(t),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    setStateSB(() {
-                                      selectedType = val;
-                                      selectedEquipmentId = null;
-                                    });
-                                    final newType = val == 'Güneş Paneli'
-                                        ? 'Solar'
-                                        : 'Wind';
-                                    provider.loadEquipments(
-                                      type: newType,
-                                      forceRefresh: true,
-                                    );
-                                  }
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                              if (provider.isEquipmentLoading)
-                                const Padding(
-                                  padding: EdgeInsets.all(16.0),
-                                  child: CircularProgressIndicator(),
-                                )
-                              else if (availableEquipments.isEmpty)
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orange.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.orange.withValues(
-                                        alpha: 0.3,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.warning_amber,
-                                        color: Colors.orange,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          'Bu kategori için uygun model bulunamadı.',
-                                          style: TextStyle(
-                                            color: theme.textColor,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              else
-                                DropdownButtonFormField<int>(
-                                  value: selectedEquipmentId,
-                                  dropdownColor: theme.cardColor,
-                                  style: TextStyle(
-                                    color: theme.textColor,
-                                    fontSize: 13,
-                                  ),
-                                  isExpanded: true,
-                                  menuMaxHeight: 300,
-                                  decoration: _inputDecoration(
-                                    selectedType == 'Güneş Paneli'
-                                        ? 'Panel Modeli'
-                                        : 'Türbin Modeli',
-                                    theme,
-                                  ),
-                                  items: availableEquipments.map((equipment) {
-                                    return DropdownMenuItem<int>(
-                                      value: equipment.id,
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  equipment.name,
-                                                  maxLines: 12,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    color: theme.textColor,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  '${equipment.ratedPowerKw >= 1000 ? (equipment.ratedPowerKw / 1000).toStringAsFixed(2) : equipment.ratedPowerKw.toStringAsFixed(1)} ${equipment.ratedPowerKw >= 1000 ? 'MW' : 'kW'}',
-                                                  maxLines: 12,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    color: theme
-                                                        .secondaryTextColor,
-                                                    fontSize: 11,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                  }).toList(),
-                                  onChanged: (val) {
-                                    setStateSB(() => selectedEquipmentId = val);
-                                  },
-                                  validator: (val) {
-                                    if (val == null)
-                                      return 'Lütfen bir model seçin';
-                                    return null;
-                                  },
-                                ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 50),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 16,
+                        const SizedBox(height: 20),
+
+                        // --- Name Input ---
+                        _buildTextField(nameController, 'Kaynak Adı', theme),
+                        const SizedBox(height: 20),
+
+                        // --- Type Selector (Segmented) ---
+                        _buildModernTypeSelector(theme, selectedType, (val) {
+                          setStateSB(() {
+                            selectedType = val;
+                            selectedEquipmentId = null; // Reset selection
+                            selectedEquipment = null;
+                          });
+                          // Load new equipments
+                          final newType = val == 'Güneş Paneli'
+                              ? 'Solar'
+                              : 'Wind';
+                          provider.loadEquipments(
+                            type: newType,
+                            forceRefresh: true,
+                          );
+                        }),
+                        const SizedBox(height: 20),
+
+                        // --- Equipment Selector Tile ---
+                        Text(
+                          selectedType == 'Güneş Paneli'
+                              ? 'Panel Modeli'
+                              : 'Türbin Modeli',
+                          style: TextStyle(
+                            color: theme.secondaryTextColor,
+                            fontSize: 12,
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              TextButton(
+                        ),
+                        const SizedBox(height: 8),
+                        _buildEquipmentSelectorTile(
+                          context: context,
+                          theme: theme,
+                          selectedEquipment: selectedEquipment,
+                          isLoading: provider.isEquipmentLoading,
+                          isEmpty: availableEquipments.isEmpty,
+                          onTap: () {
+                            if (provider.isEquipmentLoading ||
+                                availableEquipments.isEmpty) {
+                              return;
+                            }
+                            _showEquipmentPickerBottomSheet(
+                              context,
+                              theme,
+                              availableEquipments,
+                              (id) {
+                                setStateSB(() => selectedEquipmentId = id);
+                              },
+                            );
+                          },
+                        ),
+
+                        const SizedBox(height: 32),
+
+                        // --- Action Buttons ---
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
                                 onPressed: () =>
                                     Navigator.of(dialogContext).pop(),
-                                child: const Text('İptal'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                  side: BorderSide(
+                                    color: theme.secondaryTextColor.withValues(
+                                      alpha: 0.3,
+                                    ),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: Text(
+                                  'İptal',
+                                  style: TextStyle(color: theme.textColor),
+                                ),
                               ),
-                              const SizedBox(width: 8),
-                              ElevatedButton(
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton(
                                 onPressed: selectedEquipmentId == null
                                     ? null
                                     : () async {
                                         try {
-                                          final selectedEquipment =
-                                              availableEquipments.firstWhere(
+                                          final selectedEq = availableEquipments
+                                              .firstWhere(
                                                 (e) =>
                                                     e.id == selectedEquipmentId,
                                               );
                                           final capacityMw =
-                                              selectedEquipment.ratedPowerKw /
-                                              1000.0;
+                                              selectedEq.ratedPowerKw / 1000.0;
+
                                           await provider.addPin(
                                             point,
                                             nameController.text,
@@ -571,18 +572,36 @@ class MapDialogs {
                                             capacityMw,
                                             selectedEquipmentId,
                                           );
-                                          Navigator.of(dialogContext).pop();
+                                          if (dialogContext.mounted) {
+                                            Navigator.of(dialogContext).pop();
+                                          }
                                         } catch (e) {
-                                          showErrorDialog(
-                                            context,
-                                            e.toString(),
-                                          );
+                                          if (dialogContext.mounted) {
+                                            showErrorDialog(
+                                              dialogContext,
+                                              e.toString(),
+                                            );
+                                          }
                                         }
                                       },
-                                child: const Text('Kaydet'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blue,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: Text(
+                                  'Kaydet',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -593,6 +612,301 @@ class MapDialogs {
           );
         },
       ),
+    );
+  }
+
+  // --- Modern Helper Widgets ---
+
+  static Widget _buildModernTypeSelector(
+    ThemeProvider theme,
+    String currentType,
+    Function(String) onChanged,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: theme.backgroundColor.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.secondaryTextColor.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Row(
+        children: [
+          _buildSegmentButton(
+            theme: theme,
+            label: 'Güneş Paneli',
+            icon: Icons.wb_sunny_outlined,
+            isSelected: currentType == 'Güneş Paneli',
+            onTap: () => onChanged('Güneş Paneli'),
+            activeColor: Colors.orange,
+          ),
+          _buildSegmentButton(
+            theme: theme,
+            label: 'Rüzgar Türbini',
+            icon: Icons.wind_power_outlined,
+            isSelected: currentType == 'Rüzgar Türbini',
+            onTap: () => onChanged('Rüzgar Türbini'),
+            activeColor: Colors.blue,
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _buildSegmentButton({
+    required ThemeProvider theme,
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+    required Color activeColor,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? theme.cardColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: isSelected ? activeColor : theme.secondaryTextColor,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected
+                      ? theme.textColor
+                      : theme.secondaryTextColor,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Widget _buildEquipmentSelectorTile({
+    required BuildContext context,
+    required ThemeProvider theme,
+    required Equipment? selectedEquipment,
+    required bool isLoading,
+    required bool isEmpty,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selectedEquipment != null
+                ? Colors.blue.withValues(alpha: 0.5)
+                : theme.secondaryTextColor.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: isLoading
+                  ? const Align(
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : isEmpty
+                  ? Text(
+                      'Uygun model bulunamadı',
+                      style: TextStyle(color: Colors.orange),
+                    )
+                  : selectedEquipment != null
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          selectedEquipment.name,
+                          style: TextStyle(
+                            color: theme.textColor,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${selectedEquipment.ratedPowerKw >= 1000 ? (selectedEquipment.ratedPowerKw / 1000).toStringAsFixed(2) : selectedEquipment.ratedPowerKw.toStringAsFixed(1)} ${selectedEquipment.ratedPowerKw >= 1000 ? 'MW' : 'kW'}',
+                          style: TextStyle(
+                            color: theme.secondaryTextColor,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      'Model Seçiniz',
+                      style: TextStyle(
+                        color: theme.secondaryTextColor,
+                        fontSize: 14,
+                      ),
+                    ),
+            ),
+            Icon(Icons.keyboard_arrow_down, color: theme.secondaryTextColor),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static void _showEquipmentPickerBottomSheet(
+    BuildContext context,
+    ThemeProvider theme,
+    List<Equipment> equipments,
+    Function(int) onSelected,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: theme.cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      isScrollControlled: true,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (context, scrollController) {
+            return Column(
+              children: [
+                // Handle bar
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 12),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.secondaryTextColor.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'Model Seçin',
+                    style: TextStyle(
+                      color: theme.textColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.separated(
+                    controller: scrollController,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: equipments.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final eq = equipments[index];
+                      return InkWell(
+                        onTap: () {
+                          onSelected(eq.id);
+                          Navigator.of(ctx).pop();
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: theme.backgroundColor.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: theme.secondaryTextColor.withValues(
+                                alpha: 0.1,
+                              ),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: theme.cardColor,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.bolt,
+                                  color: theme.textColor,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      eq.name,
+                                      style: TextStyle(
+                                        color: theme.textColor,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Güç: ${eq.ratedPowerKw >= 1000 ? (eq.ratedPowerKw / 1000).toStringAsFixed(2) : eq.ratedPowerKw.toStringAsFixed(1)} ${eq.ratedPowerKw >= 1000 ? 'MW' : 'kW'}',
+                                      style: TextStyle(
+                                        color: theme.secondaryTextColor,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right,
+                                color: theme.secondaryTextColor,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

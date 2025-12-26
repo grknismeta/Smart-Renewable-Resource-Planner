@@ -100,56 +100,75 @@ class _MapScreenState extends State<MapScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isWideScreen = screenWidth > 600;
 
-    // Marker listesi oluştur (Kaynaklar)
-    debugPrint(
-      '[MapScreen.build] mapProvider.pins.length: ${mapProvider.pins.length}',
-    );
-    final markers = mapProvider.pins.map((pin) {
-      debugPrint(
-        '[MapScreen.build] Marker oluşturuluyor: ${pin.name} (${pin.type}) at (${pin.latitude}, ${pin.longitude})',
-      );
-      return Marker(
-        width: 50.0,
-        height: 50.0,
-        point: LatLng(pin.latitude, pin.longitude),
-        child: GestureDetector(
-          onTap: () => MapDialogs.showPinActionsDialog(context, pin),
-          child: MapMarkerIcon(type: pin.type),
-        ),
-      );
-    }).toList();
-    debugPrint('[MapScreen.build] Toplam ${markers.length} marker oluşturuldu');
+    // Marker listesi oluştur (Kaynaklar) - Selector kullanarak sadece pins değiştiğinde rebuild et
+    return Selector<MapProvider, List<dynamic>>(
+      selector: (_, provider) => [provider.pins, provider.optimizationResult],
+      shouldRebuild: (previous, next) {
+        // Pins veya optimization result değişti mi?
+        return previous[0] != next[0] || previous[1] != next[1];
+      },
+      builder: (context, data, _) {
+        final pins = data[0] as List;
+        final optimizationResult = data[1];
 
-    // Optimizasyon sonucu marker'ları ekle (Türbin noktaları)
-    if (mapProvider.optimizationResult != null) {
-      final optimizedMarkers = mapProvider.optimizationResult!.points.map((
-        point,
-      ) {
-        return Marker(
-          width: 40.0,
-          height: 40.0,
-          point: LatLng(point.latitude, point.longitude),
-          child: Tooltip(
-            message:
-                'Rüzgar: ${point.windSpeedMs.toStringAsFixed(1)} m/s\nÜretim: ${point.annualProductionKwh.toStringAsFixed(0)} kWh',
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.blue,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.lightBlueAccent, width: 2),
-              ),
-              child: const Icon(
-                Icons.wind_power,
-                color: Colors.white,
-                size: 24,
-              ),
+        final markers = pins.map((pin) {
+          return Marker(
+            width: 50.0,
+            height: 50.0,
+            point: LatLng(pin.latitude, pin.longitude),
+            child: GestureDetector(
+              onTap: () => MapDialogs.showPinActionsDialog(context, pin),
+              child: MapMarkerIcon(type: pin.type),
             ),
-          ),
-        );
-      }).toList();
-      markers.addAll(optimizedMarkers);
-    }
+          );
+        }).toList();
 
+        // Optimizasyon sonucu marker'ları ekle (Türbin noktaları)
+        if (optimizationResult != null) {
+          final optimizedMarkers = optimizationResult.points.map((point) {
+            return Marker(
+              width: 40.0,
+              height: 40.0,
+              point: LatLng(point.latitude, point.longitude),
+              child: Tooltip(
+                message:
+                    'Rüzgar: ${point.windSpeedMs.toStringAsFixed(1)} m/s\nÜretim: ${point.annualProductionKwh.toStringAsFixed(0)} kWh',
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.blue,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.lightBlueAccent, width: 2),
+                  ),
+                  child: const Icon(
+                    Icons.wind_power,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+              ),
+            );
+          }).toList();
+          markers.addAll(optimizedMarkers);
+        }
+
+        return _buildScaffold(
+          context,
+          isWideScreen,
+          theme,
+          markers,
+          mapProvider,
+        );
+      },
+    );
+  }
+
+  Widget _buildScaffold(
+    BuildContext context,
+    bool isWideScreen,
+    ThemeProvider theme,
+    List<Marker> markers,
+    MapProvider mapProvider,
+  ) {
     return Scaffold(
       appBar: isWideScreen
           ? null
@@ -480,8 +499,9 @@ class _MapScreenState extends State<MapScreen> {
   List<CircleMarker> _buildWeatherCircles(MapProvider mapProvider) {
     // Işınım katmanında hava durumu gösterme
     if (mapProvider.currentLayer == MapLayer.none ||
-        mapProvider.currentLayer == MapLayer.irradiance)
+        mapProvider.currentLayer == MapLayer.irradiance) {
       return [];
+    }
 
     final weatherData = mapProvider.weatherData;
     if (weatherData.isEmpty) return [];
@@ -577,33 +597,8 @@ class _MapScreenState extends State<MapScreen> {
           children: [
             GestureDetector(
               onTap: () {
-                showModalBottomSheet(
-                  context: context,
-                  backgroundColor: theme.cardColor,
-                  builder: (ctx) {
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.solar_power),
-                          title: const Text('Güneş Paneli'),
-                          onTap: () {
-                            Navigator.of(ctx).pop();
-                            mapProvider.startPlacingMarker('Güneş Paneli');
-                          },
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.wind_power),
-                          title: const Text('Rüzgar Türbini'),
-                          onTap: () {
-                            Navigator.of(ctx).pop();
-                            mapProvider.startPlacingMarker('Rüzgar Türbini');
-                          },
-                        ),
-                      ],
-                    );
-                  },
-                );
+                // Varsayılan olarak Güneş Paneli ile başlat, dialog içinde değiştirilebilir
+                mapProvider.startPlacingMarker('Güneş Paneli');
               },
               child: Container(
                 width: 50,

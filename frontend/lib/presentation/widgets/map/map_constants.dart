@@ -45,7 +45,7 @@ class MapConstants {
 
   /// Verilen tip için ikonu döndürür
   static IconData getIcon(String type) {
-    return type == 'Güneş Paneli' ? Icons.wb_sunny : Icons.air;
+    return type == 'Güneş Paneli' ? Icons.wb_sunny : Icons.wind_power;
   }
 
   /// Harita stili için URL döndürür

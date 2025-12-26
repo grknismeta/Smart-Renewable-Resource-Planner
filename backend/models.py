@@ -59,6 +59,10 @@ class Scenario(UserBase):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
     description = Column(Text, nullable=True)
+    
+    # Yeni çoklu pin desteği
+    pin_ids = Column(JSON, nullable=True) 
+    
     # Geriye dönük uyumluluk için pin_id kalsın (nullable)
     pin_id = Column(Integer, ForeignKey("pins.id"), nullable=True)
     pin = relationship("Pin", back_populates="scenarios")

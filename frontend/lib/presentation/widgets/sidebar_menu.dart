@@ -19,7 +19,7 @@ class SidebarMenu extends StatefulWidget {
 }
 
 class _SidebarMenuState extends State<SidebarMenu> {
-  bool _isCollapsed = true;
+  final bool _isCollapsed = true;
 
   static const double _collapsedWidth = 70.0;
   static const double _expandedWidth = 280.0;

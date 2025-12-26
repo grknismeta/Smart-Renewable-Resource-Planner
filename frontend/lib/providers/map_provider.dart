@@ -106,6 +106,11 @@ class MapProvider extends ChangeNotifier {
     }
   }
 
+  /// Veri yükleme hatası durumunda tekrar denemek için
+  Future<void> reloadWeatherSummary() async {
+    await _loadWeatherSummarySafe();
+  }
+
   void _handleAuthChange() {
     // ... (değişiklik yok) ...
     debugPrint(
@@ -411,11 +416,24 @@ class MapProvider extends ChangeNotifier {
 
   /// Belirli bir zaman için hava durumu verilerini yükle
   Future<void> loadWeatherForTime(DateTime time) async {
-    _selectedTime = time;
+    // Dakika, saniye ve milisaniyeyi sıfırla (Backend saatlik veri bekliyor)
+    final truncatedTime = DateTime(
+      time.year,
+      time.month,
+      time.day,
+      time.hour,
+      0,
+      0,
+      0,
+      0,
+    );
+    _selectedTime = truncatedTime;
+    
     try {
-      _weatherData = await _apiService.fetchWeatherForTime(time);
+      _weatherData = await _apiService.fetchWeatherForTime(truncatedTime);
     } catch (e) {
       debugPrint('Hava durumu yüklenirken hata: $e');
+      _weatherData = [];
     }
     notifyListeners();
   }
