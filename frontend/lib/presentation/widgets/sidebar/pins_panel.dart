@@ -2,20 +2,20 @@
 
 import 'package:flutter/material.dart';
 import '../../../data/models/pin_model.dart';
-import '../../../providers/map_provider.dart';
-import '../../../providers/theme_provider.dart';
+import '../../viewmodels/map_view_model.dart';
+import '../../viewmodels/theme_view_model.dart';
 import '../map/map_dialogs.dart';
 
 /// Sidebar'da pin listesini gösteren panel
 class PinsPanel extends StatelessWidget {
-  final ThemeProvider theme;
-  final MapProvider mapProvider;
+  final ThemeViewModel theme;
+  final MapViewModel mapViewModel;
   final bool isCollapsed;
 
   const PinsPanel({
     super.key,
     required this.theme,
-    required this.mapProvider,
+    required this.mapViewModel,
     required this.isCollapsed,
   });
 
@@ -33,10 +33,10 @@ class PinsPanel extends StatelessWidget {
     }
 
     // Geniş modda tam liste
-    final solarPins = mapProvider.pins
+    final solarPins = mapViewModel.pins
         .where((p) => p.type == 'Güneş Paneli')
         .toList();
-    final windPins = mapProvider.pins
+    final windPins = mapViewModel.pins
         .where((p) => p.type == 'Rüzgar Türbini')
         .toList();
 
@@ -75,7 +75,7 @@ class PinsPanel extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  '${mapProvider.pins.length}',
+                  '${mapViewModel.pins.length}',
                   style: TextStyle(
                     color: theme.textColor,
                     fontSize: 12,
@@ -113,7 +113,7 @@ class PinsPanel extends StatelessWidget {
           ],
 
           // Boş durum
-          if (mapProvider.pins.isEmpty)
+          if (mapViewModel.pins.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
               child: Center(

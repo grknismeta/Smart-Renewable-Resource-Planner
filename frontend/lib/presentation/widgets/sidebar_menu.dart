@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/map_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/theme_provider.dart';
+import '../../presentation/viewmodels/map_view_model.dart';
+import '../../presentation/viewmodels/auth_view_model.dart';
+import '../../presentation/viewmodels/theme_view_model.dart';
 import 'sidebar/sidebar_widgets.dart';
 
 /// Ana sidebar menü widget'ı
@@ -27,10 +27,10 @@ class _SidebarMenuState extends State<SidebarMenu> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Provider.of<ThemeProvider>(context);
-    final authProvider = Provider.of<AuthProvider>(context);
-    final mapProvider = Provider.of<MapProvider>(context);
-    final bool isGuest = authProvider.isLoggedIn != true;
+    final themeViewModel = Provider.of<ThemeViewModel>(context);
+    final authViewModel = Provider.of<AuthViewModel>(context);
+    final mapViewModel = Provider.of<MapViewModel>(context);
+    final bool isGuest = !(authViewModel.isLoggedIn ?? false);
 
     void handleMenuPressed() {
       final mq = MediaQuery.of(context);
@@ -53,7 +53,7 @@ class _SidebarMenuState extends State<SidebarMenu> {
               builder: (context, scrollController) {
                 return Container(
                   decoration: BoxDecoration(
-                    color: theme.backgroundColor,
+                    color: themeViewModel.backgroundColor,
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(16),
                     ),
@@ -72,34 +72,33 @@ class _SidebarMenuState extends State<SidebarMenu> {
                               height: 4,
                               margin: const EdgeInsets.only(bottom: 12),
                               decoration: BoxDecoration(
-                                color: theme.secondaryTextColor.withValues(
-                                  alpha: 0.4,
-                                ),
+                                color: themeViewModel.secondaryTextColor
+                                    .withValues(alpha: 0.4),
                                 borderRadius: BorderRadius.circular(2),
                               ),
                             ),
                           ),
                           ScenarioButton(
-                            theme: theme,
+                            theme: themeViewModel,
                             isGuest: isGuest,
                             isCollapsed: false,
                           ),
                           const SizedBox(height: 10),
                           PinsPanel(
-                            theme: theme,
-                            mapProvider: mapProvider,
+                            theme: themeViewModel,
+                            mapViewModel: mapViewModel,
                             isCollapsed: false,
                           ),
                           const SizedBox(height: 10),
                           DataPanel(
-                            theme: theme,
-                            mapProvider: mapProvider,
+                            theme: themeViewModel,
+                            mapViewModel: mapViewModel,
                             isCollapsed: false,
                           ),
                           const SizedBox(height: 10),
                           SidebarFooter(
-                            theme: theme,
-                            authProvider: authProvider,
+                            theme: themeViewModel,
+                            authViewModel: authViewModel,
                             isCollapsed: false,
                           ),
                           const SizedBox(height: 24),
@@ -116,7 +115,7 @@ class _SidebarMenuState extends State<SidebarMenu> {
           return Container(
             height: mq.size.height * 0.9,
             decoration: BoxDecoration(
-              color: theme.backgroundColor,
+              color: themeViewModel.backgroundColor,
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(16),
               ),
@@ -133,7 +132,9 @@ class _SidebarMenuState extends State<SidebarMenu> {
                       height: 4,
                       margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
-                        color: theme.secondaryTextColor.withValues(alpha: 0.4),
+                        color: themeViewModel.secondaryTextColor.withValues(
+                          alpha: 0.4,
+                        ),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -142,26 +143,26 @@ class _SidebarMenuState extends State<SidebarMenu> {
                     child: ListView(
                       children: [
                         ScenarioButton(
-                          theme: theme,
+                          theme: themeViewModel,
                           isGuest: isGuest,
                           isCollapsed: false,
                         ),
                         const SizedBox(height: 10),
                         PinsPanel(
-                          theme: theme,
-                          mapProvider: mapProvider,
+                          theme: themeViewModel,
+                          mapViewModel: mapViewModel,
                           isCollapsed: false,
                         ),
                         const SizedBox(height: 10),
                         DataPanel(
-                          theme: theme,
-                          mapProvider: mapProvider,
+                          theme: themeViewModel,
+                          mapViewModel: mapViewModel,
                           isCollapsed: false,
                         ),
                         const SizedBox(height: 10),
                         SidebarFooter(
-                          theme: theme,
-                          authProvider: authProvider,
+                          theme: themeViewModel,
+                          authViewModel: authViewModel,
                           isCollapsed: false,
                         ),
                       ],
@@ -178,7 +179,7 @@ class _SidebarMenuState extends State<SidebarMenu> {
     return AnimatedContainer(
       duration: _animationDuration,
       width: _isCollapsed ? _collapsedWidth : _expandedWidth,
-      color: theme.backgroundColor,
+      color: themeViewModel.backgroundColor,
       curve: Curves.easeInOut,
       child: ClipRect(
         child: OverflowBox(
@@ -189,7 +190,7 @@ class _SidebarMenuState extends State<SidebarMenu> {
             children: [
               // Header
               SidebarHeader(
-                theme: theme,
+                theme: themeViewModel,
                 isCollapsed: _isCollapsed,
                 onToggle: handleMenuPressed,
               ),
@@ -201,7 +202,7 @@ class _SidebarMenuState extends State<SidebarMenu> {
                   children: [
                     // Senaryo butonu
                     ScenarioButton(
-                      theme: theme,
+                      theme: themeViewModel,
                       isGuest: isGuest,
                       isCollapsed: _isCollapsed,
                     ),
@@ -216,10 +217,12 @@ class _SidebarMenuState extends State<SidebarMenu> {
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: theme.cardColor.withValues(alpha: 0.6),
+                          color: themeViewModel.cardColor.withValues(
+                            alpha: 0.6,
+                          ),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: theme.secondaryTextColor.withValues(
+                            color: themeViewModel.secondaryTextColor.withValues(
                               alpha: 0.1,
                             ),
                           ),
@@ -236,7 +239,7 @@ class _SidebarMenuState extends State<SidebarMenu> {
                                 child: Text(
                                   'Raporlar',
                                   style: TextStyle(
-                                    color: theme.textColor,
+                                    color: themeViewModel.textColor,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -251,8 +254,8 @@ class _SidebarMenuState extends State<SidebarMenu> {
 
                     // Pinler Paneli
                     PinsPanel(
-                      theme: theme,
-                      mapProvider: mapProvider,
+                      theme: themeViewModel,
+                      mapViewModel: mapViewModel,
                       isCollapsed: _isCollapsed,
                     ),
 
@@ -260,7 +263,9 @@ class _SidebarMenuState extends State<SidebarMenu> {
                     if (_isCollapsed) ...[
                       const SizedBox(height: 10),
                       Divider(
-                        color: theme.secondaryTextColor.withValues(alpha: 0.1),
+                        color: themeViewModel.secondaryTextColor.withValues(
+                          alpha: 0.1,
+                        ),
                         indent: 5,
                         endIndent: 220,
                       ),
@@ -268,8 +273,8 @@ class _SidebarMenuState extends State<SidebarMenu> {
 
                     // Veri paneli
                     DataPanel(
-                      theme: theme,
-                      mapProvider: mapProvider,
+                      theme: themeViewModel,
+                      mapViewModel: mapViewModel,
                       isCollapsed: _isCollapsed,
                     ),
                   ],
@@ -278,8 +283,8 @@ class _SidebarMenuState extends State<SidebarMenu> {
 
               // Footer
               SidebarFooter(
-                theme: theme,
-                authProvider: authProvider,
+                theme: themeViewModel,
+                authViewModel: authViewModel,
                 isCollapsed: _isCollapsed,
               ),
             ],

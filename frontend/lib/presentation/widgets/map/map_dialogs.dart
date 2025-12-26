@@ -4,17 +4,13 @@ import 'package:provider/provider.dart';
 
 import '../../../data/models/pin_model.dart';
 import '../../../data/models/system_data_models.dart';
-import '../../../providers/map_provider.dart';
-import '../../../providers/theme_provider.dart';
+import '../../../presentation/viewmodels/map_view_model.dart';
+import '../../../presentation/viewmodels/theme_view_model.dart';
 import 'energy_output_widget.dart';
 import 'map_constants.dart';
 
 /// Pin ile ilgili tüm dialog işlemlerini yöneten yardımcı sınıf
 class MapDialogs {
-  // ... (diğer metodlar) ...
-
-  // (showAddPinDialog ve diğer helper metodlar zaten eklendi, sadece hatalı importları ve style hatasını düzeltiyoruz)
-  // ...
   MapDialogs._();
 
   /// Hata dialog'u gösterir
@@ -37,8 +33,9 @@ class MapDialogs {
 
   /// Pin aksiyonları için bottom sheet gösterir
   static void showPinActionsDialog(BuildContext context, Pin pin) {
-    final mapProvider = Provider.of<MapProvider>(context, listen: false);
-    final theme = Provider.of<ThemeProvider>(context, listen: false);
+    // MapViewModel ve ThemeViewModel kullanımı
+    final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
+    final themeViewModel = Provider.of<ThemeViewModel>(context, listen: false);
     final nameController = TextEditingController(text: pin.name);
     final panelAreaController = TextEditingController(
       text: pin.panelArea?.toStringAsFixed(1) ?? "100.0",
@@ -58,11 +55,11 @@ class MapDialogs {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: theme.cardColor,
+      backgroundColor: themeViewModel.cardColor,
       builder: (ctx) {
         return StatefulBuilder(
           builder: (dialogContext, setStateSB) {
-            final isCalculating = mapProvider.isLoading;
+            final isCalculating = mapViewModel.isBusy; // isLoading -> isBusy
             return Padding(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(dialogContext).viewInsets.bottom,
@@ -95,13 +92,13 @@ class MapDialogs {
                               style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                color: theme.textColor,
+                                color: themeViewModel.textColor,
                               ),
                             ),
                             Text(
                               'ID: ${pin.id}',
                               style: TextStyle(
-                                color: theme.secondaryTextColor,
+                                color: themeViewModel.secondaryTextColor,
                                 fontSize: 12,
                               ),
                             ),
@@ -112,19 +109,28 @@ class MapDialogs {
                     const SizedBox(height: 10),
                     Text(
                       'Yıllık Potansiyel: ${pin.avgSolarIrradiance?.toStringAsFixed(2) ?? 'N/A'} kWh/m²',
-                      style: TextStyle(color: theme.textColor),
+                      style: TextStyle(color: themeViewModel.textColor),
                     ),
                     Divider(
-                      color: theme.secondaryTextColor.withValues(alpha: 0.2),
+                      color: themeViewModel.secondaryTextColor.withValues(
+                        alpha: 0.2,
+                      ),
                       height: 24,
                     ),
-                    _buildTextField(nameController, 'Kaynak Adı', theme),
+                    _buildTextField(
+                      nameController,
+                      'Kaynak Adı',
+                      themeViewModel,
+                    ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       value: selectedType,
-                      dropdownColor: theme.cardColor,
-                      style: TextStyle(color: theme.textColor),
-                      decoration: _inputDecoration('Kaynak Tipi', theme),
+                      dropdownColor: themeViewModel.cardColor,
+                      style: TextStyle(color: themeViewModel.textColor),
+                      decoration: _inputDecoration(
+                        'Kaynak Tipi',
+                        themeViewModel,
+                      ),
                       items: ['Güneş Paneli', 'Rüzgar Türbini']
                           .map(
                             (t) => DropdownMenuItem(value: t, child: Text(t)),
@@ -139,7 +145,7 @@ class MapDialogs {
                             final equipmentType = getEquipmentType(
                               selectedType,
                             );
-                            mapProvider.loadEquipments(
+                            mapViewModel.loadEquipments(
                               type: equipmentType,
                               forceRefresh: true,
                             );
@@ -148,26 +154,26 @@ class MapDialogs {
                       },
                     ),
                     const SizedBox(height: 16),
-                    Consumer<MapProvider>(
-                      builder: (context, provider, _) {
+                    Consumer<MapViewModel>(
+                      builder: (context, viewModel, _) {
                         final equipmentType = getEquipmentType(selectedType);
 
                         // Build sırasında setState çağrılmaması için post-frame callback kullan
-                        if (provider.equipments.isEmpty &&
-                            !provider.equipmentsLoading) {
+                        if (viewModel.equipments.isEmpty &&
+                            !viewModel.equipmentsLoading) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
-                            provider.loadEquipments(type: equipmentType);
+                            viewModel.loadEquipments(type: equipmentType);
                           });
                         }
 
-                        final filteredEquipments = provider.equipments
+                        final filteredEquipments = viewModel.equipments
                             .where((e) => e.type == equipmentType)
                             .toList();
 
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (provider.equipmentsLoading)
+                            if (viewModel.equipmentsLoading)
                               Padding(
                                 padding: const EdgeInsets.all(8.0),
                                 child: SizedBox(
@@ -191,9 +197,8 @@ class MapDialogs {
                               Container(
                                 decoration: BoxDecoration(
                                   border: Border.all(
-                                    color: theme.secondaryTextColor.withValues(
-                                      alpha: 0.3,
-                                    ),
+                                    color: themeViewModel.secondaryTextColor
+                                        .withValues(alpha: 0.3),
                                     width: 1,
                                   ),
                                   borderRadius: BorderRadius.circular(8),
@@ -201,13 +206,15 @@ class MapDialogs {
                                 child: DropdownButton<int>(
                                   value: selectedEquipmentId,
                                   isExpanded: true,
-                                  dropdownColor: theme.cardColor,
-                                  style: TextStyle(color: theme.textColor),
+                                  dropdownColor: themeViewModel.cardColor,
+                                  style: TextStyle(
+                                    color: themeViewModel.textColor,
+                                  ),
                                   underline: const SizedBox(),
                                   hint: Text(
                                     'Model Seçin',
                                     style: TextStyle(
-                                      color: theme.secondaryTextColor,
+                                      color: themeViewModel.secondaryTextColor,
                                     ),
                                   ),
                                   items: filteredEquipments
@@ -243,7 +250,7 @@ class MapDialogs {
                       _buildTextField(
                         panelAreaController,
                         'Panel Alanı (m²)',
-                        theme,
+                        themeViewModel,
                         isNumber: true,
                       ),
                     ],
@@ -263,7 +270,7 @@ class MapDialogs {
                           onPressed: () async {
                             Navigator.of(ctx).pop();
                             try {
-                              await mapProvider.deletePin(pin.id);
+                              await mapViewModel.deletePin(pin.id);
                             } catch (e) {
                               showErrorDialog(context, e.toString());
                             }
@@ -289,13 +296,13 @@ class MapDialogs {
                             setStateSB(() {});
                             try {
                               // Seçilen equipment'ı bul
-                              final equipment = mapProvider.equipments
+                              final equipment = mapViewModel.equipments
                                   .firstWhere(
                                     (e) => e.id == selectedEquipmentId,
                                   );
                               final capacityMw = equipment.ratedPowerKw / 1000;
 
-                              await mapProvider.calculatePotential(
+                              await mapViewModel.calculatePotential(
                                 lat: pin.latitude,
                                 lon: pin.longitude,
                                 type: selectedType,
@@ -305,11 +312,12 @@ class MapDialogs {
                                     0.0,
                               );
                               Navigator.of(ctx).pop();
-                              if (mapProvider.latestCalculationResult != null) {
+                              if (mapViewModel.latestCalculationResult !=
+                                  null) {
                                 showCalculationResultDialog(
                                   context,
-                                  mapProvider.latestCalculationResult!,
-                                  theme,
+                                  mapViewModel.latestCalculationResult!,
+                                  themeViewModel,
                                 );
                               }
                             } catch (e) {
@@ -338,8 +346,8 @@ class MapDialogs {
     LatLng point,
     String pinType,
   ) {
-    final theme = Provider.of<ThemeProvider>(context, listen: false);
-    final mapProvider = Provider.of<MapProvider>(context, listen: false);
+    final themeViewModel = Provider.of<ThemeViewModel>(context, listen: false);
+    final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
     final nameController = TextEditingController(text: 'Yeni Kaynak');
     String selectedType = pinType;
     int? selectedEquipmentId;
@@ -347,20 +355,20 @@ class MapDialogs {
     // Başlangıçta equipment'ları yükle
     final initialType = selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      mapProvider.loadEquipments(type: initialType);
+      mapViewModel.loadEquipments(type: initialType);
     });
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => Consumer<MapProvider>(
-        builder: (context, provider, child) {
+      builder: (dialogContext) => Consumer<MapViewModel>(
+        builder: (context, viewModel, child) {
           return StatefulBuilder(
             builder: (sbContext, setStateSB) {
               final activeType = selectedType == 'Güneş Paneli'
                   ? 'Solar'
                   : 'Wind';
-              final availableEquipments = provider.equipments
+              final availableEquipments = viewModel.equipments
                   .where((e) => e.type == activeType)
                   .toList();
 
@@ -374,7 +382,7 @@ class MapDialogs {
               }
 
               return Dialog(
-                backgroundColor: theme.cardColor,
+                backgroundColor: themeViewModel.cardColor,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
                 ),
@@ -414,7 +422,7 @@ class MapDialogs {
                               child: Text(
                                 'Yeni Kaynak Ekle',
                                 style: TextStyle(
-                                  color: theme.textColor,
+                                  color: themeViewModel.textColor,
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -423,7 +431,7 @@ class MapDialogs {
                             IconButton(
                               icon: Icon(
                                 Icons.close,
-                                color: theme.secondaryTextColor,
+                                color: themeViewModel.secondaryTextColor,
                               ),
                               onPressed: () =>
                                   Navigator.of(dialogContext).pop(),
@@ -439,12 +447,13 @@ class MapDialogs {
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: theme.backgroundColor.withValues(alpha: 0.5),
+                            color: themeViewModel.backgroundColor.withValues(
+                              alpha: 0.5,
+                            ),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: theme.secondaryTextColor.withValues(
-                                alpha: 0.1,
-                              ),
+                              color: themeViewModel.secondaryTextColor
+                                  .withValues(alpha: 0.1),
                             ),
                           ),
                           child: Row(
@@ -452,13 +461,13 @@ class MapDialogs {
                               Icon(
                                 Icons.location_on,
                                 size: 16,
-                                color: theme.secondaryTextColor,
+                                color: themeViewModel.secondaryTextColor,
                               ),
                               const SizedBox(width: 8),
                               Text(
                                 '${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}',
                                 style: TextStyle(
-                                  color: theme.secondaryTextColor,
+                                  color: themeViewModel.secondaryTextColor,
                                   fontSize: 13,
                                 ),
                               ),
@@ -468,11 +477,17 @@ class MapDialogs {
                         const SizedBox(height: 20),
 
                         // --- Name Input ---
-                        _buildTextField(nameController, 'Kaynak Adı', theme),
+                        _buildTextField(
+                          nameController,
+                          'Kaynak Adı',
+                          themeViewModel,
+                        ),
                         const SizedBox(height: 20),
 
                         // --- Type Selector (Segmented) ---
-                        _buildModernTypeSelector(theme, selectedType, (val) {
+                        _buildModernTypeSelector(themeViewModel, selectedType, (
+                          val,
+                        ) {
                           setStateSB(() {
                             selectedType = val;
                             selectedEquipmentId = null; // Reset selection
@@ -482,7 +497,7 @@ class MapDialogs {
                           final newType = val == 'Güneş Paneli'
                               ? 'Solar'
                               : 'Wind';
-                          provider.loadEquipments(
+                          viewModel.loadEquipments(
                             type: newType,
                             forceRefresh: true,
                           );
@@ -495,25 +510,25 @@ class MapDialogs {
                               ? 'Panel Modeli'
                               : 'Türbin Modeli',
                           style: TextStyle(
-                            color: theme.secondaryTextColor,
+                            color: themeViewModel.secondaryTextColor,
                             fontSize: 12,
                           ),
                         ),
                         const SizedBox(height: 8),
                         _buildEquipmentSelectorTile(
                           context: context,
-                          theme: theme,
+                          theme: themeViewModel,
                           selectedEquipment: selectedEquipment,
-                          isLoading: provider.isEquipmentLoading,
+                          isLoading: viewModel.isEquipmentLoading,
                           isEmpty: availableEquipments.isEmpty,
                           onTap: () {
-                            if (provider.isEquipmentLoading ||
+                            if (viewModel.isEquipmentLoading ||
                                 availableEquipments.isEmpty) {
                               return;
                             }
                             _showEquipmentPickerBottomSheet(
                               context,
-                              theme,
+                              themeViewModel,
                               availableEquipments,
                               (id) {
                                 setStateSB(() => selectedEquipmentId = id);
@@ -536,9 +551,8 @@ class MapDialogs {
                                     vertical: 16,
                                   ),
                                   side: BorderSide(
-                                    color: theme.secondaryTextColor.withValues(
-                                      alpha: 0.3,
-                                    ),
+                                    color: themeViewModel.secondaryTextColor
+                                        .withValues(alpha: 0.3),
                                   ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
@@ -546,7 +560,9 @@ class MapDialogs {
                                 ),
                                 child: Text(
                                   'İptal',
-                                  style: TextStyle(color: theme.textColor),
+                                  style: TextStyle(
+                                    color: themeViewModel.textColor,
+                                  ),
                                 ),
                               ),
                             ),
@@ -565,7 +581,7 @@ class MapDialogs {
                                           final capacityMw =
                                               selectedEq.ratedPowerKw / 1000.0;
 
-                                          await provider.addPin(
+                                          await viewModel.addPin(
                                             point,
                                             nameController.text,
                                             selectedType,
@@ -618,7 +634,7 @@ class MapDialogs {
   // --- Modern Helper Widgets ---
 
   static Widget _buildModernTypeSelector(
-    ThemeProvider theme,
+    ThemeViewModel theme,
     String currentType,
     Function(String) onChanged,
   ) {
@@ -655,7 +671,7 @@ class MapDialogs {
   }
 
   static Widget _buildSegmentButton({
-    required ThemeProvider theme,
+    required ThemeViewModel theme,
     required String label,
     required IconData icon,
     required bool isSelected,
@@ -709,7 +725,7 @@ class MapDialogs {
 
   static Widget _buildEquipmentSelectorTile({
     required BuildContext context,
-    required ThemeProvider theme,
+    required ThemeViewModel theme,
     required Equipment? selectedEquipment,
     required bool isLoading,
     required bool isEmpty,
@@ -787,7 +803,7 @@ class MapDialogs {
 
   static void _showEquipmentPickerBottomSheet(
     BuildContext context,
-    ThemeProvider theme,
+    ThemeViewModel theme,
     List<Equipment> equipments,
     Function(int) onSelected,
   ) {
@@ -914,7 +930,7 @@ class MapDialogs {
   static void showCalculationResultDialog(
     BuildContext context,
     PinCalculationResponse result,
-    ThemeProvider theme,
+    ThemeViewModel theme,
   ) {
     showDialog(
       context: context,
@@ -936,7 +952,7 @@ class MapDialogs {
                 ),
                 child: TextButton.icon(
                   onPressed: () {
-                    Provider.of<MapProvider>(
+                    Provider.of<MapViewModel>(
                       context,
                       listen: false,
                     ).clearCalculationResult();
@@ -960,7 +976,7 @@ class MapDialogs {
   }
 
   /// Input decoration helper
-  static InputDecoration _inputDecoration(String label, ThemeProvider theme) {
+  static InputDecoration _inputDecoration(String label, ThemeViewModel theme) {
     return InputDecoration(
       labelText: label,
       labelStyle: TextStyle(color: theme.secondaryTextColor),
@@ -981,7 +997,7 @@ class MapDialogs {
   static Widget _buildTextField(
     TextEditingController controller,
     String label,
-    ThemeProvider theme, {
+    ThemeViewModel theme, {
     bool isNumber = false,
   }) {
     return TextField(
@@ -1007,8 +1023,8 @@ class RegionSelectionIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Provider.of<ThemeProvider>(context);
-    final mapProvider = Provider.of<MapProvider>(context);
+    final theme = Provider.of<ThemeViewModel>(context);
+    final mapViewModel = Provider.of<MapViewModel>(context);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1082,7 +1098,7 @@ class RegionSelectionIndicator extends StatelessWidget {
                         index + 1,
                         points[index],
                         theme,
-                        () => mapProvider.removeLastPoint(),
+                        () => mapViewModel.removeLastPoint(),
                         isLast: index == points.length - 1,
                       ),
                     ),
@@ -1099,7 +1115,7 @@ class RegionSelectionIndicator extends StatelessWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => mapProvider.removeLastPoint(),
+                      onPressed: () => mapViewModel.removeLastPoint(),
                       icon: const Icon(Icons.undo, size: 16),
                       label: const Text('Son Noktayı Sil'),
                       style: OutlinedButton.styleFrom(
@@ -1112,7 +1128,7 @@ class RegionSelectionIndicator extends StatelessWidget {
                   if (points.length >= 3)
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed: () => mapProvider.finishRegionSelection(),
+                        onPressed: () => mapViewModel.finishRegionSelection(),
                         icon: const Icon(Icons.check, size: 16),
                         label: const Text('Seçimi Bitir'),
                         style: ElevatedButton.styleFrom(
@@ -1132,7 +1148,7 @@ class RegionSelectionIndicator extends StatelessWidget {
   static Widget _buildPointChip(
     int number,
     LatLng coord,
-    ThemeProvider theme,
+    ThemeViewModel theme,
     VoidCallback onDelete, {
     bool isLast = false,
   }) {
@@ -1177,8 +1193,8 @@ class OptimizationDialog {
 
   static void show(
     BuildContext context,
-    MapProvider mapProvider,
-    ThemeProvider theme,
+    MapViewModel mapViewModel,
+    ThemeViewModel theme,
   ) {
     int? selectedEquipmentId;
     bool requestedEquipments = false;
@@ -1188,15 +1204,15 @@ class OptimizationDialog {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (dialogContext, setStateSB) {
-            final isCalculating = mapProvider.isLoading;
-            final equipmentLoading = mapProvider.isEquipmentLoading;
-            final equipments = mapProvider.equipments;
+            final isCalculating = mapViewModel.isBusy;
+            final equipmentLoading = mapViewModel.isEquipmentLoading;
+            final equipments = mapViewModel.equipments;
 
             if (!requestedEquipments &&
                 !equipmentLoading &&
                 equipments.isEmpty) {
               requestedEquipments = true;
-              mapProvider.loadEquipments().then((_) {
+              mapViewModel.loadEquipments().then((_) {
                 if (dialogContext.mounted) setStateSB(() {});
               });
             }
@@ -1239,7 +1255,7 @@ class OptimizationDialog {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '${mapProvider.selectionPoints.length} Köşe Seçildi:',
+                            '${mapViewModel.selectionPoints.length} Köşe Seçildi:',
                             style: TextStyle(
                               color: theme.textColor,
                               fontSize: 12,
@@ -1248,12 +1264,12 @@ class OptimizationDialog {
                           ),
                           const SizedBox(height: 4),
                           ...List.generate(
-                            mapProvider.selectionPoints.length,
+                            mapViewModel.selectionPoints.length,
                             (index) => Padding(
                               padding: const EdgeInsets.only(top: 4.0),
                               child: _buildCoordRow(
                                 'Köşe ${index + 1}',
-                                mapProvider.selectionPoints[index],
+                                mapViewModel.selectionPoints[index],
                                 theme,
                               ),
                             ),
@@ -1345,7 +1361,7 @@ class OptimizationDialog {
                           }
 
                           try {
-                            await mapProvider.calculateOptimization(
+                            await mapViewModel.calculateOptimization(
                               equipmentId: selectedEquipmentId!,
                             );
                             if (dialogContext.mounted) {
@@ -1353,7 +1369,7 @@ class OptimizationDialog {
                               ScaffoldMessenger.of(dialogContext).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    'Optimizasyon tamamlandı! ${mapProvider.optimizationResult?.turbineCount ?? 0} türbin yerleştirildi.',
+                                    'Optimizasyon tamamlandı! ${mapViewModel.optimizationResult?.turbineCount ?? 0} türbin yerleştirildi.',
                                   ),
                                   backgroundColor: Colors.green,
                                 ),
@@ -1391,7 +1407,7 @@ class OptimizationDialog {
   static Widget _buildCoordRow(
     String label,
     LatLng? coord,
-    ThemeProvider theme,
+    ThemeViewModel theme,
   ) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

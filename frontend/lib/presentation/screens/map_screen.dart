@@ -5,8 +5,8 @@ import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_ti
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../../providers/map_provider.dart';
-import '../../providers/theme_provider.dart';
+import '../../presentation/viewmodels/map_view_model.dart';
+import '../../presentation/viewmodels/theme_view_model.dart';
 import '../widgets/sidebar/sidebar_widgets.dart';
 import '../widgets/map/map_widgets.dart';
 
@@ -36,36 +36,32 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    // MapProvider constructor zaten AuthProvider'ı kontrol ediyor ve pins'i yüklemek için dinlemeyi ayarladı
+    // MapViewModel constructor zaten AuthViewModel'ı kontrol ediyor ve pins'i yüklemek için dinlemeyi ayarladı
     // İlk yüklemede hava durumu verilerini çek
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final mapProvider = Provider.of<MapProvider>(context, listen: false);
-      debugPrint('[MapScreen.initState] loadWeatherForTime çağrılıyor');
-      mapProvider.loadWeatherForTime(
+      final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
+      mapViewModel.loadWeatherForTime(
         DateTime.now().subtract(const Duration(hours: 1)),
-      );
-      debugPrint(
-        '[MapScreen.initState] solarSummary: ${mapProvider.solarSummary.length}',
       );
     });
   }
 
   void _handleMapTap(TapPosition tapPosition, LatLng point) async {
-    final mapProvider = Provider.of<MapProvider>(context, listen: false);
+    final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
 
     // Bölge seçim modundaysa
-    if (mapProvider.isSelectingRegion) {
+    if (mapViewModel.isSelectingRegion) {
       final clamped = LatLng(
         point.latitude.clamp(_minLat, _maxLat),
         point.longitude.clamp(_minLon, _maxLon),
       );
-      mapProvider.recordSelectionPoint(clamped);
+      mapViewModel.recordSelectionPoint(clamped);
       return;
     }
 
     // Pin yerleştirme modundaysa
-    if (mapProvider.placingPinType != null) {
-      MapDialogs.showAddPinDialog(context, point, mapProvider.placingPinType!);
+    if (mapViewModel.placingPinType != null) {
+      MapDialogs.showAddPinDialog(context, point, mapViewModel.placingPinType!);
     }
   }
 
@@ -97,16 +93,18 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mapProvider = Provider.of<MapProvider>(context);
-    final theme = Provider.of<ThemeProvider>(context);
+    // MapViewModel Provider.of changes to Consumer or direct usage
+    // Selector is good for performance
+    final theme = Provider.of<ThemeViewModel>(context);
     final screenWidth = MediaQuery.of(context).size.width;
     final isWideScreen = screenWidth > 600;
 
-    // Marker listesi oluştur (Kaynaklar) - Selector kullanarak sadece pins değiştiğinde rebuild et
-    return Selector<MapProvider, List<dynamic>>(
-      selector: (_, provider) => [provider.pins, provider.optimizationResult],
+    return Selector<MapViewModel, List<dynamic>>(
+      selector: (_, viewModel) => [
+        viewModel.pins,
+        viewModel.optimizationResult,
+      ],
       shouldRebuild: (previous, next) {
-        // Pins veya optimization result değişti mi?
         return previous[0] != next[0] || previous[1] != next[1];
       },
       builder: (context, data, _) {
@@ -125,7 +123,6 @@ class _MapScreenState extends State<MapScreen> {
           );
         }).toList();
 
-        // Optimizasyon sonucu marker'ları ekle (Türbin noktaları)
         if (optimizationResult != null) {
           final optimizedMarkers = optimizationResult.points.map((point) {
             return Marker(
@@ -153,12 +150,15 @@ class _MapScreenState extends State<MapScreen> {
           markers.addAll(optimizedMarkers);
         }
 
+        // We need MapViewModel available for children
+        final mapViewModel = Provider.of<MapViewModel>(context);
+
         return _buildScaffold(
           context,
           isWideScreen,
           theme,
           markers,
-          mapProvider,
+          mapViewModel,
         );
       },
     );
@@ -167,9 +167,9 @@ class _MapScreenState extends State<MapScreen> {
   Widget _buildScaffold(
     BuildContext context,
     bool isWideScreen,
-    ThemeProvider theme,
+    ThemeViewModel theme,
     List<Marker> markers,
-    MapProvider mapProvider,
+    MapViewModel mapViewModel,
   ) {
     return Scaffold(
       appBar: isWideScreen
@@ -186,7 +186,7 @@ class _MapScreenState extends State<MapScreen> {
             child: Stack(
               children: [
                 // --- HARITA ---
-                _buildFlutterMap(theme, markers, mapProvider),
+                _buildFlutterMap(theme, markers, mapViewModel),
 
                 // --- DASHBOARD (SOL ÜST) ---
                 Positioned(
@@ -199,11 +199,11 @@ class _MapScreenState extends State<MapScreen> {
                 Positioned(
                   top: 20,
                   right: 20,
-                  child: _buildControlsColumn(mapProvider, theme),
+                  child: _buildControlsColumn(mapViewModel, theme),
                 ),
 
                 // --- IŞINIM HARITASI RENK ÖLÇEĞI (SAĞ ALT) ---
-                if (mapProvider.currentLayer == MapLayer.irradiance)
+                if (mapViewModel.currentLayer == MapLayer.irradiance)
                   Positioned(
                     bottom: 40,
                     right: 20,
@@ -225,7 +225,7 @@ class _MapScreenState extends State<MapScreen> {
                   ),
 
                 // --- RÜZGAR HARITASI RENK ÖLÇEĞI (SAĞ ALT) ---
-                if (mapProvider.currentLayer == MapLayer.wind)
+                if (mapViewModel.currentLayer == MapLayer.wind)
                   Positioned(
                     bottom: 40,
                     right: 20,
@@ -246,7 +246,7 @@ class _MapScreenState extends State<MapScreen> {
                   ),
 
                 // --- SICAKLIK HARITASI RENK ÖLÇEĞI (SAĞ ALT) ---
-                if (mapProvider.currentLayer == MapLayer.temp)
+                if (mapViewModel.currentLayer == MapLayer.temp)
                   Positioned(
                     bottom: 40,
                     right: 20,
@@ -267,36 +267,36 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 // --- MOUSE HOVER BİLGİSİ ---
                 if (_hoverPosition != null &&
-                    mapProvider.currentLayer != MapLayer.none)
+                    mapViewModel.currentLayer != MapLayer.none)
                   Positioned(
                     top: 100,
                     left: 20,
-                    child: _buildHoverInfo(theme, mapProvider),
+                    child: _buildHoverInfo(theme, mapViewModel),
                   ),
 
                 //
 
                 // --- PIN YERLEŞTIRME UYARISI ---
-                if (mapProvider.placingPinType != null)
+                if (mapViewModel.placingPinType != null)
                   Positioned(
                     bottom: 180,
                     left: 0,
                     right: 0,
                     child: PlacementIndicator(
-                      placingPinType: mapProvider.placingPinType,
-                      onCancel: mapProvider.stopPlacingMarker,
+                      placingPinType: mapViewModel.placingPinType,
+                      onCancel: mapViewModel.stopPlacingMarker,
                     ),
                   ),
 
                 // --- BÖLGE SEÇİM UYARISI ---
-                if (mapProvider.isSelectingRegion)
+                if (mapViewModel.isSelectingRegion)
                   Positioned(
-                    bottom: mapProvider.placingPinType != null ? 280 : 180,
+                    bottom: mapViewModel.placingPinType != null ? 280 : 180,
                     left: 0,
                     right: 0,
                     child: RegionSelectionIndicator(
-                      points: mapProvider.selectionPoints,
-                      onCancel: mapProvider.clearRegionSelection,
+                      points: mapViewModel.selectionPoints,
+                      onCancel: mapViewModel.clearRegionSelection,
                     ),
                   ),
 
@@ -310,7 +310,7 @@ class _MapScreenState extends State<MapScreen> {
                     onZoomOut: _zoomOut,
                   ),
                 ),
-                // Sidebar launcher (replaces inline wide-screen sidebar)
+                // Sidebar launcher
                 Positioned(top: 80, left: 20, child: SidebarLauncher()),
               ],
             ),
@@ -321,24 +321,24 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _buildFlutterMap(
-    ThemeProvider theme,
+    ThemeViewModel theme,
     List<Marker> markers,
-    MapProvider mapProvider,
+    MapViewModel mapViewModel,
   ) {
     // Hava durumu katman circle'larını sadece gerektiğinde oluştur
     final weatherCircles =
-        (mapProvider.currentLayer == MapLayer.wind ||
-            mapProvider.currentLayer == MapLayer.temp)
-        ? _buildWeatherCircles(mapProvider)
+        (mapViewModel.currentLayer == MapLayer.wind ||
+            mapViewModel.currentLayer == MapLayer.temp)
+        ? _buildWeatherCircles(mapViewModel)
         : <CircleMarker>[];
 
     // Işınım harita grid'ini sadece gerektiğinde oluştur
-    final irradianceLayer = mapProvider.currentLayer == MapLayer.irradiance
-        ? _buildIrradianceLayer(mapProvider)
+    final irradianceLayer = mapViewModel.currentLayer == MapLayer.irradiance
+        ? _buildIrradianceLayer(mapViewModel)
         : null;
 
     // Seçim dikdörtgeni oluştur
-    final polygons = _buildSelectionPolygons(mapProvider);
+    final polygons = _buildSelectionPolygons(mapViewModel);
 
     return MouseRegion(
       onHover: (event) {
@@ -384,18 +384,18 @@ class _MapScreenState extends State<MapScreen> {
             panBuffer: 1,
           ),
           // Işınım katmanı
-          if (mapProvider.currentLayer == MapLayer.irradiance &&
+          if (mapViewModel.currentLayer == MapLayer.irradiance &&
               irradianceLayer != null)
             irradianceLayer,
           // Hava durumu katmanı (Rüzgar ve Sıcaklık)
-          if ((mapProvider.currentLayer == MapLayer.wind ||
-                  mapProvider.currentLayer == MapLayer.temp) &&
+          if ((mapViewModel.currentLayer == MapLayer.wind ||
+                  mapViewModel.currentLayer == MapLayer.temp) &&
               weatherCircles.isNotEmpty)
             CircleLayer(circles: weatherCircles),
           // Bölge seçim polygon'u
           if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
           // Bölge seçim köşe noktaları (sürüklenebilir)
-          MarkerLayer(markers: _buildSelectionPointMarkers(mapProvider)),
+          MarkerLayer(markers: _buildSelectionPointMarkers(mapViewModel)),
           // Pinler
           MarkerLayer(markers: markers),
         ],
@@ -404,12 +404,12 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   /// Bölge seçimi için çokgen polygon'u oluştur (sürüklenebilir köşelerle)
-  List<Polygon> _buildSelectionPolygons(MapProvider mapProvider) {
-    if (mapProvider.selectionPoints.isEmpty) return [];
+  List<Polygon> _buildSelectionPolygons(MapViewModel mapViewModel) {
+    if (mapViewModel.selectionPoints.isEmpty) return [];
 
     return [
       Polygon(
-        points: mapProvider.selectionPoints,
+        points: mapViewModel.selectionPoints,
         color: Colors.blue.withValues(alpha: 0.3),
         borderColor: Colors.blue,
         borderStrokeWidth: 2,
@@ -418,12 +418,12 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   /// Seçim köşe noktaları için marker'ları oluştur (sürüklenebilir)
-  List<Marker> _buildSelectionPointMarkers(MapProvider mapProvider) {
-    if (mapProvider.selectionPoints.isEmpty) return [];
+  List<Marker> _buildSelectionPointMarkers(MapViewModel mapViewModel) {
+    if (mapViewModel.selectionPoints.isEmpty) return [];
 
-    return List.generate(mapProvider.selectionPoints.length, (index) {
-      final point = mapProvider.selectionPoints[index];
-      final isDragging = mapProvider.draggingPointIndex == index;
+    return List.generate(mapViewModel.selectionPoints.length, (index) {
+      final point = mapViewModel.selectionPoints[index];
+      final isDragging = mapViewModel.draggingPointIndex == index;
 
       return Marker(
         width: isDragging ? 56 : 48,
@@ -432,7 +432,7 @@ class _MapScreenState extends State<MapScreen> {
         child: Tooltip(
           message: 'Sürükle | Uzun basıp tut: Sil',
           child: GestureDetector(
-            onPanStart: (_) => mapProvider.startDraggingPoint(index),
+            onPanStart: (_) => mapViewModel.startDraggingPoint(index),
             onPanUpdate: (details) {
               try {
                 // Haritanın render box'ını al
@@ -454,15 +454,15 @@ class _MapScreenState extends State<MapScreen> {
                   newPoint.longitude.clamp(_minLon, _maxLon),
                 );
 
-                mapProvider.dragPoint(newPoint);
+                mapViewModel.dragPoint(newPoint);
               } catch (e) {
                 debugPrint('Drag hatası: $e');
               }
             },
-            onPanEnd: (_) => mapProvider.endDraggingPoint(),
+            onPanEnd: (_) => mapViewModel.endDraggingPoint(),
             onLongPress: () {
               HapticFeedback.mediumImpact();
-              mapProvider.removePointAt(index);
+              mapViewModel.removePointAt(index);
             },
             child: Container(
               decoration: BoxDecoration(
@@ -498,22 +498,22 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   /// Hava durumu verilerine göre circle marker'ları oluştur
-  List<CircleMarker> _buildWeatherCircles(MapProvider mapProvider) {
+  List<CircleMarker> _buildWeatherCircles(MapViewModel mapViewModel) {
     // Işınım katmanında hava durumu gösterme
-    if (mapProvider.currentLayer == MapLayer.none ||
-        mapProvider.currentLayer == MapLayer.irradiance) {
+    if (mapViewModel.currentLayer == MapLayer.none ||
+        mapViewModel.currentLayer == MapLayer.irradiance) {
       return [];
     }
 
-    final weatherData = mapProvider.weatherData;
+    final weatherData = mapViewModel.weatherData;
     if (weatherData.isEmpty) return [];
 
     return weatherData.map((city) {
-      final value = mapProvider.currentLayer == MapLayer.temp
+      final value = mapViewModel.currentLayer == MapLayer.temp
           ? city.temperature
           : city.windSpeed;
 
-      final color = mapProvider.currentLayer == MapLayer.temp
+      final color = mapViewModel.currentLayer == MapLayer.temp
           ? _getTemperatureColor(value)
           : _getWindColor(value);
 
@@ -558,13 +558,13 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   /// Işınım harita katmanını oluştur
-  PolygonLayer? _buildIrradianceLayer(MapProvider mapProvider) {
-    if (mapProvider.solarSummary.isEmpty) {
+  PolygonLayer? _buildIrradianceLayer(MapViewModel mapViewModel) {
+    if (mapViewModel.solarSummary.isEmpty) {
       return null;
     }
 
     // Harita üzerine grid olarak ışınım verilerini göster
-    final polygons = mapProvider.solarSummary.map((city) {
+    final polygons = mapViewModel.solarSummary.map((city) {
       final irradiance = city.totalDailyIrradianceKwhM2 ?? 0;
       final color = _getIrradianceColor(irradiance); // Zaten yıllık kWh/m²
 
@@ -590,7 +590,7 @@ class _MapScreenState extends State<MapScreen> {
     ];
   }
 
-  Widget _buildControlsColumn(MapProvider mapProvider, ThemeProvider theme) {
+  Widget _buildControlsColumn(MapViewModel mapViewModel, ThemeViewModel theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -600,7 +600,7 @@ class _MapScreenState extends State<MapScreen> {
             GestureDetector(
               onTap: () {
                 // Varsayılan olarak Güneş Paneli ile başlat, dialog içinde değiştirilebilir
-                mapProvider.startPlacingMarker('Güneş Paneli');
+                mapViewModel.startPlacingMarker('Güneş Paneli');
               },
               child: Container(
                 width: 50,
@@ -619,18 +619,19 @@ class _MapScreenState extends State<MapScreen> {
           ],
         ),
         const SizedBox(height: 6),
-        if (mapProvider.isSelectingRegion)
+        if (mapViewModel.isSelectingRegion)
           FloatingActionButton.extended(
             heroTag: 'optimization_run',
             backgroundColor: Colors.green,
             onPressed: () async {
-              final themeProv = Provider.of<ThemeProvider>(
+              // CHANGE: Pass themeViewModel
+              final themeProv = Provider.of<ThemeViewModel>(
                 context,
                 listen: false,
               );
-              await mapProvider.loadEquipments();
+              await mapViewModel.loadEquipments();
               if (!mounted) return;
-              OptimizationDialog.show(context, mapProvider, themeProv);
+              OptimizationDialog.show(context, mapViewModel, themeProv);
             },
             icon: const Icon(Icons.calculate),
             label: const Text('Hesapla'),
@@ -640,7 +641,7 @@ class _MapScreenState extends State<MapScreen> {
             heroTag: 'optimization_select',
             backgroundColor: Colors.blue,
             onPressed: () {
-              mapProvider.startSelectingRegion();
+              mapViewModel.startSelectingRegion();
             },
             icon: const Icon(Icons.select_all),
             label: const Text('Bölge Seç'),
@@ -660,7 +661,7 @@ class _MapScreenState extends State<MapScreen> {
           const SizedBox(height: 10),
           LayersPanel(
             theme: theme,
-            mapProvider: mapProvider,
+            mapViewModel: mapViewModel, // CHANGED param name
             selectedBaseMap: _selectedBaseMap,
             onBaseMapChanged: (value) =>
                 setState(() => _selectedBaseMap = value),
@@ -671,13 +672,13 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   /// Mouse hover bilgisi
-  Widget _buildHoverInfo(ThemeProvider theme, MapProvider mapProvider) {
+  Widget _buildHoverInfo(ThemeViewModel theme, MapViewModel mapViewModel) {
     if (_hoverPosition == null) return const SizedBox.shrink();
 
-    final nearestCity = mapProvider.findNearestCity(_hoverPosition!);
+    final nearestCity = mapViewModel.findNearestCity(_hoverPosition!);
     if (nearestCity == null) return const SizedBox.shrink();
 
-    final isTemp = mapProvider.currentLayer == MapLayer.temp;
+    final isTemp = mapViewModel.currentLayer == MapLayer.temp;
     final value = isTemp ? nearestCity.temperature : nearestCity.windSpeed;
     final unit = isTemp ? '°C' : 'm/s';
     final icon = isTemp ? Icons.thermostat : Icons.air;
@@ -705,6 +706,7 @@ class _MapScreenState extends State<MapScreen> {
                   color: theme.textColor,
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
+                  // fontFamily: 'Roboto' (Optional)
                 ),
               ),
               Text(

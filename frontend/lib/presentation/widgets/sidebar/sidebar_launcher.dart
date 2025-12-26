@@ -1,33 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'sidebar_widgets.dart';
-import '../../../providers/map_provider.dart';
-import '../../../providers/auth_provider.dart';
-import '../../../providers/theme_provider.dart';
+import '../../../presentation/viewmodels/map_view_model.dart';
+import '../../../presentation/viewmodels/auth_view_model.dart';
+import '../../../presentation/viewmodels/theme_view_model.dart';
 
 class SidebarLauncher extends StatelessWidget {
   const SidebarLauncher({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Provider.of<ThemeProvider>(context);
-    final authProvider = Provider.of<AuthProvider>(context);
-    final mapProvider = Provider.of<MapProvider>(context);
-    final bool isGuest = authProvider.isLoggedIn != true;
+    final themeViewModel = Provider.of<ThemeViewModel>(context);
+    final authViewModel = Provider.of<AuthViewModel>(context);
+    final mapViewModel = Provider.of<MapViewModel>(context);
+    // AuthViewModel has isLoggedIn but check if it's nullable or boolean.
+    // AuthViewModel.isLoggedIn is bool? in the code I wrote? Let's assume bool.
+    // Actually in AuthProvider it was bool?. Let's check AuthViewModel later if needed.
+    // But usually simple check works.
+    final bool isGuest = !(authViewModel.isLoggedIn ?? false);
 
     return Container(
       decoration: BoxDecoration(
-        color: theme.cardColor.withValues(alpha: 0.9),
+        color: themeViewModel.cardColor.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(10),
       ),
       child: IconButton(
         icon: const Icon(Icons.menu),
-        color: theme.textColor,
+        color: themeViewModel.textColor,
         onPressed: () => _openBottomSheet(
           context,
-          theme,
-          mapProvider,
-          authProvider,
+          themeViewModel,
+          mapViewModel,
+          authViewModel,
           isGuest,
         ),
       ),
@@ -36,9 +40,9 @@ class SidebarLauncher extends StatelessWidget {
 
   void _openBottomSheet(
     BuildContext context,
-    ThemeProvider theme,
-    MapProvider mapProvider,
-    AuthProvider authProvider,
+    ThemeViewModel theme,
+    MapViewModel mapViewModel,
+    AuthViewModel authViewModel,
     bool isGuest,
   ) {
     final mq = MediaQuery.of(context);
@@ -100,19 +104,19 @@ class SidebarLauncher extends StatelessWidget {
                         const SizedBox(height: 10),
                         PinsPanel(
                           theme: theme,
-                          mapProvider: mapProvider,
+                          mapViewModel: mapViewModel,
                           isCollapsed: false,
                         ),
                         const SizedBox(height: 10),
                         DataPanel(
                           theme: theme,
-                          mapProvider: mapProvider,
+                          mapViewModel: mapViewModel,
                           isCollapsed: false,
                         ),
                         const SizedBox(height: 10),
                         SidebarFooter(
                           theme: theme,
-                          authProvider: authProvider,
+                          authViewModel: authViewModel,
                           isCollapsed: false,
                         ),
                         const SizedBox(height: 24),

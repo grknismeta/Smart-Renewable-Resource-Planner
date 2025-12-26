@@ -5,11 +5,11 @@
 
 import 'package:flutter/foundation.dart';
 import '../../../../data/models/system_data_models.dart';
-import '../../../../providers/map_provider.dart';
+import '../../../viewmodels/map_view_model.dart';
 
 /// Pin dialog için ViewModel - UI state ve business logic burada
 class PinDialogViewModel extends ChangeNotifier {
-  final MapProvider _mapProvider;
+  final MapViewModel _mapViewModel;
 
   // State
   String _selectedType;
@@ -19,7 +19,7 @@ class PinDialogViewModel extends ChangeNotifier {
 
   // Constructor
   PinDialogViewModel(
-    this._mapProvider,
+    this._mapViewModel,
     String initialType, {
     int? initialEquipmentId,
   }) : _selectedType = initialType,
@@ -36,10 +36,10 @@ class PinDialogViewModel extends ChangeNotifier {
 
   List<Equipment> get availableEquipments {
     final type = _selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
-    return _mapProvider.equipments.where((e) => e.type == type).toList();
+    return _mapViewModel.equipments.where((e) => e.type == type).toList();
   }
 
-  bool get isLoadingEquipments => _mapProvider.equipmentsLoading;
+  bool get isLoadingEquipments => _mapViewModel.equipmentsLoading;
   bool get hasEquipments => availableEquipments.isNotEmpty;
   bool get canSubmit => _selectedEquipmentId != null && !_isSubmitting;
 
@@ -67,7 +67,7 @@ class PinDialogViewModel extends ChangeNotifier {
   // Business Logic
   Future<void> _loadEquipments() async {
     final type = _selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
-    await _mapProvider.loadEquipments(type: type, forceRefresh: true);
+    await _mapViewModel.loadEquipments(type: type, forceRefresh: true);
     notifyListeners();
   }
 
@@ -119,7 +119,7 @@ class PinDialogViewModel extends ChangeNotifier {
         throw Exception('Kapasite hesaplanamadı');
       }
 
-      await _mapProvider.calculatePotential(
+      await _mapViewModel.calculatePotential(
         lat: lat,
         lon: lon,
         type: _selectedType,

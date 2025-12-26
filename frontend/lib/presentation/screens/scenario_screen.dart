@@ -1,9 +1,9 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/scenario_provider.dart';
-import '../../providers/theme_provider.dart';
-import '../../providers/map_provider.dart';
+import '../../presentation/viewmodels/scenario_view_model.dart';
+import '../../presentation/viewmodels/theme_view_model.dart';
+import '../../presentation/viewmodels/map_view_model.dart';
 import '../../data/models/scenario_model.dart';
 
 class ScenarioScreen extends StatefulWidget {
@@ -18,20 +18,20 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
   void initState() {
     super.initState();
     Future.microtask(() {
-      final sp = Provider.of<ScenarioProvider>(context, listen: false);
+      final sp = Provider.of<ScenarioViewModel>(context, listen: false);
       sp.loadScenarios();
     });
   }
 
-  void _showCreateDialog(BuildContext context, ThemeProvider theme) {
-    final mapProvider = Provider.of<MapProvider>(context, listen: false);
-    final scenarioProvider = Provider.of<ScenarioProvider>(
+  void _showCreateDialog(BuildContext context, ThemeViewModel theme) {
+    final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
+    final scenarioViewModel = Provider.of<ScenarioViewModel>(
       context,
       listen: false,
     );
 
     // Kullanıcının pinleri
-    final pins = mapProvider.pins;
+    final pins = mapViewModel.pins;
     if (pins.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Önce haritaya kaynak eklemelisiniz!')),
@@ -213,7 +213,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                 );
 
                 try {
-                  await scenarioProvider.createScenario(scenarioCreate);
+                  await scenarioViewModel.createScenario(scenarioCreate);
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -239,7 +239,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
     );
   }
 
-  void _showScenarioDetail(Scenario scenario, ThemeProvider theme) {
+  void _showScenarioDetail(Scenario scenario, ThemeViewModel theme) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -315,7 +315,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
               onPressed: () async {
                 Navigator.pop(ctx);
                 try {
-                  final sp = Provider.of<ScenarioProvider>(
+                  final sp = Provider.of<ScenarioViewModel>(
                     context,
                     listen: false,
                   );
@@ -352,8 +352,8 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Provider.of<ThemeProvider>(context);
-    final scenarioProvider = Provider.of<ScenarioProvider>(context);
+    final themeViewModel = Provider.of<ThemeViewModel>(context);
+    final scenarioViewModel = Provider.of<ScenarioViewModel>(context);
 
     return Scaffold(
       body: Container(
@@ -367,11 +367,11 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              _buildHeader(theme),
+              _buildHeader(themeViewModel),
               Expanded(
-                child: scenarioProvider.isLoading
+                child: scenarioViewModel.isBusy
                     ? const Center(child: CircularProgressIndicator())
-                    : scenarioProvider.scenarios.isEmpty
+                    : scenarioViewModel.scenarios.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -379,15 +379,14 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                             Icon(
                               Icons.science_outlined,
                               size: 80,
-                              color: theme.secondaryTextColor.withValues(
-                                alpha: 0.3,
-                              ),
+                              color: themeViewModel.secondaryTextColor
+                                  .withValues(alpha: 0.3),
                             ),
                             const SizedBox(height: 16),
                             Text(
                               'Henüz senaryo yok',
                               style: TextStyle(
-                                color: theme.secondaryTextColor,
+                                color: themeViewModel.secondaryTextColor,
                                 fontSize: 18,
                               ),
                             ),
@@ -395,9 +394,8 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                             Text(
                               'Yeni bir senaryo oluşturmak için + tuşuna basın',
                               style: TextStyle(
-                                color: theme.secondaryTextColor.withValues(
-                                  alpha: 0.7,
-                                ),
+                                color: themeViewModel.secondaryTextColor
+                                    .withValues(alpha: 0.7),
                                 fontSize: 14,
                               ),
                             ),
@@ -406,10 +404,10 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.all(16),
-                        itemCount: scenarioProvider.scenarios.length,
+                        itemCount: scenarioViewModel.scenarios.length,
                         itemBuilder: (context, index) {
-                          final scenario = scenarioProvider.scenarios[index];
-                          return _buildScenarioCard(scenario, theme);
+                          final scenario = scenarioViewModel.scenarios[index];
+                          return _buildScenarioCard(scenario, themeViewModel);
                         },
                       ),
               ),
@@ -419,13 +417,13 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.blueAccent,
-        onPressed: () => _showCreateDialog(context, theme),
+        onPressed: () => _showCreateDialog(context, themeViewModel),
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
 
-  Widget _buildHeader(ThemeProvider theme) {
+  Widget _buildHeader(ThemeViewModel theme) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
@@ -449,7 +447,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
     );
   }
 
-  Widget _buildScenarioCard(Scenario scenario, ThemeProvider theme) {
+  Widget _buildScenarioCard(Scenario scenario, ThemeViewModel theme) {
     final duration = scenario.startDate != null && scenario.endDate != null
         ? scenario.endDate!.difference(scenario.startDate!).inDays
         : 0;
@@ -532,7 +530,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
     );
   }
 
-  Widget _InfoRow(String label, String value, ThemeProvider theme) {
+  Widget _InfoRow(String label, String value, ThemeViewModel theme) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(

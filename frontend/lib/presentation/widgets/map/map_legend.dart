@@ -1,10 +1,10 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
-import '../../../providers/theme_provider.dart';
+import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
 
 class LegendWidget extends StatelessWidget {
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
   final String title;
   final String unit;
   final List<Color> gradientColors;

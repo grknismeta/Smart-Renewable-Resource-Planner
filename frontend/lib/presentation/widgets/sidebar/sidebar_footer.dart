@@ -1,21 +1,21 @@
 import 'package:flutter/material.dart';
-import '../../../providers/theme_provider.dart';
-import '../../../providers/auth_provider.dart';
+import '../../viewmodels/theme_view_model.dart';
+import '../../viewmodels/auth_view_model.dart';
 
 /// Sidebar alt kısmı - Tema değiştirme, yardım ve çıkış butonları
 class SidebarFooter extends StatelessWidget {
-  final ThemeProvider theme;
-  final AuthProvider authProvider;
+  final ThemeViewModel theme;
+  final AuthViewModel authViewModel;
   final bool isCollapsed;
 
   const SidebarFooter({
     super.key,
     required this.theme,
-    required this.authProvider,
+    required this.authViewModel,
     required this.isCollapsed,
   });
 
-  bool get isGuest => authProvider.isLoggedIn != true;
+  bool get isGuest => !(authViewModel.isLoggedIn ?? false);
 
   @override
   Widget build(BuildContext context) {
@@ -136,7 +136,7 @@ class SidebarFooter extends StatelessWidget {
         if (isGuest) {
           Navigator.of(context).pushReplacementNamed('/auth');
         } else {
-          authProvider.logout();
+          authViewModel.logout();
         }
       },
     );

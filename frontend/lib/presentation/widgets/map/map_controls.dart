@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../providers/map_provider.dart';
-import '../../../providers/theme_provider.dart';
+import 'package:frontend/presentation/viewmodels/map_view_model.dart';
+import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
 import 'map_constants.dart';
 
 /// Sol üst köşede gösterilen dashboard widget'ı
 class MapDashboard extends StatelessWidget {
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
 
   const MapDashboard({super.key, required this.theme});
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<MapProvider>(
-      builder: (context, mapProvider, _) {
+    return Consumer<MapViewModel>(
+      builder: (context, mapViewModel, _) {
         // Pin sayılarını hesapla
-        final windPins = mapProvider.pins
+        final windPins = mapViewModel.pins
             .where((p) => p.type == 'Rüzgar Türbini')
             .length;
-        final solarPins = mapProvider.pins
+        final solarPins = mapViewModel.pins
             .where((p) => p.type == 'Güneş Paneli')
             .length;
-        final totalCapacity = mapProvider.pins.fold<double>(
+        final totalCapacity = mapViewModel.pins.fold<double>(
           0,
           (sum, pin) => sum + pin.capacityMw,
         );
@@ -109,7 +109,7 @@ class PlacementIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     if (placingPinType == null) return const SizedBox.shrink();
 
-    final bgColor = MapConstants.getBackgroundColor(placingPinType!);
+    final bgColor = MapConstants.getBackgroundColor(placingPinType ?? '');
     final fgColor = MapConstants.getForegroundColor(placingPinType!);
 
     return Center(
@@ -144,7 +144,7 @@ class PlacementIndicator extends StatelessWidget {
 
 /// Zoom kontrolleri
 class ZoomControls extends StatelessWidget {
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
 
@@ -185,15 +185,15 @@ class ZoomControls extends StatelessWidget {
 
 /// Harita katmanları paneli
 class LayersPanel extends StatelessWidget {
-  final ThemeProvider theme;
-  final MapProvider mapProvider;
+  final ThemeViewModel theme;
+  final MapViewModel mapViewModel;
   final String selectedBaseMap;
   final ValueChanged<String> onBaseMapChanged;
 
   const LayersPanel({
     super.key,
     required this.theme,
-    required this.mapProvider,
+    required this.mapViewModel,
     required this.selectedBaseMap,
     required this.onBaseMapChanged,
   });
@@ -269,9 +269,15 @@ class LayersPanel extends StatelessWidget {
   }
 
   Widget _buildLayerSwitch(String title, MapLayer layer) {
-    final bool isActive = mapProvider.currentLayer == layer;
+    final bool isActive = mapViewModel.currentLayer == layer;
     return InkWell(
-      onTap: () => mapProvider.changeMapLayer(),
+      onTap: () {
+        if (isActive) {
+          mapViewModel.setLayer(MapLayer.none);
+        } else {
+          mapViewModel.setLayer(layer);
+        }
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6.0),
         child: Row(
