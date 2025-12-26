@@ -321,10 +321,16 @@ class ApiService {
 
     // CityWeatherSummary'den CitySolarSummary'ye dönüştür
     return summaries.map((weather) {
-      // totalRadiation zaten kWh/m² cinsinden
-      final dailyKwhM2 = weather.totalRadiation != null
-          ? weather.totalRadiation! /
-                1000.0 // W'den kW'ye
+      // Ortalama radyasyon (W/m²)
+      final avgRadiationWm2 =
+          weather.totalRadiation != null && weather.recordCount > 0
+          ? weather.totalRadiation! / weather.recordCount
+          : null;
+
+      // Yıllık potansiyel (kWh/m²/yıl) - ortalamadan hesapla
+      // Ortalama W/m² * 24 saat * 365 gün / 1000 = kWh/m²/yıl
+      final dailyKwhM2 = avgRadiationWm2 != null
+          ? (avgRadiationWm2! * 24 * 365) / 1000.0
           : null;
 
       return CitySolarSummary(
@@ -333,9 +339,7 @@ class ApiService {
         longitude: weather.lon,
         lastUpdate: weather.lastUpdate,
         recordCount: weather.recordCount,
-        avgShortwaveRadiation: weather.totalRadiation != null
-            ? weather.totalRadiation! / weather.recordCount
-            : null,
+        avgShortwaveRadiation: avgRadiationWm2,
         avgDirectRadiation: null, // Summary'de yok
         avgDiffuseRadiation: null, // Summary'de yok
         totalDailyIrradianceKwhM2: dailyKwhM2,
@@ -526,6 +530,7 @@ class CityWeatherData {
 /// Şehir özet hava durumu verisi
 class CityWeatherSummary {
   final String cityName;
+  final String? districtName;
   final double lat;
   final double lon;
   final double? avgTemperature;
@@ -537,6 +542,7 @@ class CityWeatherSummary {
 
   CityWeatherSummary({
     required this.cityName,
+    this.districtName,
     required this.lat,
     required this.lon,
     this.avgTemperature,
@@ -550,6 +556,7 @@ class CityWeatherSummary {
   factory CityWeatherSummary.fromJson(Map<String, dynamic> json) {
     return CityWeatherSummary(
       cityName: json['city_name'] ?? '',
+      districtName: json['district_name'],
       lat: (json['lat'] ?? 0).toDouble(),
       lon: (json['lon'] ?? 0).toDouble(),
       avgTemperature: json['avg_temperature']?.toDouble(),

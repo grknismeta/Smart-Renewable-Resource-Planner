@@ -40,7 +40,11 @@ class _MapScreenState extends State<MapScreen> {
     // İlk yüklemede hava durumu verilerini çek
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final mapProvider = Provider.of<MapProvider>(context, listen: false);
+      debugPrint('[MapScreen.initState] loadWeatherForTime çağrılıyor');
       mapProvider.loadWeatherForTime(DateTime.now());
+      debugPrint(
+        '[MapScreen.initState] solarSummary: ${mapProvider.solarSummary.length}',
+      );
     });
   }
 
@@ -165,6 +169,14 @@ class _MapScreenState extends State<MapScreen> {
                   child: _buildControlsColumn(mapProvider, theme),
                 ),
 
+                // --- IŞINIM HARITASI RENK ÖLÇEĞI (SAĞ ALT) ---
+                if (mapProvider.currentLayer == MapLayer.irradiance)
+                  Positioned(
+                    bottom: 40,
+                    right: 20,
+                    child: _buildIrradianceLegend(theme),
+                  ),
+
                 // --- MOUSE HOVER BİLGİSİ ---
                 if (_hoverPosition != null &&
                     mapProvider.currentLayer != MapLayer.none)
@@ -225,8 +237,17 @@ class _MapScreenState extends State<MapScreen> {
     List<Marker> markers,
     MapProvider mapProvider,
   ) {
-    // Hava durumu katman circle'larını oluştur
-    final weatherCircles = _buildWeatherCircles(mapProvider);
+    // Hava durumu katman circle'larını sadece gerektiğinde oluştur
+    final weatherCircles =
+        (mapProvider.currentLayer == MapLayer.wind ||
+            mapProvider.currentLayer == MapLayer.temp)
+        ? _buildWeatherCircles(mapProvider)
+        : <CircleMarker>[];
+
+    // Işınım harita grid'ini sadece gerektiğinde oluştur
+    final irradianceLayer = mapProvider.currentLayer == MapLayer.irradiance
+        ? _buildIrradianceLayer(mapProvider)
+        : null;
 
     // Seçim dikdörtgeni oluştur
     final polygons = _buildSelectionPolygons(mapProvider);
@@ -274,8 +295,15 @@ class _MapScreenState extends State<MapScreen> {
             keepBuffer: 10,
             panBuffer: 1,
           ),
-          // Hava durumu katmanı
-          if (weatherCircles.isNotEmpty) CircleLayer(circles: weatherCircles),
+          // Işınım katmanı
+          if (mapProvider.currentLayer == MapLayer.irradiance &&
+              irradianceLayer != null)
+            irradianceLayer,
+          // Hava durumu katmanı (Rüzgar ve Sıcaklık)
+          if ((mapProvider.currentLayer == MapLayer.wind ||
+                  mapProvider.currentLayer == MapLayer.temp) &&
+              weatherCircles.isNotEmpty)
+            CircleLayer(circles: weatherCircles),
           // Bölge seçim polygon'u
           if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
           // Bölge seçim köşe noktaları (sürüklenebilir)
@@ -383,7 +411,10 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Hava durumu verilerine göre circle marker'ları oluştur
   List<CircleMarker> _buildWeatherCircles(MapProvider mapProvider) {
-    if (mapProvider.currentLayer == MapLayer.none) return [];
+    // Işınım katmanında hava durumu gösterme
+    if (mapProvider.currentLayer == MapLayer.none ||
+        mapProvider.currentLayer == MapLayer.irradiance)
+      return [];
 
     final weatherData = mapProvider.weatherData;
     if (weatherData.isEmpty) return [];
@@ -423,6 +454,119 @@ class _MapScreenState extends State<MapScreen> {
     if (speed < 10) return Colors.yellow;
     if (speed < 15) return Colors.orange;
     return Colors.red;
+  }
+
+  /// Işınım değerine göre renk (mavi -> kırmızı)
+  Color _getIrradianceColor(double irradiance) {
+    // 0-3000 kWh/m²/yıl aralığında renk
+    final normalized = (irradiance / 3000).clamp(0.0, 1.0);
+
+    if (normalized < 0.2) return Colors.blue.shade900;
+    if (normalized < 0.4) return Colors.blue.shade500;
+    if (normalized < 0.6) return Colors.green.shade500;
+    if (normalized < 0.8) return Colors.orange.shade500;
+    return Colors.red.shade500;
+  }
+
+  /// Işınım harita katmanını oluştur
+  PolygonLayer? _buildIrradianceLayer(MapProvider mapProvider) {
+    if (mapProvider.solarSummary.isEmpty) {
+      return null;
+    }
+
+    // Harita üzerine grid olarak ışınım verilerini göster
+    final polygons = mapProvider.solarSummary.map((city) {
+      final irradiance = city.totalDailyIrradianceKwhM2 ?? 0;
+      final color = _getIrradianceColor(irradiance * 365); // Yıllık potansiyel
+
+      return Polygon(
+        points: _getGridCellPoints(city.latitude, city.longitude),
+        color: color.withValues(alpha: 0.6),
+        borderColor: color,
+        borderStrokeWidth: 1,
+      );
+    }).toList();
+
+    return PolygonLayer(polygons: polygons);
+  }
+
+  /// Grid hücresi için nokta listesi oluştur
+  List<LatLng> _getGridCellPoints(double lat, double lon) {
+    const cellSize = 0.5; // 0.5 derece grid hücresi
+    return [
+      LatLng(lat - cellSize / 2, lon - cellSize / 2),
+      LatLng(lat + cellSize / 2, lon - cellSize / 2),
+      LatLng(lat + cellSize / 2, lon + cellSize / 2),
+      LatLng(lat - cellSize / 2, lon + cellSize / 2),
+    ];
+  }
+
+  /// Işınım haritası için renk ölçeği göster
+  Widget _buildIrradianceLegend(ThemeProvider theme) {
+    return Container(
+      width: 280,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.cardColor.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.secondaryTextColor.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Güneş Işınımı Yoğunluğu',
+            style: TextStyle(
+              color: theme.textColor,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Renk gradient
+          Container(
+            height: 24,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(4),
+              gradient: LinearGradient(
+                colors: [
+                  Colors.blue.shade900,
+                  Colors.blue.shade500,
+                  Colors.green.shade500,
+                  Colors.orange.shade500,
+                  Colors.red.shade500,
+                ],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Min-Max labels
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '0',
+                style: TextStyle(color: theme.secondaryTextColor, fontSize: 11),
+              ),
+              Text(
+                '3000',
+                style: TextStyle(color: theme.secondaryTextColor, fontSize: 11),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'kWh/m²/yıl',
+            style: TextStyle(color: theme.secondaryTextColor, fontSize: 10),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildControlsColumn(MapProvider mapProvider, ThemeProvider theme) {

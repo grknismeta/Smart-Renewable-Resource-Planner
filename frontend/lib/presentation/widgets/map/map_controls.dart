@@ -234,6 +234,7 @@ class LayersPanel extends StatelessWidget {
           Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2)),
           _buildLayerSwitch("Rüzgar Haritası", MapLayer.wind),
           _buildLayerSwitch("Sıcaklık Haritası", MapLayer.temp),
+          _buildLayerSwitch("Işınım Haritası", MapLayer.irradiance),
         ],
       ),
     );

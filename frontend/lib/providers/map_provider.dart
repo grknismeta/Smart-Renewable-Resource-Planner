@@ -10,7 +10,7 @@ import 'package:frontend/data/models/irradiance_model.dart';
 import 'auth_provider.dart';
 import 'dart:math' as math;
 
-enum MapLayer { none, wind, temp }
+enum MapLayer { none, wind, temp, irradiance }
 
 // --- 1. GÜNCELLEME: Pin ekleme modunu String olarak tanımla ---
 // 'isPlacingMarker' boolean'ı yerine, ne eklediğimizi tutan bir String kullanıyoruz.
@@ -98,8 +98,12 @@ class MapProvider extends ChangeNotifier {
   Future<void> _loadWeatherSummarySafe() async {
     try {
       _weatherSummary = await _apiService.fetchWeatherSummary(hours: 168);
+      // Işınım verilerini de yükle
+      _solarSummary = await _apiService.fetchSolarSummary(hours: 168);
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Weather/Solar summary yüklenirken hata: $e');
+    }
   }
 
   void _handleAuthChange() {
@@ -307,6 +311,9 @@ class MapProvider extends ChangeNotifier {
         _currentLayer = MapLayer.temp;
         break;
       case MapLayer.temp:
+        _currentLayer = MapLayer.irradiance;
+        break;
+      case MapLayer.irradiance:
         _currentLayer = MapLayer.none;
         break;
     }

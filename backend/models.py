@@ -118,11 +118,12 @@ class WeatherData(SystemBase):
 
 # --- ŞEHİR BAZLI SAATLİK VERİ ---
 class HourlyWeatherData(SystemBase):
-    """81 il için saatlik hava durumu verisi"""
+    """81 il ve ilçeler için saatlik hava durumu verisi"""
     __tablename__ = "hourly_weather_data"
     
     id = Column(Integer, primary_key=True, index=True)
-    city_name = Column(String, index=True)  # Şehir adı
+    city_name = Column(String, index=True)  # Şehir adı (İl)
+    district_name = Column(String, index=True, nullable=True)  # İlçe adı
     latitude = Column(Float)
     longitude = Column(Float)
     timestamp = Column(DateTime, index=True)  # Saat bazlı zaman damgası
