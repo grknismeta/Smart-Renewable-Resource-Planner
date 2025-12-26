@@ -393,16 +393,27 @@ class MapDialogs {
                                 ),
                               ),
                               const SizedBox(height: 15),
-                              _buildTextField(nameController, 'Kaynak Adı', theme),
+                              _buildTextField(
+                                nameController,
+                                'Kaynak Adı',
+                                theme,
+                              ),
                               const SizedBox(height: 16),
                               DropdownButtonFormField<String>(
                                 value: selectedType,
                                 dropdownColor: theme.cardColor,
                                 style: TextStyle(color: theme.textColor),
-                                decoration: _inputDecoration('Kaynak Tipi', theme),
+                                decoration: _inputDecoration(
+                                  'Kaynak Tipi',
+                                  theme,
+                                ),
                                 items: ['Güneş Paneli', 'Rüzgar Türbini']
-                                    .map((t) =>
-                                        DropdownMenuItem(value: t, child: Text(t)))
+                                    .map(
+                                      (t) => DropdownMenuItem(
+                                        value: t,
+                                        child: Text(t),
+                                      ),
+                                    )
                                     .toList(),
                                 onChanged: (val) {
                                   if (val != null) {
@@ -410,8 +421,9 @@ class MapDialogs {
                                       selectedType = val;
                                       selectedEquipmentId = null;
                                     });
-                                    final newType =
-                                        val == 'Güneş Paneli' ? 'Solar' : 'Wind';
+                                    final newType = val == 'Güneş Paneli'
+                                        ? 'Solar'
+                                        : 'Wind';
                                     provider.loadEquipments(
                                       type: newType,
                                       forceRefresh: true,
@@ -432,7 +444,9 @@ class MapDialogs {
                                     color: Colors.orange.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                      color: Colors.orange.withValues(alpha: 0.3),
+                                      color: Colors.orange.withValues(
+                                        alpha: 0.3,
+                                      ),
                                     ),
                                   ),
                                   child: Row(
@@ -484,7 +498,7 @@ class MapDialogs {
                                               children: [
                                                 Text(
                                                   equipment.name,
-                                                  maxLines: 1,
+                                                  maxLines: 12,
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                   style: TextStyle(
@@ -494,7 +508,7 @@ class MapDialogs {
                                                 ),
                                                 Text(
                                                   '${equipment.ratedPowerKw >= 1000 ? (equipment.ratedPowerKw / 1000).toStringAsFixed(2) : equipment.ratedPowerKw.toStringAsFixed(1)} ${equipment.ratedPowerKw >= 1000 ? 'MW' : 'kW'}',
-                                                  maxLines: 1,
+                                                  maxLines: 12,
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                   style: TextStyle(
@@ -511,8 +525,7 @@ class MapDialogs {
                                     );
                                   }).toList(),
                                   onChanged: (val) {
-                                    setStateSB(() =>
-                                        selectedEquipmentId = val);
+                                    setStateSB(() => selectedEquipmentId = val);
                                   },
                                   validator: (val) {
                                     if (val == null)
@@ -523,7 +536,7 @@ class MapDialogs {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 50),
                         Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 20,
@@ -545,12 +558,12 @@ class MapDialogs {
                                         try {
                                           final selectedEquipment =
                                               availableEquipments.firstWhere(
-                                            (e) =>
-                                                e.id == selectedEquipmentId,
-                                          );
+                                                (e) =>
+                                                    e.id == selectedEquipmentId,
+                                              );
                                           final capacityMw =
                                               selectedEquipment.ratedPowerKw /
-                                                  1000.0;
+                                              1000.0;
                                           await provider.addPin(
                                             point,
                                             nameController.text,
@@ -664,7 +677,6 @@ class MapDialogs {
       decoration: _inputDecoration(label, theme),
     );
   }
-
 }
 // --- YENİ: BÖLGE SEÇİM GÖSTERGESİ WIDGET'I ---
 
