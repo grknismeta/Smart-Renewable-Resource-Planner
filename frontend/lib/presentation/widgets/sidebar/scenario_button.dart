@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../../providers/theme_provider.dart';
+import '../../viewmodels/theme_view_model.dart';
 import '../../screens/scenario_screen.dart';
 
 /// Senaryo yönetimi butonu - Sidebar'da görünen
 class ScenarioButton extends StatelessWidget {
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
   final bool isGuest;
   final bool isCollapsed;
 

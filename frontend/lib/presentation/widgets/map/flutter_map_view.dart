@@ -10,8 +10,8 @@ import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_ti
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../../../providers/map_provider.dart';
-import '../../../providers/theme_provider.dart';
+import '../../../presentation/viewmodels/map_view_model.dart';
+import '../../../presentation/viewmodels/theme_view_model.dart';
 import '../../features/map/viewmodels/map_screen_viewmodel.dart';
 import 'map_widgets.dart';
 
@@ -41,42 +41,43 @@ class _FlutterMapViewState extends State<FlutterMapView> {
   static const double _maxLon = 45.0;
 
   void _handleMapTap(TapPosition tapPosition, LatLng point) {
-    final mapProvider = Provider.of<MapProvider>(context, listen: false);
+    final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
 
     // Region selection mode
-    if (mapProvider.isSelectingRegion) {
+    if (mapViewModel.isSelectingRegion) {
       final clamped = LatLng(
         point.latitude.clamp(_minLat, _maxLat),
         point.longitude.clamp(_minLon, _maxLon),
       );
-      mapProvider.recordSelectionPoint(clamped);
+      mapViewModel.recordSelectionPoint(clamped);
       return;
     }
 
     // Pin placement mode
-    if (mapProvider.placingPinType != null) {
-      MapDialogs.showAddPinDialog(context, point, mapProvider.placingPinType!);
+    if (mapViewModel.placingPinType != null) {
+      MapDialogs.showAddPinDialog(context, point, mapViewModel.placingPinType!);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final mapProvider = Provider.of<MapProvider>(context);
-    final theme = Provider.of<ThemeProvider>(context);
+    final mapViewModel = Provider.of<MapViewModel>(context);
+    final themeViewModel = Provider.of<ThemeViewModel>(context);
 
     return Stack(
       children: [
-        _buildMap(mapProvider, theme),
-        if (_hoverPosition != null && mapProvider.currentLayer != MapLayer.none)
-          _buildHoverInfo(mapProvider, theme),
+        _buildMap(mapViewModel, themeViewModel),
+        if (_hoverPosition != null &&
+            mapViewModel.currentLayer != MapLayer.none)
+          _buildHoverInfo(mapViewModel, themeViewModel),
       ],
     );
   }
 
-  Widget _buildMap(MapProvider mapProvider, ThemeProvider theme) {
-    final markers = _buildMarkers(mapProvider);
-    final weatherCircles = _buildWeatherCircles(mapProvider);
-    final polygons = _buildSelectionPolygons(mapProvider);
+  Widget _buildMap(MapViewModel mapViewModel, ThemeViewModel theme) {
+    final markers = _buildMarkers(mapViewModel);
+    final weatherCircles = _buildWeatherCircles(mapViewModel);
+    final polygons = _buildSelectionPolygons(mapViewModel);
 
     return MouseRegion(
       onHover: (event) {
@@ -118,15 +119,15 @@ class _FlutterMapViewState extends State<FlutterMapView> {
           ),
           if (weatherCircles.isNotEmpty) CircleLayer(circles: weatherCircles),
           if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
-          MarkerLayer(markers: _buildSelectionPointMarkers(mapProvider)),
+          MarkerLayer(markers: _buildSelectionPointMarkers(mapViewModel)),
           MarkerLayer(markers: markers),
         ],
       ),
     );
   }
 
-  List<Marker> _buildMarkers(MapProvider mapProvider) {
-    final markers = mapProvider.pins.map((pin) {
+  List<Marker> _buildMarkers(MapViewModel mapViewModel) {
+    final markers = mapViewModel.pins.map((pin) {
       return Marker(
         width: 50.0,
         height: 50.0,
@@ -139,8 +140,8 @@ class _FlutterMapViewState extends State<FlutterMapView> {
     }).toList();
 
     // Add optimization markers
-    if (mapProvider.optimizationResult != null) {
-      final optimizedMarkers = mapProvider.optimizationResult!.points.map((
+    if (mapViewModel.optimizationResult != null) {
+      final optimizedMarkers = mapViewModel.optimizationResult!.points.map((
         point,
       ) {
         return Marker(
@@ -171,15 +172,15 @@ class _FlutterMapViewState extends State<FlutterMapView> {
     return markers;
   }
 
-  List<CircleMarker> _buildWeatherCircles(MapProvider mapProvider) {
-    if (mapProvider.currentLayer == MapLayer.none) return [];
-    if (mapProvider.weatherData.isEmpty) return [];
+  List<CircleMarker> _buildWeatherCircles(MapViewModel mapViewModel) {
+    if (mapViewModel.currentLayer == MapLayer.none) return [];
+    if (mapViewModel.weatherData.isEmpty) return [];
 
-    return mapProvider.weatherData.map((city) {
-      final value = mapProvider.currentLayer == MapLayer.temp
+    return mapViewModel.weatherData.map((city) {
+      final value = mapViewModel.currentLayer == MapLayer.temp
           ? city.temperature
           : city.windSpeed;
-      final color = mapProvider.currentLayer == MapLayer.temp
+      final color = mapViewModel.currentLayer == MapLayer.temp
           ? MapScreenViewModel.getTemperatureColor(value)
           : MapScreenViewModel.getWindColor(value);
 
@@ -193,12 +194,12 @@ class _FlutterMapViewState extends State<FlutterMapView> {
     }).toList();
   }
 
-  List<Polygon> _buildSelectionPolygons(MapProvider mapProvider) {
-    if (mapProvider.selectionPoints.isEmpty) return [];
+  List<Polygon> _buildSelectionPolygons(MapViewModel mapViewModel) {
+    if (mapViewModel.selectionPoints.isEmpty) return [];
 
     return [
       Polygon(
-        points: mapProvider.selectionPoints,
+        points: mapViewModel.selectionPoints,
         color: Colors.blue.withValues(alpha: 0.3),
         borderColor: Colors.blue,
         borderStrokeWidth: 2,
@@ -206,24 +207,24 @@ class _FlutterMapViewState extends State<FlutterMapView> {
     ];
   }
 
-  List<Marker> _buildSelectionPointMarkers(MapProvider mapProvider) {
-    if (mapProvider.selectionPoints.isEmpty) return [];
+  List<Marker> _buildSelectionPointMarkers(MapViewModel mapViewModel) {
+    if (mapViewModel.selectionPoints.isEmpty) return [];
 
-    return List.generate(mapProvider.selectionPoints.length, (index) {
-      final point = mapProvider.selectionPoints[index];
-      final isDragging = mapProvider.draggingPointIndex == index;
+    return List.generate(mapViewModel.selectionPoints.length, (index) {
+      final point = mapViewModel.selectionPoints[index];
+      final isDragging = mapViewModel.draggingPointIndex == index;
 
       return Marker(
         width: isDragging ? 56 : 48,
         height: isDragging ? 56 : 48,
         point: point,
         child: GestureDetector(
-          onPanStart: (_) => mapProvider.startDraggingPoint(index),
-          onPanUpdate: (details) => _handlePointDrag(details, mapProvider),
-          onPanEnd: (_) => mapProvider.endDraggingPoint(),
+          onPanStart: (_) => mapViewModel.startDraggingPoint(index),
+          onPanUpdate: (details) => _handlePointDrag(details, mapViewModel),
+          onPanEnd: (_) => mapViewModel.endDraggingPoint(),
           onLongPress: () {
             HapticFeedback.mediumImpact();
-            mapProvider.removePointAt(index);
+            mapViewModel.removePointAt(index);
           },
           child: Container(
             decoration: BoxDecoration(
@@ -250,7 +251,7 @@ class _FlutterMapViewState extends State<FlutterMapView> {
     });
   }
 
-  void _handlePointDrag(DragUpdateDetails details, MapProvider mapProvider) {
+  void _handlePointDrag(DragUpdateDetails details, MapViewModel mapViewModel) {
     try {
       final renderBox =
           _mapKey.currentContext?.findRenderObject() as RenderBox?;
@@ -265,17 +266,17 @@ class _FlutterMapViewState extends State<FlutterMapView> {
         newPoint.longitude.clamp(_minLon, _maxLon),
       );
 
-      mapProvider.dragPoint(newPoint);
+      mapViewModel.dragPoint(newPoint);
     } catch (e) {
       debugPrint('Drag error: $e');
     }
   }
 
-  Widget _buildHoverInfo(MapProvider mapProvider, ThemeProvider theme) {
-    final nearestCity = mapProvider.findNearestCity(_hoverPosition!);
+  Widget _buildHoverInfo(MapViewModel mapViewModel, ThemeViewModel theme) {
+    final nearestCity = mapViewModel.findNearestCity(_hoverPosition!);
     if (nearestCity == null) return const SizedBox.shrink();
 
-    final isTemp = mapProvider.currentLayer == MapLayer.temp;
+    final isTemp = mapViewModel.currentLayer == MapLayer.temp;
     final value = isTemp ? nearestCity.temperature : nearestCity.windSpeed;
     final unit = isTemp ? '°C' : 'm/s';
     final icon = isTemp ? Icons.thermostat : Icons.air;

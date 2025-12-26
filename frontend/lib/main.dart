@@ -6,12 +6,12 @@ import 'package:provider/provider.dart';
 import 'core/api_service.dart';
 import 'core/secure_storage_service.dart';
 
-// Provider'lar
-import 'providers/auth_provider.dart';
-import 'providers/map_provider.dart';
-import 'providers/theme_provider.dart'; // <-- YENİ EKLENDİ
-import 'providers/report_provider.dart';
-import 'providers/scenario_provider.dart';
+// ViewModels
+import 'presentation/viewmodels/auth_view_model.dart';
+import 'presentation/viewmodels/map_view_model.dart';
+import 'presentation/viewmodels/theme_view_model.dart';
+import 'presentation/viewmodels/report_view_model.dart';
+import 'presentation/viewmodels/scenario_view_model.dart';
 
 // Ekranlar
 import 'presentation/screens/splash_screen.dart';
@@ -35,42 +35,41 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => ThemeViewModel()),
         ChangeNotifierProvider(
-          create: (_) => ThemeProvider(),
-        ), // <-- YENİ EKLENDİ
-        ChangeNotifierProvider(
-          create: (context) => AuthProvider(apiService, secureStorageService),
+          create: (context) => AuthViewModel(apiService, secureStorageService),
         ),
-        ChangeNotifierProvider(create: (_) => ReportProvider(apiService)),
-        ChangeNotifierProvider(create: (_) => ScenarioProvider(apiService)),
-        ChangeNotifierProxyProvider<AuthProvider, MapProvider>(
-          create: (context) => MapProvider(
+        ChangeNotifierProvider(create: (_) => ReportViewModel(apiService)),
+        ChangeNotifierProvider(create: (_) => ScenarioViewModel(apiService)),
+        ChangeNotifierProxyProvider<AuthViewModel, MapViewModel>(
+          create: (context) => MapViewModel(
             apiService,
-            Provider.of<AuthProvider>(context, listen: false),
+            Provider.of<AuthViewModel>(context, listen: false),
           ),
-          update: (context, auth, map) => map!,
+          update: (context, authViewModel, mapViewModel) => mapViewModel!,
         ),
       ],
-      child: Consumer<ThemeProvider>(
+      child: Consumer<ThemeViewModel>(
         // Tema değişince uygulamayı yeniden çizmek için Consumer
-        builder: (context, themeProvider, child) {
+        builder: (context, themeViewModel, child) {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
             title: 'Akıllı Kaynak Planlayıcı (SRRP)',
             theme: ThemeData(
               primarySwatch: Colors.blue,
               // Scaffold rengini themeProvider'dan alıyoruz
-              scaffoldBackgroundColor: themeProvider.backgroundColor,
-              brightness: themeProvider.isDarkMode
+              scaffoldBackgroundColor: themeViewModel.backgroundColor,
+              brightness: themeViewModel.isDarkMode
                   ? Brightness.dark
                   : Brightness.light,
             ),
-            home: Consumer<AuthProvider>(
-              builder: (ctx, auth, _) {
-                if (auth.isLoggedIn == null) {
+            home: Consumer<AuthViewModel>(
+              builder: (ctx, authError, _) {
+                // Consumer rebuilds automatically on notifyListeners
+                if (authError.isLoggedIn == null) {
                   return const SplashScreen();
                 }
-                if (auth.isLoggedIn == true) {
+                if (authError.isLoggedIn == true) {
                   return const MapScreen();
                 } else {
                   return const AuthScreen();

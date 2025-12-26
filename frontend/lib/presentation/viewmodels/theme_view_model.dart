@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../core/base/base_view_model.dart';
 
-class ThemeProvider extends ChangeNotifier {
+class ThemeViewModel extends BaseViewModel {
   bool _isDarkMode = true; // Varsayılan olarak Dark Mode başlasın
 
   bool get isDarkMode => _isDarkMode;

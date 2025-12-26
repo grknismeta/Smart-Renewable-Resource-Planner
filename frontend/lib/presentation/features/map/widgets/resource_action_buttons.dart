@@ -4,14 +4,14 @@
 // Reusable, temiz UI component
 
 import 'package:flutter/material.dart';
-import '../../../../providers/map_provider.dart';
+import 'package:frontend/presentation/viewmodels/map_view_model.dart';
 import '../../../widgets/map/map_widgets.dart';
 
 /// Kaynak ekleme butonları (Güneş Paneli + Rüzgar Türbini)
 class ResourceActionButtons extends StatelessWidget {
-  final MapProvider mapProvider;
+  final MapViewModel mapViewModel;
 
-  const ResourceActionButtons({super.key, required this.mapProvider});
+  const ResourceActionButtons({super.key, required this.mapViewModel});
 
   @override
   Widget build(BuildContext context) {
@@ -24,14 +24,14 @@ class ResourceActionButtons extends StatelessWidget {
           // Rüzgar Türbini
           ResourceActionButton(
             type: 'Rüzgar Türbini',
-            onTap: () => mapProvider.startPlacingMarker('Rüzgar Türbini'),
+            onTap: () => mapViewModel.startPlacingMarker('Rüzgar Türbini'),
           ),
           const SizedBox(height: 10),
 
           // Güneş Paneli
           ResourceActionButton(
             type: 'Güneş Paneli',
-            onTap: () => mapProvider.startPlacingMarker('Güneş Paneli'),
+            onTap: () => mapViewModel.startPlacingMarker('Güneş Paneli'),
           ),
         ],
       ),

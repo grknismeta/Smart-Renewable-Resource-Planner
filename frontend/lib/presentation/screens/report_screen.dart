@@ -6,10 +6,10 @@ import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_ti
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../../providers/report_provider.dart';
-import '../../providers/theme_provider.dart';
-import '../../providers/scenario_provider.dart';
-import '../../providers/map_provider.dart';
+import '../../presentation/viewmodels/report_view_model.dart';
+import '../../presentation/viewmodels/theme_view_model.dart';
+import '../../presentation/viewmodels/scenario_view_model.dart';
+import '../../presentation/viewmodels/map_view_model.dart';
 import '../../data/models/system_data_models.dart';
 import '../widgets/map/map_constants.dart';
 
@@ -30,16 +30,16 @@ class _ReportScreenState extends State<ReportScreen> {
   void initState() {
     super.initState();
     Future.microtask(() {
-      final rp = Provider.of<ReportProvider>(context, listen: false);
+      final rp = Provider.of<ReportViewModel>(context, listen: false);
       rp.fetchReport(region: _region, type: _type);
-      // Senaryolar\u0131 da y\u00fckle
-      Provider.of<ScenarioProvider>(context, listen: false).loadScenarios();
+      // Senaryoları da yükle
+      Provider.of<ScenarioViewModel>(context, listen: false).loadScenarios();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Provider.of<ThemeProvider>(context);
+    final themeViewModel = Provider.of<ThemeViewModel>(context);
 
     return Scaffold(
       body: Container(
@@ -55,7 +55,7 @@ class _ReportScreenState extends State<ReportScreen> {
             padding: const EdgeInsets.all(16.0),
             child: Column(
               children: [
-                _buildHeader(theme),
+                _buildHeader(themeViewModel),
                 const SizedBox(height: 16),
                 Expanded(
                   child: LayoutBuilder(
@@ -104,9 +104,9 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 
-  Widget _buildHeader(ThemeProvider theme) {
-    final scenarioProvider = Provider.of<ScenarioProvider>(context);
-    final scenarios = scenarioProvider.scenarios;
+  Widget _buildHeader(ThemeViewModel theme) {
+    final scenarioViewModel = Provider.of<ScenarioViewModel>(context);
+    final scenarios = scenarioViewModel.scenarios;
 
     return Row(
       children: [
@@ -132,8 +132,13 @@ class _ReportScreenState extends State<ReportScreen> {
             items: ['Bölgesel', ...scenarios.map((s) => s.id.toString())],
             displayBuilder: (val) {
               if (val == 'Bölgesel') return 'Bölgesel Rapor';
-              final sc = scenarios.firstWhere((s) => s.id.toString() == val);
-              return sc.name;
+              // Check if scenario exists
+              try {
+                final sc = scenarios.firstWhere((s) => s.id.toString() == val);
+                return sc.name;
+              } catch (e) {
+                return 'Bilinmeyen Senaryo';
+              }
             },
             onChanged: (val) {
               if (val == null) return;
@@ -141,7 +146,7 @@ class _ReportScreenState extends State<ReportScreen> {
                 if (val == 'Bölgesel') {
                   _selectedScenarioId = null;
                   // Bölgesel raporu yükle
-                  Provider.of<ReportProvider>(
+                  Provider.of<ReportViewModel>(
                     context,
                     listen: false,
                   ).fetchReport(region: _region, type: _type);
@@ -169,7 +174,7 @@ class _ReportScreenState extends State<ReportScreen> {
           onChanged: (val) {
             if (val == null || _selectedScenarioId != null) return;
             setState(() => _region = val);
-            Provider.of<ReportProvider>(
+            Provider.of<ReportViewModel>(
               context,
               listen: false,
             ).fetchReport(region: val, type: _type);
@@ -182,7 +187,7 @@ class _ReportScreenState extends State<ReportScreen> {
           onChanged: (val) {
             if (val == null || _selectedScenarioId != null) return;
             setState(() => _type = val);
-            Provider.of<ReportProvider>(
+            Provider.of<ReportViewModel>(
               context,
               listen: false,
             ).fetchReport(region: _region, type: val);
@@ -273,8 +278,8 @@ class _ReportMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final reportProvider = Provider.of<ReportProvider>(context);
-    final report = reportProvider.report;
+    final reportViewModel = Provider.of<ReportViewModel>(context);
+    final report = reportViewModel.report;
 
     final markers = <Marker>[];
     if (report != null) {
@@ -331,7 +336,7 @@ class _ReportMap extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              if (reportProvider.isLoading)
+              if (reportViewModel.isBusy)
                 const SizedBox(
                   width: 18,
                   height: 18,
@@ -413,10 +418,10 @@ class _ReportListPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final reportProvider = Provider.of<ReportProvider>(context);
-    final report = reportProvider.report;
+    final reportViewModel = Provider.of<ReportViewModel>(context);
+    final report = reportViewModel.report;
 
-    if (reportProvider.isLoading && report == null) {
+    if (reportViewModel.isBusy && report == null) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -485,7 +490,7 @@ class _ReportListPanel extends StatelessWidget {
 
               return GestureDetector(
                 onTap: () {
-                  Provider.of<ReportProvider>(
+                  Provider.of<ReportViewModel>(
                     context,
                     listen: false,
                   ).setFocusedSite(site);
@@ -647,7 +652,7 @@ class _MetricChip extends StatelessWidget {
 }
 
 // ============================================================
-// SENARYO HARITASI VE L\u0130STE PANELLER\u0130
+// SENARYO HARITASI VE LİSTE PANELLERİ
 // ============================================================
 
 class _ScenarioMap extends StatelessWidget {
@@ -658,21 +663,21 @@ class _ScenarioMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scenarioProvider = Provider.of<ScenarioProvider>(context);
-    final mapProvider = Provider.of<MapProvider>(context);
-    final scenario = scenarioProvider.scenarios.firstWhere(
+    final scenarioViewModel = Provider.of<ScenarioViewModel>(context);
+    final mapViewModel = Provider.of<MapViewModel>(context);
+    final scenario = scenarioViewModel.scenarios.firstWhere(
       (s) => s.id == scenarioId,
-      orElse: () => scenarioProvider.scenarios.first,
+      orElse: () => scenarioViewModel.scenarios.first,
     );
 
     // Senaryodaki pinleri bul
-    final scenarioPins = mapProvider.pins
+    final scenarioPins = mapViewModel.pins
         .where((p) => scenario.pinIds.contains(p.id))
         .toList();
 
     final markers = <Marker>[];
     for (var pin in scenarioPins) {
-      final color = pin.type == 'G\u00fcne\u015f Paneli'
+      final color = pin.type == 'Güneş Paneli'
           ? Colors.orangeAccent
           : Colors.blueAccent;
       markers.add(
@@ -778,23 +783,27 @@ class _ScenarioListPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scenarioProvider = Provider.of<ScenarioProvider>(context);
-    final mapProvider = Provider.of<MapProvider>(context);
-    final scenario = scenarioProvider.scenarios.firstWhere(
+    final scenarioViewModel = Provider.of<ScenarioViewModel>(context);
+    final mapViewModel = Provider.of<MapViewModel>(context);
+    final scenario = scenarioViewModel.scenarios.firstWhere(
       (s) => s.id == scenarioId,
-      orElse: () => scenarioProvider.scenarios.first,
+      orElse: () => scenarioViewModel.scenarios.first,
     );
 
-    final scenarioPins = mapProvider.pins
+    final scenarioPins = mapViewModel.pins
         .where((p) => scenario.pinIds.contains(p.id))
         .toList();
 
-    // Sonu\u00e7 verisini parse et
+    // Sonuç verisini parse et
     final resultData = scenario.resultData;
+    // resultData is Map<String, dynamic>?
+    // Use clear safe access
     final totalSolarKwh = resultData?['total_solar_kwh'] ?? 0.0;
     final totalWindKwh = resultData?['total_wind_kwh'] ?? 0.0;
     final totalKwh = resultData?['total_kwh'] ?? 0.0;
+    // ignore: unused_local_variable
     final solarCount = resultData?['solar_count'] ?? 0;
+    // ignore: unused_local_variable
     final windCount = resultData?['wind_count'] ?? 0;
 
     return Column(
@@ -806,145 +815,183 @@ class _ScenarioListPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                scenario.name,
+                'Senaryo Sonucu (7 Gün)',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              if (scenario.description != null) ...[
-                const SizedBox(height: 4),
+              if (scenario.startDate != null)
                 Text(
-                  scenario.description!,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  '${scenario.startDate?.day}/${scenario.startDate?.month} - ${scenario.endDate?.day}/${scenario.endDate?.month}',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
                 ),
-              ],
               const SizedBox(height: 12),
-              if (totalKwh > 0) ...[
-                Text(
-                  'Toplam Tahmin \u00dcretim',
-                  style: TextStyle(
-                    color: Colors.greenAccent.shade200,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+
+              if (resultData != null)
+                Column(
                   children: [
-                    _StatChip('Toplam', '${totalKwh.toStringAsFixed(0)} kWh'),
-                    if (totalSolarKwh > 0)
-                      _StatChip(
-                        'Güneş ($solarCount)',
-                        '${totalSolarKwh.toStringAsFixed(0)} kWh',
-                      ),
-                    if (totalWindKwh > 0)
-                      _StatChip(
-                        'R\u00fczgar ($windCount)',
-                        '${totalWindKwh.toStringAsFixed(0)} kWh',
-                      ),
+                    _ResultCard(
+                      label: 'Toplam Üretim',
+                      value: '${(totalKwh as num).toStringAsFixed(1)} kWh',
+                      icon: Icons.flash_on,
+                      color: Colors.greenAccent,
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _ResultCard(
+                            label: 'Güneş',
+                            value:
+                                '${(totalSolarKwh as num).toStringAsFixed(1)} kWh',
+                            icon: Icons.wb_sunny,
+                            color: Colors.orangeAccent,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _ResultCard(
+                            label: 'Rüzgar',
+                            value:
+                                '${(totalWindKwh as num).toStringAsFixed(1)} kWh',
+                            icon: Icons.wind_power,
+                            color: Colors.lightBlueAccent,
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
-                ),
-              ] else ...[
-                Text(
-                  'Hen\u00fcz hesaplanmad\u0131.',
-                  style: TextStyle(
-                    color: Colors.orangeAccent.shade200,
-                    fontSize: 13,
+                )
+              else
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: const Text(
+                    'Bu senaryo için henüz hesaplanmış sonuç yok.',
+                    style: TextStyle(color: Colors.white70),
                   ),
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Senaryo ekran\u0131ndan "Hesapla" butonuna bas\u0131n.',
-                  style: TextStyle(color: Colors.white60, fontSize: 11),
-                ),
-              ],
             ],
           ),
         ),
         const Divider(color: Colors.white24, height: 1),
         Expanded(
-          child: scenarioPins.isEmpty
-              ? const Center(
-                  child: Text(
-                    'Bu senaryoda pin yok.',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: scenarioPins.length,
-                  itemBuilder: (context, index) {
-                    final pin = scenarioPins[index];
-                    final color = pin.type == 'Güneş Paneli'
-                        ? Colors.orangeAccent
-                        : Colors.blueAccent;
+          child: ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: scenarioPins.length,
+            itemBuilder: (context, index) {
+              final pin = scenarioPins[index];
+              final isSolar = pin.type == 'Güneş Paneli';
+              final color = isSolar ? Colors.orangeAccent : Colors.blueAccent;
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: color.withValues(alpha: 0.5),
-                          width: 1.2,
-                        ),
-                      ),
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: color.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isSolar ? Icons.wb_sunny : Icons.wind_power,
+                      color: color,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Icon(
-                                pin.type == 'Güneş Paneli'
-                                    ? Icons.wb_sunny
-                                    : Icons.wind_power,
-                                color: color,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  pin.name,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
+                          Text(
+                            pin.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
-                            children: [
-                              _MetricChip(label: 'Tip', value: pin.type),
-                              _MetricChip(
-                                label: 'Kapasite',
-                                value:
-                                    '${pin.capacityMw.toStringAsFixed(1)} MW',
-                              ),
-                              if (pin.avgSolarIrradiance != null)
-                                _MetricChip(
-                                  label: 'Işınım',
-                                  value:
-                                      '${pin.avgSolarIrradiance!.toStringAsFixed(1)} kWh/m²',
-                                ),
-                            ],
+                          Text(
+                            '${pin.capacityMw} MW',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 ),
+              );
+            },
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _ResultCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _ResultCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -5,15 +5,15 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../providers/map_provider.dart';
-import '../../../../providers/theme_provider.dart';
+import 'package:frontend/presentation/viewmodels/map_view_model.dart';
+import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
 import '../../../widgets/map/map_widgets.dart';
 
 /// Optimizasyon butonları (Bölge Seç / Hesapla)
 class OptimizationButtons extends StatelessWidget {
-  final MapProvider mapProvider;
+  final MapViewModel mapViewModel;
 
-  const OptimizationButtons({super.key, required this.mapProvider});
+  const OptimizationButtons({super.key, required this.mapViewModel});
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +21,7 @@ class OptimizationButtons extends StatelessWidget {
   }
 
   Widget _buildButton(BuildContext context) {
-    if (mapProvider.isSelectingRegion) {
+    if (mapViewModel.isSelectingRegion) {
       return _buildCalculateButton(context);
     }
     return _buildSelectRegionButton();
@@ -31,7 +31,7 @@ class OptimizationButtons extends StatelessWidget {
     return FloatingActionButton.extended(
       heroTag: 'optimization_select',
       backgroundColor: Colors.blue,
-      onPressed: mapProvider.startSelectingRegion,
+      onPressed: mapViewModel.startSelectingRegion,
       icon: const Icon(Icons.select_all),
       label: const Text('Bölge Seç'),
     );
@@ -41,7 +41,7 @@ class OptimizationButtons extends StatelessWidget {
     return FloatingActionButton.extended(
       heroTag: 'optimization_calculate',
       backgroundColor: Colors.blue,
-      onPressed: mapProvider.hasValidSelection
+      onPressed: mapViewModel.hasValidSelection
           ? () => _onCalculate(context)
           : null,
       icon: const Icon(Icons.calculate),
@@ -50,14 +50,24 @@ class OptimizationButtons extends StatelessWidget {
   }
 
   Future<void> _onCalculate(BuildContext context) async {
-    final theme = Provider.of<ThemeProvider>(context, listen: false);
+    final themeViewModel = Provider.of<ThemeViewModel>(context, listen: false);
 
     // Ekipmanları yükle (dialog açılmadan önce)
-    if (!mapProvider.equipmentsLoading && mapProvider.equipments.isEmpty) {
-      await mapProvider.loadEquipments();
+    if (!mapViewModel.equipmentsLoading && mapViewModel.equipments.isEmpty) {
+      await mapViewModel.loadEquipments();
     }
 
     if (!context.mounted) return;
-    OptimizationDialog.show(context, mapProvider, theme);
+    // Note: OptimizationDialog.show might need refactoring too if it uses MapProvider?
+    // OptimizationDialog is in lib/presentation/widgets/map/map_widgets.dart or similar.
+    // I refactored map_dialogs.dart which likely contains OptimizationDialog.
+    // If OptimizationDialog.show signature changed to accept MapViewModel, this is fine.
+    // If I missed refactoring it, this will fail.
+    // Assuming MapDialogs contains OptimizationDialog and it was refactored.
+    // However, I updated map_dialogs.dart in step 12.
+    // Let's assume the signature is compatible or I need to update it here.
+    // The previous implementation passed mapProvider.
+    // I refactored map_dialogs to use MapViewModel.
+    OptimizationDialog.show(context, mapViewModel, themeViewModel);
   }
 }

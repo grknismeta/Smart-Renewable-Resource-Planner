@@ -1,13 +1,13 @@
 // presentation/features/map/widgets/time_slider_widget.dart
 //
 // Sorumluluk: Zaman çizelgesi slider'ı
-// State'i kendi içinde tutar, MapProvider üzerinden verileri yükler
+// State'i kendi içinde tutar, MapViewModel üzerinden verileri yükler
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../../../providers/map_provider.dart';
-import '../../../../providers/theme_provider.dart';
+import 'package:frontend/presentation/viewmodels/map_view_model.dart';
+import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
 
 class TimeSliderWidget extends StatefulWidget {
   const TimeSliderWidget({super.key});
@@ -24,8 +24,8 @@ class _TimeSliderWidgetState extends State<TimeSliderWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Provider.of<ThemeProvider>(context);
-    final mapProvider = Provider.of<MapProvider>(context);
+    final themeViewModel = Provider.of<ThemeViewModel>(context);
+    final mapViewModel = Provider.of<MapViewModel>(context);
 
     final windowEndDay = DateTime(
       _timeWindowEnd.year,
@@ -52,10 +52,10 @@ class _TimeSliderWidgetState extends State<TimeSliderWidget> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.cardColor.withValues(alpha: 0.95),
+        color: themeViewModel.cardColor.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: theme.secondaryTextColor.withValues(alpha: 0.1),
+          color: themeViewModel.secondaryTextColor.withValues(alpha: 0.1),
         ),
       ),
       child: Column(
@@ -67,13 +67,16 @@ class _TimeSliderWidgetState extends State<TimeSliderWidget> {
               Text(
                 'Zaman Çizelgesi',
                 style: TextStyle(
-                  color: theme.textColor,
+                  color: themeViewModel.textColor,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               Text(
                 _formatDate(displayDate),
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 12),
+                style: TextStyle(
+                  color: themeViewModel.secondaryTextColor,
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
@@ -81,7 +84,7 @@ class _TimeSliderWidgetState extends State<TimeSliderWidget> {
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
               activeTrackColor: Colors.blueAccent,
-              inactiveTrackColor: theme.secondaryTextColor.withValues(
+              inactiveTrackColor: themeViewModel.secondaryTextColor.withValues(
                 alpha: 0.3,
               ),
               thumbColor: Colors.blueAccent,
@@ -110,7 +113,7 @@ class _TimeSliderWidgetState extends State<TimeSliderWidget> {
                 setState(() {
                   _selectedTime = chosenDate;
                 });
-                mapProvider.loadWeatherForTime(requestTime);
+                mapViewModel.loadWeatherForTime(requestTime);
               },
             ),
           ),
@@ -119,7 +122,10 @@ class _TimeSliderWidgetState extends State<TimeSliderWidget> {
             children: [
               Text(
                 '-$daysBack gün',
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 10),
+                style: TextStyle(
+                  color: themeViewModel.secondaryTextColor,
+                  fontSize: 10,
+                ),
               ),
               TextButton(
                 onPressed: () {
@@ -130,13 +136,16 @@ class _TimeSliderWidgetState extends State<TimeSliderWidget> {
                     _selectedTime = today;
                   });
                   final noon = DateTime(now.year, now.month, now.day, 12);
-                  mapProvider.loadWeatherForTime(noon);
+                  mapViewModel.loadWeatherForTime(noon);
                 },
                 child: const Text('Bugün', style: TextStyle(fontSize: 12)),
               ),
               Text(
                 'Bugün',
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 10),
+                style: TextStyle(
+                  color: themeViewModel.secondaryTextColor,
+                  fontSize: 10,
+                ),
               ),
             ],
           ),

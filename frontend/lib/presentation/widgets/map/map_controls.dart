@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../providers/map_provider.dart';
-import '../../../providers/theme_provider.dart';
+import 'package:frontend/presentation/viewmodels/map_view_model.dart';
+import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
 import 'map_constants.dart';
 
 /// Sol üst köşede gösterilen dashboard widget'ı
 class MapDashboard extends StatelessWidget {
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
 
   const MapDashboard({super.key, required this.theme});
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<MapProvider>(
-      builder: (context, mapProvider, _) {
+    return Consumer<MapViewModel>(
+      builder: (context, mapViewModel, _) {
         // Pin sayılarını hesapla
-        final windPins = mapProvider.pins
+        final windPins = mapViewModel.pins
             .where((p) => p.type == 'Rüzgar Türbini')
             .length;
-        final solarPins = mapProvider.pins
+        final solarPins = mapViewModel.pins
             .where((p) => p.type == 'Güneş Paneli')
             .length;
-        final totalCapacity = mapProvider.pins.fold<double>(
+        final totalCapacity = mapViewModel.pins.fold<double>(
           0,
           (sum, pin) => sum + pin.capacityMw,
         );
@@ -109,7 +109,7 @@ class PlacementIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     if (placingPinType == null) return const SizedBox.shrink();
 
-    final bgColor = MapConstants.getBackgroundColor(placingPinType!);
+    final bgColor = MapConstants.getBackgroundColor(placingPinType ?? '');
     final fgColor = MapConstants.getForegroundColor(placingPinType!);
 
     return Center(
@@ -127,7 +127,7 @@ class PlacementIndicator extends StatelessWidget {
             Icon(Icons.touch_app, color: fgColor),
             const SizedBox(width: 8),
             Text(
-              "$placingPinType Eklemek için Haritaya Dokunun",
+              "⚡ Enerji Kaynağı Ekle",
               style: TextStyle(fontWeight: FontWeight.bold, color: fgColor),
             ),
             const SizedBox(width: 10),
@@ -144,7 +144,7 @@ class PlacementIndicator extends StatelessWidget {
 
 /// Zoom kontrolleri
 class ZoomControls extends StatelessWidget {
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
 
@@ -157,11 +157,12 @@ class ZoomControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        _buildZoomButton(Icons.add, onZoomIn),
-        const SizedBox(height: 8),
         _buildZoomButton(Icons.remove, onZoomOut),
+        const SizedBox(width: 8),
+        _buildZoomButton(Icons.add, onZoomIn),
       ],
     );
   }
@@ -176,7 +177,7 @@ class ZoomControls extends StatelessWidget {
       child: IconButton(
         icon: Icon(icon, color: theme.textColor),
         onPressed: onTap,
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
     );
   }
@@ -184,15 +185,15 @@ class ZoomControls extends StatelessWidget {
 
 /// Harita katmanları paneli
 class LayersPanel extends StatelessWidget {
-  final ThemeProvider theme;
-  final MapProvider mapProvider;
+  final ThemeViewModel theme;
+  final MapViewModel mapViewModel;
   final String selectedBaseMap;
   final ValueChanged<String> onBaseMapChanged;
 
   const LayersPanel({
     super.key,
     required this.theme,
-    required this.mapProvider,
+    required this.mapViewModel,
     required this.selectedBaseMap,
     required this.onBaseMapChanged,
   });
@@ -234,6 +235,7 @@ class LayersPanel extends StatelessWidget {
           Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2)),
           _buildLayerSwitch("Rüzgar Haritası", MapLayer.wind),
           _buildLayerSwitch("Sıcaklık Haritası", MapLayer.temp),
+          _buildLayerSwitch("Işınım Haritası", MapLayer.irradiance),
         ],
       ),
     );
@@ -267,9 +269,15 @@ class LayersPanel extends StatelessWidget {
   }
 
   Widget _buildLayerSwitch(String title, MapLayer layer) {
-    final bool isActive = mapProvider.currentLayer == layer;
+    final bool isActive = mapViewModel.currentLayer == layer;
     return InkWell(
-      onTap: () => mapProvider.changeMapLayer(),
+      onTap: () {
+        if (isActive) {
+          mapViewModel.setLayer(MapLayer.none);
+        } else {
+          mapViewModel.setLayer(layer);
+        }
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6.0),
         child: Row(

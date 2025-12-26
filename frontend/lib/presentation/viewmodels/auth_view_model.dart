@@ -1,10 +1,8 @@
-// lib/providers/auth_provider.dart
+import '../../core/api_service.dart';
+import '../../core/secure_storage_service.dart';
+import '../../core/base/base_view_model.dart';
 
-import 'package:flutter/material.dart';
-import '../core/api_service.dart';
-import '../core/secure_storage_service.dart';
-
-class AuthProvider extends ChangeNotifier {
+class AuthViewModel extends BaseViewModel {
   final ApiService _apiService;
   final SecureStorageService _storageService;
 
@@ -13,7 +11,7 @@ class AuthProvider extends ChangeNotifier {
 
   bool? get isLoggedIn => _isLoggedIn;
 
-  AuthProvider(this._apiService, this._storageService) {
+  AuthViewModel(this._apiService, this._storageService) {
     _checkLoginStatus(); // Uygulama başladığında durumu kontrol et
   }
 
@@ -29,33 +27,43 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> login(String email, String password) async {
+    setBusy(true);
     try {
       await _apiService.login(email, password);
       _isLoggedIn = true;
       notifyListeners();
     } catch (e) {
       _isLoggedIn = false;
+      setError(e.toString());
       notifyListeners();
       rethrow; // Hatayı UI'a ilet
+    } finally {
+      setBusy(false);
     }
   }
 
   Future<void> register(String email, String password) async {
     // YENİ EKLENDİ: API'ye gitmeden önce son güvenlik ağı
     if (password.length > 72) {
+      setError('Parola en fazla 72 karakter olabilir.');
       throw Exception('Parola en fazla 72 karakter olabilir.');
     }
 
+    setBusy(true);
     try {
       await _apiService.register(email, password);
     } catch (e) {
+      setError(e.toString());
       rethrow; // Hatayı UI'a ilet
+    } finally {
+      setBusy(false);
     }
   }
 
   Future<void> logout() async {
+    setBusy(true);
     await _storageService.deleteToken();
     _isLoggedIn = false;
-    notifyListeners();
+    setBusy(false);
   }
 }

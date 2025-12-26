@@ -2,20 +2,20 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/map_provider.dart';
+import '../../presentation/viewmodels/map_view_model.dart';
 
 class ControlButtons extends StatelessWidget {
   const ControlButtons({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final mapProvider = Provider.of<MapProvider>(context);
+    final mapViewModel = Provider.of<MapViewModel>(context);
 
     // --- HATA DÜZELTMESİ: Eksik değişken tanımlamaları eklendi ---
     // Bu değişkenler, butonların rengini belirlemek ve
     // iptal butonunu gösterip göstermemek için kullanılır.
-    final placingSolar = mapProvider.placingPinType == 'Güneş Paneli';
-    final placingWind = mapProvider.placingPinType == 'Rüzgar Türbini';
+    final placingSolar = mapViewModel.placingPinType == 'Güneş Paneli';
+    final placingWind = mapViewModel.placingPinType == 'Rüzgar Türbini';
     final isPlacing = placingSolar || placingWind;
     // --- DÜZELTME SONU ---
     return Column(
@@ -23,12 +23,12 @@ class ControlButtons extends StatelessWidget {
         // --- 1. GÜNCELLEME: Katman (Layer) Değiştirme Butonu ---
         FloatingActionButton(
           heroTag: 'btn_layer',
-          onPressed: mapProvider.changeMapLayer,
+          onPressed: mapViewModel.changeMapLayer,
           tooltip: 'Katman Değiştir',
           child: Icon(
-            mapProvider.currentLayer == MapLayer.none
+            mapViewModel.currentLayer == MapLayer.none
                 ? Icons.layers
-                : mapProvider.currentLayer == MapLayer.wind
+                : mapViewModel.currentLayer == MapLayer.wind
                 ? Icons.air
                 : Icons.wb_sunny,
           ),
@@ -51,7 +51,7 @@ class ControlButtons extends StatelessWidget {
                       title: const Text('Güneş Paneli'),
                       onTap: () {
                         Navigator.of(ctx).pop();
-                        mapProvider.startPlacingMarker('Güneş Paneli');
+                        mapViewModel.startPlacingMarker('Güneş Paneli');
                       },
                     ),
                     ListTile(
@@ -59,7 +59,7 @@ class ControlButtons extends StatelessWidget {
                       title: const Text('Rüzgar Türbini'),
                       onTap: () {
                         Navigator.of(ctx).pop();
-                        mapProvider.startPlacingMarker('Rüzgar Türbini');
+                        mapViewModel.startPlacingMarker('Rüzgar Türbini');
                       },
                     ),
                   ],
@@ -77,7 +77,7 @@ class ControlButtons extends StatelessWidget {
           const SizedBox(height: 10),
           FloatingActionButton(
             heroTag: 'btn_cancel',
-            onPressed: mapProvider.stopPlacingMarker,
+            onPressed: mapViewModel.stopPlacingMarker,
             tooltip: 'Ekleme Modunu Kapat',
             backgroundColor: Colors.red,
             child: const Icon(Icons.close),

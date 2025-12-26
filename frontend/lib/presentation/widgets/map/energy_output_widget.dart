@@ -2,12 +2,12 @@
 
 import 'package:flutter/material.dart';
 import '../../../data/models/pin_model.dart';
-import '../../../providers/theme_provider.dart';
+import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
 
 /// Modern enerji çıktısı gösterimi (Yıllık, Aylık, Haftalık)
 class EnergyOutputWidget extends StatelessWidget {
   final PinCalculationResponse result;
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
 
   const EnergyOutputWidget({
     super.key,
