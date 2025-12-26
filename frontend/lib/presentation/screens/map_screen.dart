@@ -41,7 +41,9 @@ class _MapScreenState extends State<MapScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final mapProvider = Provider.of<MapProvider>(context, listen: false);
       debugPrint('[MapScreen.initState] loadWeatherForTime çağrılıyor');
-      mapProvider.loadWeatherForTime(DateTime.now());
+      mapProvider.loadWeatherForTime(
+        DateTime.now().subtract(const Duration(hours: 1)),
+      );
       debugPrint(
         '[MapScreen.initState] solarSummary: ${mapProvider.solarSummary.length}',
       );
