@@ -43,6 +43,34 @@ class ScenarioViewModel extends BaseViewModel {
     }
   }
 
+  Future<void> updateScenario(
+    int scenarioId,
+    ScenarioCreate scenarioCreate,
+  ) async {
+    setBusy(true);
+
+    try {
+      final updatedScenario = await _apiService.updateScenario(
+        scenarioId,
+        scenarioCreate,
+      );
+      final index = _scenarios.indexWhere((s) => s.id == scenarioId);
+      if (index != -1) {
+        _scenarios[index] = updatedScenario;
+        if (_selectedScenario?.id == scenarioId) {
+          _selectedScenario = updatedScenario;
+        }
+        notifyListeners(); // Liste güncellendi
+      }
+    } catch (e) {
+      debugPrint('Senaryo güncellenemedi: $e');
+      setError('Senaryo güncellenemedi');
+      rethrow;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   Future<void> calculateScenario(int scenarioId) async {
     setBusy(true);
 

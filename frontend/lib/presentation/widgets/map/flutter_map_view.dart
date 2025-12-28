@@ -6,7 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
+
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
@@ -34,20 +34,20 @@ class _FlutterMapViewState extends State<FlutterMapView> {
   final GlobalKey<State> _mapKey = GlobalKey<State>();
   LatLng? _hoverPosition;
 
-  // Turkey bounds
-  static const double _minLat = 35.5;
-  static const double _maxLat = 42.5;
-  static const double _minLon = 25.5;
-  static const double _maxLon = 45.0;
-
-  void _handleMapTap(TapPosition tapPosition, LatLng point) {
+  Future<void> _handleMapTap(TapPosition tapPosition, LatLng point) async {
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
 
     // Region selection mode
     if (mapViewModel.isSelectingRegion) {
       final clamped = LatLng(
-        point.latitude.clamp(_minLat, _maxLat),
-        point.longitude.clamp(_minLon, _maxLon),
+        point.latitude.clamp(
+          MapConstants.turkeyMinLat,
+          MapConstants.turkeyMaxLat,
+        ),
+        point.longitude.clamp(
+          MapConstants.turkeyMinLon,
+          MapConstants.turkeyMaxLon,
+        ),
       );
       mapViewModel.recordSelectionPoint(clamped);
       return;
@@ -55,7 +55,110 @@ class _FlutterMapViewState extends State<FlutterMapView> {
 
     // Pin placement mode
     if (mapViewModel.placingPinType != null) {
-      MapDialogs.showAddPinDialog(context, point, mapViewModel.placingPinType!);
+      // 1. Analizi Başlat
+      await mapViewModel.analyzeLocation(point);
+
+      if (!mounted) return;
+
+      final result = mapViewModel.latestGeoAnalysis;
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Analiz yapılamadı, lütfen tekrar deneyin.'),
+          ),
+        );
+        return;
+      }
+
+      final bool isSuitable = result['suitable'] ?? false;
+      final String recommendation = result['recommendation'] ?? '';
+
+      // 2. Sonucu Göster
+      if (!isSuitable) {
+        // UYGUN DEĞİL - EKRANA BAS
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('⛔ Kurulum Yapılamaz'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  recommendation,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Bu bölge coğrafi kısıtlamalar nedeniyle (Deniz, Göl, Yol, Bina, Eğim vb.) uygun değildir.',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  mapViewModel.clearGeoAnalysis(); // Kırmızı alanı temizle
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Tamam'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        // UYGUN - RİSK KONTROLÜ
+        final bool isSolar = mapViewModel.placingPinType == 'Güneş Paneli';
+        final details = isSolar
+            ? result['solar_details']
+            : result['wind_details'];
+        final bool specificSuitable = details != null
+            ? details['suitable']
+            : true;
+
+        if (!specificSuitable) {
+          // Genel uygun ama bu tür için riskli
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('⚠️ Uyarı'),
+              content: Text(
+                'Bu bölge genel olarak uygun olsa da, seçtiğiniz tür ($isSolar) için riskli olabilir.\n\nSebep: ${recommendation}',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('İptal'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    MapDialogs.showAddPinDialog(
+                      context,
+                      point,
+                      mapViewModel.placingPinType!,
+                    );
+                  },
+                  child: const Text('Yine de Ekle'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          // HER ŞEY MÜKEMMEL
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(recommendation),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          MapDialogs.showAddPinDialog(
+            context,
+            point,
+            mapViewModel.placingPinType!,
+          );
+        }
+      }
     }
   }
 
@@ -92,18 +195,25 @@ class _FlutterMapViewState extends State<FlutterMapView> {
         key: _mapKey,
         mapController: widget.mapController,
         options: MapOptions(
-          initialCameraFit: CameraFit.bounds(
-            bounds: LatLngBounds(
-              const LatLng(_minLat, _minLon),
-              const LatLng(_maxLat, _maxLon),
-            ),
-            padding: const EdgeInsets.all(12),
+          initialCenter: const LatLng(
+            MapConstants.turkeyCenterLat,
+            MapConstants.turkeyCenterLon,
           ),
-          minZoom: 5.8,
+          initialZoom: MapConstants.initialZoom,
+          cameraConstraint: CameraConstraint.contain(
+            bounds: LatLngBounds(
+              const LatLng(
+                MapConstants.turkeyMinLat,
+                MapConstants.turkeyMinLon,
+              ),
+              const LatLng(
+                MapConstants.turkeyMaxLat,
+                MapConstants.turkeyMaxLon,
+              ),
+            ),
+          ),
+          minZoom: MapConstants.minZoom,
           maxZoom: MapConstants.maxZoom,
-          onPositionChanged: (position, hasGesture) {
-            if (hasGesture) _constrainToTurkey(position.center);
-          },
           interactionOptions: const InteractionOptions(
             flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
           ),
@@ -112,15 +222,46 @@ class _FlutterMapViewState extends State<FlutterMapView> {
         ),
         children: [
           TileLayer(
-            tileProvider: CancellableNetworkTileProvider(),
+            tileProvider: NetworkTileProvider(),
             urlTemplate: MapConstants.getTileUrl(widget.selectedBaseMap),
+            maxNativeZoom: MapConstants.maxNativeZoom.ceil(),
+            userAgentPackageName: 'com.srrp.frontend',
             keepBuffer: 10,
             panBuffer: 1,
           ),
           if (weatherCircles.isNotEmpty) CircleLayer(circles: weatherCircles),
           if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
+          // Restricted Area Layer (Hatch Pattern Simulation - Red semi-transparent)
+          if (mapViewModel.restrictedArea.isNotEmpty)
+            PolygonLayer(
+              polygons: [
+                Polygon(
+                  points: mapViewModel.restrictedArea,
+                  color: Colors.red.withValues(alpha: 0.4),
+                  borderColor: Colors.red,
+                  borderStrokeWidth: 3,
+                ),
+              ],
+            ),
           MarkerLayer(markers: _buildSelectionPointMarkers(mapViewModel)),
           MarkerLayer(markers: markers),
+          if (mapViewModel.isAnalyzingGeo)
+            const Center(
+              child: Card(
+                color: Colors.white,
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 10),
+                      Text("Arazi Analiz Ediliyor..."),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -262,8 +403,14 @@ class _FlutterMapViewState extends State<FlutterMapView> {
       var newPoint = camera.offsetToCrs(localPosition);
 
       newPoint = LatLng(
-        newPoint.latitude.clamp(_minLat, _maxLat),
-        newPoint.longitude.clamp(_minLon, _maxLon),
+        newPoint.latitude.clamp(
+          MapConstants.turkeyMinLat,
+          MapConstants.turkeyMaxLat,
+        ),
+        newPoint.longitude.clamp(
+          MapConstants.turkeyMinLon,
+          MapConstants.turkeyMaxLon,
+        ),
       );
 
       mapViewModel.dragPoint(newPoint);
@@ -325,21 +472,5 @@ class _FlutterMapViewState extends State<FlutterMapView> {
         ),
       ),
     );
-  }
-
-  void _constrainToTurkey(LatLng? center) {
-    if (center == null) return;
-
-    double newLat = center.latitude.clamp(_minLat, _maxLat);
-    double newLon = center.longitude.clamp(_minLon, _maxLon);
-
-    if (newLat != center.latitude || newLon != center.longitude) {
-      Future.microtask(() {
-        widget.mapController.move(
-          LatLng(newLat, newLon),
-          widget.mapController.camera.zoom,
-        );
-      });
-    }
   }
 }

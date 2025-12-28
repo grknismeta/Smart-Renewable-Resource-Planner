@@ -50,10 +50,24 @@ def create_pin(
 def read_pins_for_user(
     skip: int = 0, limit: int = 100,
     db: Session = Depends(get_db),
+    system_db: Session = Depends(get_system_db),
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
     user_id = cast(int, current_user.id)
     pins = crud.get_pins_by_owner(db, owner_id=user_id, skip=skip, limit=limit)
+    
+    # Ekipman isimlerini doldur (Cross-DB Join manuel)
+    equipment_ids = {p.equipment_id for p in pins if p.equipment_id is not None} # type: ignore
+    
+    equipment_map = {}
+    if equipment_ids:
+        eqs = system_db.query(models.Equipment).filter(models.Equipment.id.in_(equipment_ids)).all()
+        equipment_map = {e.id: e.name for e in eqs}
+        
+    for p in pins:
+        if p.equipment_id in equipment_map: # type: ignore
+            setattr(p, "equipment_name", equipment_map[p.equipment_id]) # type: ignore
+            
     print(f'[Pins Router] GET /pins/ - user_id={user_id}, {len(pins)} pin döndürüldü')
     return pins
 

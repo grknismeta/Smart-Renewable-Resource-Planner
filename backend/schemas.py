@@ -59,7 +59,8 @@ class PinResponse(PinBase):
     avg_solar_irradiance: Optional[float] = None
     avg_wind_speed: Optional[float] = None
     created_at: Optional[datetime] = None # DB'de varsa
-    
+    equipment_name: Optional[str] = None # Manuel join ile doldurulacak
+
     class Config:
         from_attributes = True
 

@@ -131,7 +131,7 @@ class ApiService {
   }
 
   // --- 1. GÜNCELLEME: 'addPin' fonksiyonu artık tüm verileri alıyor ---
-  Future<void> addPin(
+  Future<Pin> addPin(
     LatLng point,
     String name,
     String type,
@@ -153,7 +153,10 @@ class ApiService {
       headers: await _getHeaders(),
       body: json.encode(pinData),
     );
-    if (response.statusCode != 201) {
+    if (response.statusCode == 201) {
+      final jsonResponse = json.decode(utf8.decode(response.bodyBytes));
+      return Pin.fromJson(jsonResponse);
+    } else {
       throw Exception('Pin eklenemedi (Status code: ${response.statusCode})');
     }
   }
@@ -437,6 +440,24 @@ class ApiService {
     throw Exception('Senaryo oluşturulamadı (status: ${response.statusCode})');
   }
 
+  Future<Scenario> updateScenario(
+    int scenarioId,
+    ScenarioCreate scenario,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$_apiBaseUrl/scenarios/$scenarioId'),
+      headers: await _getHeaders(),
+      body: json.encode(scenario.toJson()),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
+      return Scenario.fromJson(data);
+    }
+
+    throw Exception('Senaryo güncellenemedi (status: ${response.statusCode})');
+  }
+
   Future<Scenario> calculateScenario(int scenarioId) async {
     final response = await http.post(
       Uri.parse('$_apiBaseUrl/scenarios/$scenarioId/calculate'),
@@ -449,6 +470,42 @@ class ApiService {
     }
 
     throw Exception('Senaryo hesaplanamadı (status: ${response.statusCode})');
+  }
+
+  Future<Scenario> addPinsToScenario(int scenarioId, List<int> pinIds) async {
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/scenarios/$scenarioId/pins'),
+      headers: await _getHeaders(),
+      body: json.encode(pinIds),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
+      return Scenario.fromJson(data);
+    }
+
+    throw Exception(
+      'Senaryoya pin eklenemedi (status: ${response.statusCode})',
+    );
+  }
+
+  // --- Geo Analysis ---
+
+  Future<Map<String, dynamic>> checkGeoSuitability(
+    double lat,
+    double lon,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/geo/check-suitability'),
+      headers: await _getHeaders(),
+      body: json.encode({'latitude': lat, 'longitude': lon}),
+    );
+
+    if (response.statusCode == 200) {
+      return json.decode(utf8.decode(response.bodyBytes));
+    } else {
+      throw Exception('Coğrafi analiz yapılamadı: ${response.statusCode}');
+    }
   }
 }
 

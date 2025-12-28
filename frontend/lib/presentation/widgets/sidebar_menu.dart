@@ -100,6 +100,18 @@ class _SidebarMenuState extends State<SidebarMenu> {
                             theme: themeViewModel,
                             authViewModel: authViewModel,
                             isCollapsed: false,
+                            onAuthAction: () {
+                              Navigator.of(
+                                context,
+                              ).pop(); // Close draggable sheet
+                              if (isGuest) {
+                                Navigator.of(
+                                  context,
+                                ).pushReplacementNamed('/auth');
+                              } else {
+                                authViewModel.logout();
+                              }
+                            },
                           ),
                           const SizedBox(height: 24),
                         ],
@@ -164,6 +176,18 @@ class _SidebarMenuState extends State<SidebarMenu> {
                           theme: themeViewModel,
                           authViewModel: authViewModel,
                           isCollapsed: false,
+                          onAuthAction: () {
+                            Navigator.of(
+                              ctx,
+                            ).pop(); // Close bottom sheet using its own context (ctx)
+                            if (isGuest) {
+                              Navigator.of(
+                                context,
+                              ).pushReplacementNamed('/auth');
+                            } else {
+                              authViewModel.logout();
+                            }
+                          },
                         ),
                       ],
                     ),

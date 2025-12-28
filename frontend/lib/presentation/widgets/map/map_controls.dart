@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/presentation/viewmodels/map_view_model.dart';
 import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
-import 'map_constants.dart';
 
 /// Sol üst köşede gösterilen dashboard widget'ı
 class MapDashboard extends StatelessWidget {
@@ -109,8 +108,9 @@ class PlacementIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     if (placingPinType == null) return const SizedBox.shrink();
 
-    final bgColor = MapConstants.getBackgroundColor(placingPinType ?? '');
-    final fgColor = MapConstants.getForegroundColor(placingPinType!);
+    // Kullanıcı isteği: Yeşil renk
+    const bgColor = Colors.green;
+    const fgColor = Colors.white;
 
     return Center(
       child: Container(
@@ -124,10 +124,10 @@ class PlacementIndicator extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.touch_app, color: fgColor),
+            const Icon(Icons.touch_app, color: fgColor),
             const SizedBox(width: 8),
             Text(
-              "⚡ Enerji Kaynağı Ekle",
+              "⚡ Haritaya Dokun",
               style: TextStyle(fontWeight: FontWeight.bold, color: fgColor),
             ),
             const SizedBox(width: 10),
@@ -136,6 +136,94 @@ class PlacementIndicator extends StatelessWidget {
               child: const Icon(Icons.cancel, color: Colors.white),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Ana kontrol butonları (Pin Ekle, Alan Seç)
+class MainMapControls extends StatelessWidget {
+  final ThemeViewModel theme;
+  final VoidCallback onAddPin;
+  final VoidCallback onSelectRegion;
+
+  const MainMapControls({
+    super.key,
+    required this.theme,
+    required this.onAddPin,
+    required this.onSelectRegion,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center, // Butonları ortala
+      children: [
+        MapControlButton(
+          icon: Icons.add_location_alt_outlined,
+          tooltip: "Kaynak Ekle",
+          onTap: onAddPin,
+          color: Colors.blueAccent,
+          theme: theme,
+        ),
+        const SizedBox(height: 12),
+        MapControlButton(
+          icon: Icons.map_outlined,
+          tooltip: "Bölge Analizi",
+          onTap: onSelectRegion,
+          color: Colors.purpleAccent,
+          theme: theme,
+        ),
+      ],
+    );
+  }
+}
+
+class MapControlButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final Color color;
+  final ThemeViewModel theme;
+  final double size;
+  final double iconSize;
+
+  const MapControlButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    required this.color,
+    required this.theme,
+    this.size = 50,
+    this.iconSize = 26,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: theme.cardColor,
+        elevation: 4,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: theme.secondaryTextColor.withValues(alpha: 0.2),
+                width: 1,
+              ),
+            ),
+            child: Icon(icon, color: color, size: iconSize),
+          ),
         ),
       ),
     );

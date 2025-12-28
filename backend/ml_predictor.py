@@ -57,6 +57,14 @@ def predict_future_production(
     X = df[['hour', 'day_of_year', 'month']]
     y = df[target_col]
     
+    # NaN değerleri temizle (Scikit-learn NaN sevmez)
+    combined = pd.concat([X, y], axis=1).dropna()
+    if combined.empty:
+        return {"error": "Eğitim için yeterli geçerli veri yok (Hepsi NaN)"}
+        
+    X = combined[['hour', 'day_of_year', 'month']]
+    y = combined[target_col]
+
     # 2. Model Eğitimi
     model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
     model.fit(X, y)

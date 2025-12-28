@@ -304,7 +304,7 @@ class MapViewModel extends BaseViewModel {
     }
   }
 
-  Future<void> addPin(
+  Future<Pin> addPin(
     LatLng point,
     String name,
     String type,
@@ -312,8 +312,15 @@ class MapViewModel extends BaseViewModel {
     int? equipmentId,
   ) async {
     try {
-      await _apiService.addPin(point, name, type, capacityMw, equipmentId);
+      final newPin = await _apiService.addPin(
+        point,
+        name,
+        type,
+        capacityMw,
+        equipmentId,
+      );
       await fetchPins();
+      return newPin;
     } catch (e) {
       debugPrint('Pin eklenirken hata: $e');
       throw Exception('Pin eklenemedi. Lütfen tekrar deneyin.');
@@ -525,6 +532,51 @@ class MapViewModel extends BaseViewModel {
   void clearIrradianceData() {
     _irradianceData = [];
     _selectedCityForIrradiance = null;
+    notifyListeners();
+  }
+
+  // --- Geo Analysis State ---
+  Map<String, dynamic>? _latestGeoAnalysis;
+  bool _isAnalyzingGeo = false;
+  List<LatLng> _restrictedArea = [];
+
+  Map<String, dynamic>? get latestGeoAnalysis => _latestGeoAnalysis;
+  bool get isAnalyzingGeo => _isAnalyzingGeo;
+  List<LatLng> get restrictedArea => _restrictedArea;
+
+  Future<void> analyzeLocation(LatLng point) async {
+    _isAnalyzingGeo = true;
+    _latestGeoAnalysis = null;
+    _restrictedArea = [];
+    notifyListeners();
+
+    try {
+      final result = await _apiService.checkGeoSuitability(
+        point.latitude,
+        point.longitude,
+      );
+      _latestGeoAnalysis = result;
+
+      // Yasaklı alan varsa parse et
+      if (result['restricted_area'] != null) {
+        final List<dynamic> points = result['restricted_area'];
+        if (points.isNotEmpty) {
+          _restrictedArea = points
+              .map((p) => LatLng(p['lat'], p['lng']))
+              .toList();
+        }
+      }
+    } catch (e) {
+      debugPrint('Geo analiz hatası: $e');
+    } finally {
+      _isAnalyzingGeo = false;
+      notifyListeners();
+    }
+  }
+
+  void clearGeoAnalysis() {
+    _latestGeoAnalysis = null;
+    _restrictedArea = [];
     notifyListeners();
   }
 }

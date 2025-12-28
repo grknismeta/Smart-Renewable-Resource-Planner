@@ -5,6 +5,7 @@ import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_ti
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/api_service.dart';
 import '../../presentation/viewmodels/map_view_model.dart';
 import '../../presentation/viewmodels/theme_view_model.dart';
 import '../widgets/sidebar/sidebar_widgets.dart';
@@ -46,6 +47,9 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  // Restricted areas polygons to draw
+  List<List<LatLng>> _restrictedAreas = [];
+
   void _handleMapTap(TapPosition tapPosition, LatLng point) async {
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
 
@@ -59,10 +63,198 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    // Pin yerleştirme modundaysa
+    // Normal modda tıklandığında SADECE pin yerleştirme modu açıksa analiz yap
     if (mapViewModel.placingPinType != null) {
-      MapDialogs.showAddPinDialog(context, point, mapViewModel.placingPinType!);
+      _checkGeoSuitability(point);
     }
+  }
+
+  Future<void> _checkGeoSuitability(LatLng point) async {
+    final theme = Provider.of<ThemeViewModel>(context, listen: false);
+
+    // 1. Loading göster (Daha kompakt)
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        backgroundColor: theme.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              const SizedBox(width: 16),
+              Text(
+                "Analiz ediliyor...",
+                style: TextStyle(color: theme.textColor, fontSize: 16),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      // 2. Backend'e sor
+      final apiService = Provider.of<ApiService>(context, listen: false);
+      final result = await apiService.checkGeoSuitability(
+        point.latitude,
+        point.longitude,
+      );
+
+      // Loading kapat
+      if (mounted) Navigator.pop(context);
+
+      _handleGeoResult(point, result);
+    } catch (e) {
+      if (mounted) Navigator.pop(context); // Hata durumunda da kapat
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Analiz hatası: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _handleGeoResult(LatLng point, Map<String, dynamic> result) {
+    final bool suitable = result['suitable'] ?? false;
+    final String rec = result['recommendation'] ?? '';
+    final Map<String, dynamic> solar = result['solar_details'] ?? {};
+    final Map<String, dynamic> wind = result['wind_details'] ?? {};
+
+    // Yasaklı alan varsa çiz, ama referansını tutalım ki kapatınca silebilelim
+    List<LatLng>? currentPolygon;
+    final List<dynamic>? restrictedAreaJson = result['restricted_area'];
+
+    if (restrictedAreaJson != null && restrictedAreaJson.isNotEmpty) {
+      currentPolygon = restrictedAreaJson
+          .map((p) => LatLng(p['lat'], p['lng']))
+          .toList();
+      setState(() {
+        _restrictedAreas.add(currentPolygon!);
+      });
+
+      // Sadece yasaklıysa uyarı ver ve çık
+      if (!suitable) {
+        _showResultDialog(
+          title: "⚠️ Kurulum Yapılamaz",
+          content:
+              "$rec\n\nNedenler:\n${(solar['reasons'] as List?)?.join('\n')}\n${(wind['reasons'] as List?)?.join('\n')}",
+          isSuccess: false,
+          onClose: () {
+            // Dialog kapanınca kırmızı alanı da kaldır
+            if (currentPolygon != null) {
+              setState(() {
+                _restrictedAreas.remove(currentPolygon);
+              });
+            }
+          },
+        );
+        return;
+      }
+    }
+
+    if (!suitable) {
+      _showResultDialog(
+        title: "⛔ Uygun Değil",
+        content:
+            "$rec\n\nNedenler:\n${(solar['reasons'] as List?)?.join('\n')}\n${(wind['reasons'] as List?)?.join('\n')}",
+        isSuccess: false,
+      );
+      return;
+    }
+
+    // Uygunsa hangi tip için uygun olduğunu göster ve ekleme opsiyonu sun
+    String suitableType = "Güneş Paneli"; // Varsayılan
+    if (wind['suitable'] == true && solar['suitable'] == false)
+      suitableType = "Rüzgar Türbini";
+    if (solar['suitable'] == true && wind['suitable'] == false)
+      suitableType = "Güneş Paneli";
+    // İkisi de uygunsa kullanıcıya bırakabiliriz ama varsayılan Güneş
+
+    _showResultDialog(
+      title: "✅ Yerleşim Uygun",
+      content:
+          "$rec\n\nEğim: ${(result['slope'] ?? 0).toStringAsFixed(1)}°\nYükseklik: ${(result['elevation'] ?? 0).toStringAsFixed(0)}m",
+      isSuccess: true,
+      onConfirm: () {
+        // Pin ekleme dialogunu aç
+        MapDialogs.showAddPinDialog(context, point, suitableType);
+      },
+    );
+  }
+
+  void _showResultDialog({
+    required String title,
+    required String content,
+    required bool isSuccess,
+    VoidCallback? onConfirm,
+    VoidCallback? onClose,
+  }) {
+    final theme = Provider.of<ThemeViewModel>(context, listen: false);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(
+              isSuccess ? Icons.check_circle : Icons.error,
+              color: isSuccess ? Colors.green : Colors.red,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(color: theme.textColor, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          content,
+          style: TextStyle(
+            color: theme.textColor.withOpacity(0.9),
+            fontSize: 14,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (onClose != null) onClose();
+            },
+            child: const Text("Kapat"),
+          ),
+          if (onConfirm != null) ...[
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                onConfirm();
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.green,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text("Sisteme Ekle"),
+            ),
+          ],
+        ],
+      ),
+    ).then((_) {
+      // Dialog dışına basılıp kapanırsa da temizlik yap
+      if (onClose != null) onClose();
+    });
   }
 
   void _zoomIn() {
@@ -124,30 +316,40 @@ class _MapScreenState extends State<MapScreen> {
         }).toList();
 
         if (optimizationResult != null) {
-          final optimizedMarkers = optimizationResult.points.map((point) {
-            return Marker(
-              width: 40.0,
-              height: 40.0,
-              point: LatLng(point.latitude, point.longitude),
-              child: Tooltip(
-                message:
-                    'Rüzgar: ${point.windSpeedMs.toStringAsFixed(1)} m/s\nÜretim: ${point.annualProductionKwh.toStringAsFixed(0)} kWh',
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.blue,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.lightBlueAccent, width: 2),
-                  ),
-                  child: const Icon(
-                    Icons.wind_power,
-                    color: Colors.white,
-                    size: 24,
+          try {
+            final optimizedMarkers = optimizationResult.points.map((point) {
+              final windSpeed = point.windSpeedMs;
+              final production = point.annualProductionKwh;
+
+              return Marker(
+                width: 40.0,
+                height: 40.0,
+                point: LatLng(point.latitude, point.longitude),
+                child: Tooltip(
+                  message:
+                      'Rüzgar: ${windSpeed.toStringAsFixed(1)} m/s\nÜretim: ${production.toStringAsFixed(0)} kWh',
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.lightBlueAccent,
+                        width: 2,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.wind_power,
+                      color: Colors.white,
+                      size: 24,
+                    ),
                   ),
                 ),
-              ),
-            );
-          }).toList();
-          markers.addAll(optimizedMarkers);
+              );
+            }).toList();
+            markers.addAll(optimizedMarkers);
+          } catch (e) {
+            debugPrint('Marker oluşturma hatası: $e');
+          }
         }
 
         // We need MapViewModel available for children
@@ -311,7 +513,7 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
                 // Sidebar launcher
-                Positioned(top: 80, left: 20, child: SidebarLauncher()),
+                Positioned(top: 140, left: 20, child: SidebarLauncher()),
               ],
             ),
           ),
@@ -387,6 +589,20 @@ class _MapScreenState extends State<MapScreen> {
           if (mapViewModel.currentLayer == MapLayer.irradiance &&
               irradianceLayer != null)
             irradianceLayer,
+          // Yasaklı Alanlar Katmanı
+          if (_restrictedAreas.isNotEmpty)
+            PolygonLayer(
+              polygons: _restrictedAreas
+                  .map(
+                    (points) => Polygon(
+                      points: points,
+                      color: Colors.red.withOpacity(0.3),
+                      borderColor: Colors.red,
+                      borderStrokeWidth: 2,
+                    ),
+                  )
+                  .toList(),
+            ),
           // Hava durumu katmanı (Rüzgar ve Sıcaklık)
           if ((mapViewModel.currentLayer == MapLayer.wind ||
                   mapViewModel.currentLayer == MapLayer.temp) &&
@@ -595,65 +811,46 @@ class _MapScreenState extends State<MapScreen> {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         // Tek 'Ekle' butonu: tip seçimi bottom sheet ile
-        Row(
-          children: [
-            GestureDetector(
-              onTap: () {
-                // Varsayılan olarak Güneş Paneli ile başlat, dialog içinde değiştirilebilir
-                mapViewModel.startPlacingMarker('Güneş Paneli');
-              },
-              child: Container(
-                width: 50,
-                height: 50,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: theme.cardColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: theme.secondaryTextColor.withValues(alpha: 0.2),
-                  ),
-                ),
-                child: Icon(Icons.add, color: theme.textColor),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        if (mapViewModel.isSelectingRegion)
-          FloatingActionButton.extended(
-            heroTag: 'optimization_run',
-            backgroundColor: Colors.green,
-            onPressed: () async {
-              // CHANGE: Pass themeViewModel
-              final themeProv = Provider.of<ThemeViewModel>(
-                context,
-                listen: false,
-              );
-              await mapViewModel.loadEquipments();
-              if (!mounted) return;
-              OptimizationDialog.show(context, mapViewModel, themeProv);
-            },
-            icon: const Icon(Icons.calculate),
-            label: const Text('Hesapla'),
-          )
-        else
-          FloatingActionButton.extended(
-            heroTag: 'optimization_select',
-            backgroundColor: Colors.blue,
-            onPressed: () {
+        // Main controls using FAB style
+        MainMapControls(
+          theme: theme,
+          onAddPin: () {
+            mapViewModel.startPlacingMarker('Güneş Paneli');
+          },
+          onSelectRegion: () async {
+            if (mapViewModel.isSelectingRegion) {
+              // Zaten seçim yapılıyorsa kapat (toggle)
+              mapViewModel.clearRegionSelection();
+            } else {
+              // Seçimi başlat
               mapViewModel.startSelectingRegion();
-            },
-            icon: const Icon(Icons.select_all),
-            label: const Text('Bölge Seç'),
-          ),
+            }
+          },
+        ),
+        const SizedBox(height: 10),
+
+        // Calculate Button (only visible when selecting region) ->
+        // Actually MainMapControls handles the main actions, but we might want a separate
+        // "Run" button if region selection is active, OR we can make the region button toggle.
+        // Let's check MainMapControls implementation...
+        // It has onSelectRegion.
+        // User asked for "region select button AND add pin button" to be like the layer button.
+        // So I'll stick to MainMapControls for the main entry points.
+
+        // If selecting region, we might want to change the icon of the region button in MainMapControls?
+        // But MainMapControls is stateless.
+        // Let's keep it simple:
+        // If selecting region, show a separate "Calculate" FAB like before, OR rely on the user tapping "Region" again?
+        // The previous code had a "Calculate" FAB when selecting.
         const SizedBox(height: 10),
 
         // Katman paneli toggle
-        FloatingActionButton.small(
-          heroTag: 'layer_toggle',
-          backgroundColor: theme.cardColor,
-          child: Icon(Icons.layers, color: theme.textColor),
-          onPressed: () => setState(() => _showLayersPanel = !_showLayersPanel),
+        MapControlButton(
+          icon: Icons.layers_outlined,
+          tooltip: "Katmanlar",
+          color: theme.textColor,
+          theme: theme,
+          onTap: () => setState(() => _showLayersPanel = !_showLayersPanel),
         ),
 
         // Katman paneli

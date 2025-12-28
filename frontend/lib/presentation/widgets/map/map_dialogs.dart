@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/api_service.dart';
 import '../../../data/models/pin_model.dart';
 import '../../../data/models/system_data_models.dart';
 import '../../../presentation/viewmodels/map_view_model.dart';
 import '../../../presentation/viewmodels/theme_view_model.dart';
+import '../../../presentation/viewmodels/scenario_view_model.dart';
 import 'energy_output_widget.dart';
 import 'map_constants.dart';
 
@@ -158,11 +160,19 @@ class MapDialogs {
                       builder: (context, viewModel, _) {
                         final equipmentType = getEquipmentType(selectedType);
 
+                        final needsLoad =
+                            viewModel.equipments.isEmpty ||
+                            !viewModel.equipments.any(
+                              (e) => e.type == equipmentType,
+                            );
+
                         // Build sırasında setState çağrılmaması için post-frame callback kullan
-                        if (viewModel.equipments.isEmpty &&
-                            !viewModel.equipmentsLoading) {
+                        if (needsLoad && !viewModel.equipmentsLoading) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
-                            viewModel.loadEquipments(type: equipmentType);
+                            viewModel.loadEquipments(
+                              type: equipmentType,
+                              forceRefresh: true,
+                            );
                           });
                         }
 
@@ -348,21 +358,29 @@ class MapDialogs {
   ) {
     final themeViewModel = Provider.of<ThemeViewModel>(context, listen: false);
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
+    final scenarioViewModel = Provider.of<ScenarioViewModel>(
+      context,
+      listen: false,
+    ); // Scenario VM eklendi
+
     final nameController = TextEditingController(text: 'Yeni Kaynak');
     String selectedType = pinType;
     int? selectedEquipmentId;
+    int? selectedScenarioId; // Seçilen senaryo ID'si
 
-    // Başlangıçta equipment'ları yükle
+    // Başlangıçta equipment'ları ve senaryoları yükle
     final initialType = selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       mapViewModel.loadEquipments(type: initialType);
+      scenarioViewModel.loadScenarios(); // Senaryoları yükle
     });
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => Consumer<MapViewModel>(
-        builder: (context, viewModel, child) {
+      builder: (dialogContext) => Consumer2<MapViewModel, ScenarioViewModel>(
+        // Consumer2 kullan
+        builder: (context, viewModel, scenarioVM, child) {
           return StatefulBuilder(
             builder: (sbContext, setStateSB) {
               final activeType = selectedType == 'Güneş Paneli'
@@ -371,6 +389,8 @@ class MapDialogs {
               final availableEquipments = viewModel.equipments
                   .where((e) => e.type == activeType)
                   .toList();
+              final availableScenarios =
+                  scenarioVM.scenarios; // Senaryo listesi
 
               Equipment? selectedEquipment;
               if (selectedEquipmentId != null) {
@@ -405,7 +425,9 @@ class MapDialogs {
                                     (selectedType == 'Güneş Paneli'
                                             ? Colors.orange
                                             : Colors.blue)
-                                        .withValues(alpha: 0.2),
+                                        .withOpacity(
+                                          0.2,
+                                        ), // withValues -> withOpacity
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -447,13 +469,15 @@ class MapDialogs {
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: themeViewModel.backgroundColor.withValues(
-                              alpha: 0.5,
-                            ),
+                            color: themeViewModel.backgroundColor.withOpacity(
+                              0.5,
+                            ), // withValues -> withOpacity
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: themeViewModel.secondaryTextColor
-                                  .withValues(alpha: 0.1),
+                                  .withOpacity(
+                                    0.1,
+                                  ), // withValues -> withOpacity
                             ),
                           ),
                           child: Row(
@@ -481,6 +505,42 @@ class MapDialogs {
                           nameController,
                           'Kaynak Adı',
                           themeViewModel,
+                        ),
+                        const SizedBox(height: 20),
+
+                        // --- Scenario Selection (New) ---
+                        DropdownButtonFormField<int>(
+                          decoration: _inputDecoration(
+                            'Senaryoya Ekle (Opsiyonel)',
+                            themeViewModel,
+                          ),
+                          dropdownColor: themeViewModel.cardColor,
+                          style: TextStyle(color: themeViewModel.textColor),
+                          value: selectedScenarioId,
+                          items: [
+                            DropdownMenuItem<int>(
+                              value: null,
+                              child: Text(
+                                "Senaryoya ekleme",
+                                style: TextStyle(
+                                  color: themeViewModel.secondaryTextColor,
+                                ),
+                              ),
+                            ),
+                            ...availableScenarios.map(
+                              (s) => DropdownMenuItem<int>(
+                                value: s.id,
+                                child: Text(
+                                  s.name,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ],
+                          onChanged: (val) {
+                            setStateSB(() => selectedScenarioId = val);
+                          },
+                          isExpanded: true,
                         ),
                         const SizedBox(height: 20),
 
@@ -552,7 +612,9 @@ class MapDialogs {
                                   ),
                                   side: BorderSide(
                                     color: themeViewModel.secondaryTextColor
-                                        .withValues(alpha: 0.3),
+                                        .withOpacity(
+                                          0.3,
+                                        ), // withValues -> withOpacity
                                   ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
@@ -581,15 +643,42 @@ class MapDialogs {
                                           final capacityMw =
                                               selectedEq.ratedPowerKw / 1000.0;
 
-                                          await viewModel.addPin(
+                                          // 1. Pini ekle
+                                          final newPin = await viewModel.addPin(
                                             point,
                                             nameController.text,
                                             selectedType,
                                             capacityMw,
                                             selectedEquipmentId,
                                           );
+
+                                          // 2. Senaryo seçiliyse ona da ekle
+                                          if (selectedScenarioId != null) {
+                                            await Provider.of<ApiService>(
+                                              context,
+                                              listen: false,
+                                            ).addPinsToScenario(
+                                              selectedScenarioId!,
+                                              [newPin.id],
+                                            );
+
+                                            // Senaryo listesini güncelle ki UI refresh olsun
+                                            scenarioVM.loadScenarios();
+                                          }
+
                                           if (dialogContext.mounted) {
                                             Navigator.of(dialogContext).pop();
+                                            // Başarı mesajı (opsiyonel)
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  'Kaynak başarıyla eklendi${selectedScenarioId != null ? ' ve senaryoya dahil edildi' : ''}.',
+                                                ),
+                                                backgroundColor: Colors.green,
+                                              ),
+                                            );
                                           }
                                         } catch (e) {
                                           if (dialogContext.mounted) {
@@ -1128,11 +1217,15 @@ class RegionSelectionIndicator extends StatelessWidget {
                   if (points.length >= 3)
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed: () => mapViewModel.finishRegionSelection(),
-                        icon: const Icon(Icons.check, size: 16),
-                        label: const Text('Seçimi Bitir'),
+                        key: const Key('calculate_region_btn'),
+                        onPressed: () {
+                          // Optimizasyon dialogunu aç
+                          OptimizationDialog.show(context, mapViewModel, theme);
+                        },
+                        icon: const Icon(Icons.calculate, size: 16),
+                        label: const Text('Hesapla'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
+                          backgroundColor: Colors.purple,
                           foregroundColor: Colors.white,
                         ),
                       ),
@@ -1196,219 +1289,265 @@ class OptimizationDialog {
     MapViewModel mapViewModel,
     ThemeViewModel theme,
   ) {
-    int? selectedEquipmentId;
-    bool requestedEquipments = false;
-
     showDialog(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (dialogContext, setStateSB) {
-            final isCalculating = mapViewModel.isBusy;
-            final equipmentLoading = mapViewModel.isEquipmentLoading;
-            final equipments = mapViewModel.equipments;
+      builder: (ctx) =>
+          _OptimizationDialogContent(mapViewModel: mapViewModel, theme: theme),
+    );
+  }
+}
 
-            if (!requestedEquipments &&
-                !equipmentLoading &&
-                equipments.isEmpty) {
-              requestedEquipments = true;
-              mapViewModel.loadEquipments().then((_) {
-                if (dialogContext.mounted) setStateSB(() {});
-              });
-            }
+class _OptimizationDialogContent extends StatefulWidget {
+  final MapViewModel mapViewModel;
+  final ThemeViewModel theme;
 
-            selectedEquipmentId ??= equipments.isNotEmpty
-                ? equipments.first.id
-                : null;
+  const _OptimizationDialogContent({
+    required this.mapViewModel,
+    required this.theme,
+  });
 
-            return AlertDialog(
-              backgroundColor: theme.cardColor,
-              title: Row(
+  @override
+  State<_OptimizationDialogContent> createState() =>
+      _OptimizationDialogContentState();
+}
+
+class _OptimizationDialogContentState
+    extends State<_OptimizationDialogContent> {
+  int? selectedEquipmentId;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadWindEquipments();
+    });
+  }
+
+  Future<void> _loadWindEquipments() async {
+    // Mevcut rüzgar türbinlerini kontrol et
+    final hasWind = widget.mapViewModel.equipments.any((e) => e.type == 'Wind');
+
+    if (!hasWind) {
+      // Eğer yoksa yükle (backend wind endpoint'ini çağırır)
+      // 'Wind' parametresi backendde desteklenmiyor olabilir,
+      // ama loadEquipments genel çekiyorsa sorun değil.
+      // Yine de 'Wind' parametresi API'de varsa kullanalım.
+      // ViewModel'deki loadEquipments parametre alıyor.
+      await widget.mapViewModel.loadEquipments(type: 'Wind');
+    }
+
+    // Seçim yap
+    if (mounted) {
+      final windEquipments = widget.mapViewModel.equipments
+          .where((e) => e.type == 'Wind')
+          .toList();
+
+      if (windEquipments.isNotEmpty) {
+        setState(() {
+          selectedEquipmentId = windEquipments.first.id;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // ViewModel durumunu dinlemek için Provider değil prop kullanıyoruz
+    // Ancak loading durumunu yansıtmak için widget.mapViewModel.isBusy'yi
+    // kontrol etmemiz lazım.
+    // calculateOptimization çağrıldığında result dönene kadar await ediyoruz,
+    // o yüzden lokal _isLoading state kullanabiliriz.
+
+    final windEquipments = widget.mapViewModel.equipments
+        .where((e) => e.type == 'Wind')
+        .toList();
+
+    // Eğer build sırasında seçim null ise ve liste varsa seç
+    if (selectedEquipmentId == null && windEquipments.isNotEmpty) {
+      selectedEquipmentId = windEquipments.first.id;
+    }
+
+    return AlertDialog(
+      backgroundColor: widget.theme.cardColor,
+      title: Row(
+        children: [
+          const Icon(Icons.calculate, color: Colors.blue),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Rüzgar Yerleşimi Hesapla')),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Seçilen Bölge:',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: widget.theme.textColor,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.calculate, color: Colors.blue),
-                  const SizedBox(width: 8),
-                  const Expanded(child: Text('Yerleşimi Hesapla')),
+                  Text(
+                    '${widget.mapViewModel.selectionPoints.length} Köşe Seçildi:',
+                    style: TextStyle(
+                      color: widget.theme.textColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  ...List.generate(
+                    widget.mapViewModel.selectionPoints.length,
+                    (index) => Padding(
+                      padding: const EdgeInsets.only(top: 4.0),
+                      child: _buildCoordRow(
+                        'Köşe ${index + 1}',
+                        widget.mapViewModel.selectionPoints[index],
+                        widget.theme,
+                      ),
+                    ),
+                  ),
                 ],
               ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Seçilen Bölge:',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: theme.textColor,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${mapViewModel.selectionPoints.length} Köşe Seçildi:',
-                            style: TextStyle(
-                              color: theme.textColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          ...List.generate(
-                            mapViewModel.selectionPoints.length,
-                            (index) => Padding(
-                              padding: const EdgeInsets.only(top: 4.0),
-                              child: _buildCoordRow(
-                                'Köşe ${index + 1}',
-                                mapViewModel.selectionPoints[index],
-                                theme,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Türbin/Panel Modeli:',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: theme.textColor,
-                            fontSize: 14,
-                          ),
-                        ),
-                        if (equipmentLoading)
-                          const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<int>(
-                      value: selectedEquipmentId,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: theme.cardColor.withValues(alpha: 0.1),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
-                      items: equipments
-                          .map(
-                            (e) => DropdownMenuItem<int>(
-                              value: e.id,
-                              child: Text(
-                                '${e.name} (${e.type}) • ${e.ratedPowerKw.toStringAsFixed(0)} kW',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: isCalculating
-                          ? null
-                          : (val) {
-                              setStateSB(() {
-                                selectedEquipmentId = val;
-                              });
-                            },
-                    ),
-                    if (equipments.isEmpty && !equipmentLoading)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6.0),
-                        child: Text(
-                          'Ekipman bulunamadı, lütfen sistem yöneticisine danışın.',
-                          style: TextStyle(
-                            color: Colors.orange.shade400,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                  ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Türbin Modeli:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: widget.theme.textColor,
+                    fontSize: 14,
+                  ),
+                ),
+                if (widget.mapViewModel.isEquipmentLoading)
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int>(
+              value: selectedEquipmentId,
+              isExpanded: true,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: widget.theme.cardColor.withValues(alpha: 0.1),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: isCalculating
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(),
-                  child: const Text('İptal'),
+              items: windEquipments
+                  .map(
+                    (e) => DropdownMenuItem<int>(
+                      value: e.id,
+                      child: Text(
+                        '${e.name} • ${e.ratedPowerKw.toStringAsFixed(0)} kW',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: _isLoading
+                  ? null
+                  : (val) {
+                      setState(() {
+                        selectedEquipmentId = val;
+                      });
+                    },
+            ),
+            if (windEquipments.isEmpty &&
+                !widget.mapViewModel.isEquipmentLoading)
+              Padding(
+                padding: const EdgeInsets.only(top: 6.0),
+                child: Text(
+                  'Uygun rüzgar türbini bulunamadı.',
+                  style: TextStyle(color: Colors.orange.shade400, fontSize: 12),
                 ),
-                ElevatedButton.icon(
-                  onPressed: isCalculating
-                      ? null
-                      : () async {
-                          if (selectedEquipmentId == null) {
-                            MapDialogs.showErrorDialog(
-                              dialogContext,
-                              'Lütfen bir ekipman seçin.',
-                            );
-                            return;
-                          }
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+          child: const Text('İptal'),
+        ),
+        ElevatedButton.icon(
+          onPressed: _isLoading
+              ? null
+              : () async {
+                  if (selectedEquipmentId == null) {
+                    MapDialogs.showErrorDialog(
+                      context,
+                      'Lütfen bir türbin seçin.',
+                    );
+                    return;
+                  }
 
-                          try {
-                            await mapViewModel.calculateOptimization(
-                              equipmentId: selectedEquipmentId!,
-                            );
-                            if (dialogContext.mounted) {
-                              Navigator.of(dialogContext).pop();
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Optimizasyon tamamlandı! ${mapViewModel.optimizationResult?.turbineCount ?? 0} türbin yerleştirildi.',
-                                  ),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );
-                            }
-                          } catch (e) {
-                            if (dialogContext.mounted) {
-                              MapDialogs.showErrorDialog(
-                                dialogContext,
-                                'Hata: $e',
-                              );
-                            }
-                          }
-                        },
-                  icon: isCalculating
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation(Colors.white),
+                  setState(() {
+                    _isLoading = true;
+                  });
+
+                  try {
+                    await widget.mapViewModel.calculateOptimization(
+                      equipmentId: selectedEquipmentId!,
+                    );
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Optimizasyon tamamlandı! ${widget.mapViewModel.optimizationResult?.turbineCount ?? 0} türbin yerleştirildi.',
                           ),
-                        )
-                      : const Icon(Icons.check),
-                  label: Text(isCalculating ? 'Hesaplanıyor...' : 'Hesapla'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      setState(() {
+                        _isLoading = false;
+                      });
+                      MapDialogs.showErrorDialog(context, 'Hata: $e');
+                    }
+                  }
+                },
+          icon: _isLoading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                  ),
+                )
+              : const Icon(Icons.check),
+          label: Text(_isLoading ? 'Hesaplanıyor...' : 'Hesapla'),
+        ),
+      ],
     );
   }
 
-  static Widget _buildCoordRow(
-    String label,
-    LatLng? coord,
-    ThemeViewModel theme,
-  ) {
+  Widget _buildCoordRow(String label, LatLng? coord, ThemeViewModel theme) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [

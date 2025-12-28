@@ -7,12 +7,14 @@ class SidebarFooter extends StatelessWidget {
   final ThemeViewModel theme;
   final AuthViewModel authViewModel;
   final bool isCollapsed;
+  final VoidCallback? onAuthAction;
 
   const SidebarFooter({
     super.key,
     required this.theme,
     required this.authViewModel,
     required this.isCollapsed,
+    this.onAuthAction,
   });
 
   bool get isGuest => !(authViewModel.isLoggedIn ?? false);
@@ -133,6 +135,11 @@ class SidebarFooter extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
       onTap: () {
+        if (onAuthAction != null) {
+          onAuthAction!();
+          return;
+        }
+
         if (isGuest) {
           Navigator.of(context).pushReplacementNamed('/auth');
         } else {

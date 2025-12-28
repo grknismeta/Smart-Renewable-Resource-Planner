@@ -5,7 +5,7 @@ from .database import UserEngine, SystemEngine
 from . import models
 
 # --- ROUTERLARI IMPORT ET ---
-from .routers import pins, users, equipments, optimization, weather, reports, scenario
+from .routers import pins, users, equipments, optimization, weather, reports, scenario, geo
 
 # Veritabanı tablolarını oluştur
 models.SystemBase.metadata.create_all(bind=SystemEngine)
@@ -66,6 +66,7 @@ app.include_router(optimization.router) # Prefix router içinde tanımlı
 app.include_router(weather.router)  # Şehir bazlı hava durumu
 app.include_router(reports.router, tags=["Reports"])
 app.include_router(scenario.router, prefix="/scenarios", tags=["Scenarios"])
+app.include_router(geo.router, prefix="/geo", tags=["Geo Analysis"])
 
 @app.get("/")
 def read_root():
