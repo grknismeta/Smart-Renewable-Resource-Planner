@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'dart:math' as math;
+import '../widgets/map/resource_heatmap_layer.dart';
 import '../../core/api_service.dart';
 import '../../core/base/base_view_model.dart';
 import '../../data/models/pin_model.dart';
@@ -49,6 +50,51 @@ class MapViewModel extends BaseViewModel {
   MapLayer get currentLayer => _currentLayer;
   PinCalculationResponse? get latestCalculationResult =>
       _latestCalculationResult;
+
+  // --- HEATMAP İÇİN VERİ DÖNÜŞÜMÜ ---
+  List<HeatmapPoint> get heatmapPoints {
+    if (_currentLayer == MapLayer.wind) {
+      return _weatherData.map((d) {
+        return HeatmapPoint(
+          latitude: d.lat,
+          longitude: d.lon,
+          value: d.windSpeed,
+        );
+      }).toList();
+    } else if (_currentLayer == MapLayer.temp) {
+      return _weatherData.map((d) {
+        return HeatmapPoint(
+          latitude: d.lat,
+          longitude: d.lon,
+          value: d.temperature,
+        );
+      }).toList();
+    } else if (_currentLayer == MapLayer.irradiance) {
+      return _solarSummary.map((d) {
+        return HeatmapPoint(
+          latitude: d.latitude,
+          longitude: d.longitude,
+          value: d.totalDailyIrradianceKwhM2 ?? 0,
+        );
+      }).toList();
+    }
+    return [];
+  }
+
+  // --- HEATMAP TİPİ DÖNÜŞÜMÜ ---
+  ResourceType get heatmapType {
+    switch (_currentLayer) {
+      case MapLayer.wind:
+        return ResourceType.wind;
+      case MapLayer.temp:
+        return ResourceType.temp;
+      case MapLayer.irradiance:
+        return ResourceType.solar;
+      default:
+        return ResourceType.temp; // Fallback
+    }
+  }
+
   List<CityWeatherData> get weatherData => _weatherData;
   DateTime get selectedTime => _selectedTime;
   List<CityWeatherSummary> get weatherSummary => _weatherSummary;

@@ -10,6 +10,7 @@ import '../../presentation/viewmodels/map_view_model.dart';
 import '../../presentation/viewmodels/theme_view_model.dart';
 import '../widgets/sidebar/sidebar_widgets.dart';
 import '../widgets/map/map_widgets.dart';
+import '../widgets/map/resource_heatmap_layer.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -390,14 +391,12 @@ class _MapScreenState extends State<MapScreen> {
                 // --- HARITA ---
                 _buildFlutterMap(theme, markers, mapViewModel),
 
-                // --- DASHBOARD (SOL ÜST) ---
+                // --- DASHBOARD (SOL ÜSTTE EN TEPEYE) ---
                 Positioned(
                   top: 20,
                   left: 20,
                   child: MapDashboard(theme: theme),
-                ),
-
-                // --- KONTROLLER (SAĞ ÜST) ---
+                ), // --- KONTROLLER (SAĞ ÜST) ---
                 Positioned(
                   top: 20,
                   right: 20,
@@ -415,11 +414,10 @@ class _MapScreenState extends State<MapScreen> {
                       titleFontSize: 11,
                       unit: 'kWh/m²/yıl',
                       gradientColors: [
-                        Colors.blue.shade900,
-                        Colors.blue.shade500,
-                        Colors.green.shade500,
-                        Colors.orange.shade500,
-                        Colors.red.shade500,
+                        Colors.black87,
+                        Colors.red.shade900,
+                        Colors.orange,
+                        Colors.yellow,
                       ],
                       minLabel: '0',
                       maxLabel: '2200',
@@ -436,11 +434,10 @@ class _MapScreenState extends State<MapScreen> {
                       title: 'Rüzgar Hızı',
                       unit: 'm/s',
                       gradientColors: [
-                        Colors.green.shade300,
-                        Colors.green,
-                        Colors.yellow,
-                        Colors.orange,
-                        Colors.red,
+                        Colors.grey.shade300,
+                        Colors.blue.shade200,
+                        Colors.blue.shade700,
+                        Colors.deepPurple.shade900,
                       ],
                       minLabel: '0',
                       maxLabel: '15+',
@@ -457,21 +454,20 @@ class _MapScreenState extends State<MapScreen> {
                       title: 'Sıcaklık',
                       unit: '°C',
                       gradientColors: [
-                        Colors.blue.shade900,
-                        Colors.blue.shade400,
-                        Colors.green,
-                        Colors.orange,
-                        Colors.red,
+                        Colors.indigo,
+                        Colors.cyan,
+                        Colors.yellow,
+                        Colors.red.shade900,
                       ],
                       minLabel: '-10',
                       maxLabel: '40+',
                     ),
                   ),
-                // --- MOUSE HOVER BİLGİSİ ---
+                // --- MOUSE HOVER BİLGİSİ (SOL ALTTA DASHBOARD'IN ALTINDA) ---
                 if (_hoverPosition != null &&
                     mapViewModel.currentLayer != MapLayer.none)
                   Positioned(
-                    top: 100,
+                    top: 180, // Dashboard (80) + Height (~80) + Gap
                     left: 20,
                     child: _buildHoverInfo(theme, mapViewModel),
                   ),
@@ -513,7 +509,8 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
                 // Sidebar launcher
-                Positioned(top: 140, left: 20, child: SidebarLauncher()),
+                // Sidebar launcher (DASHBOARD'IN ALTINDA)
+                Positioned(top: 110, left: 20, child: SidebarLauncher()),
               ],
             ),
           ),
@@ -527,18 +524,6 @@ class _MapScreenState extends State<MapScreen> {
     List<Marker> markers,
     MapViewModel mapViewModel,
   ) {
-    // Hava durumu katman circle'larını sadece gerektiğinde oluştur
-    final weatherCircles =
-        (mapViewModel.currentLayer == MapLayer.wind ||
-            mapViewModel.currentLayer == MapLayer.temp)
-        ? _buildWeatherCircles(mapViewModel)
-        : <CircleMarker>[];
-
-    // Işınım harita grid'ini sadece gerektiğinde oluştur
-    final irradianceLayer = mapViewModel.currentLayer == MapLayer.irradiance
-        ? _buildIrradianceLayer(mapViewModel)
-        : null;
-
     // Seçim dikdörtgeni oluştur
     final polygons = _buildSelectionPolygons(mapViewModel);
 
@@ -585,10 +570,14 @@ class _MapScreenState extends State<MapScreen> {
             keepBuffer: 10,
             panBuffer: 1,
           ),
-          // Işınım katmanı
-          if (mapViewModel.currentLayer == MapLayer.irradiance &&
-              irradianceLayer != null)
-            irradianceLayer,
+
+          // YENİ MERKEZİ ISI HARİTASI KATMANI
+          if (mapViewModel.currentLayer != MapLayer.none)
+            ResourceHeatmapLayer(
+              data: mapViewModel.heatmapPoints,
+              type: mapViewModel.heatmapType,
+            ),
+
           // Yasaklı Alanlar Katmanı
           if (_restrictedAreas.isNotEmpty)
             PolygonLayer(
@@ -603,11 +592,7 @@ class _MapScreenState extends State<MapScreen> {
                   )
                   .toList(),
             ),
-          // Hava durumu katmanı (Rüzgar ve Sıcaklık)
-          if ((mapViewModel.currentLayer == MapLayer.wind ||
-                  mapViewModel.currentLayer == MapLayer.temp) &&
-              weatherCircles.isNotEmpty)
-            CircleLayer(circles: weatherCircles),
+
           // Bölge seçim polygon'u
           if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
           // Bölge seçim köşe noktaları (sürüklenebilir)
@@ -713,99 +698,6 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  /// Hava durumu verilerine göre circle marker'ları oluştur
-  List<CircleMarker> _buildWeatherCircles(MapViewModel mapViewModel) {
-    // Işınım katmanında hava durumu gösterme
-    if (mapViewModel.currentLayer == MapLayer.none ||
-        mapViewModel.currentLayer == MapLayer.irradiance) {
-      return [];
-    }
-
-    final weatherData = mapViewModel.weatherData;
-    if (weatherData.isEmpty) return [];
-
-    return weatherData.map((city) {
-      final value = mapViewModel.currentLayer == MapLayer.temp
-          ? city.temperature
-          : city.windSpeed;
-
-      final color = mapViewModel.currentLayer == MapLayer.temp
-          ? _getTemperatureColor(value)
-          : _getWindColor(value);
-
-      return CircleMarker(
-        point: LatLng(city.lat, city.lon),
-        radius: 15,
-        color: color.withValues(alpha: 0.6),
-        borderColor: color,
-        borderStrokeWidth: 2,
-      );
-    }).toList();
-  }
-
-  /// Sıcaklık değerine göre renk
-  Color _getTemperatureColor(double temp) {
-    if (temp < 0) return Colors.blue.shade900;
-    if (temp < 10) return Colors.blue.shade400;
-    if (temp < 20) return Colors.green;
-    if (temp < 30) return Colors.orange;
-    return Colors.red;
-  }
-
-  /// Rüzgar hızına göre renk
-  Color _getWindColor(double speed) {
-    if (speed < 3) return Colors.green.shade300;
-    if (speed < 6) return Colors.green;
-    if (speed < 10) return Colors.yellow;
-    if (speed < 15) return Colors.orange;
-    return Colors.red;
-  }
-
-  /// Işınım değerine göre renk (mavi -> kırmızı)
-  Color _getIrradianceColor(double irradiance) {
-    // 0-2200 kWh/m²/yıl aralığında renk (Türkiye için daha gerçekçi)
-    final normalized = (irradiance / 2200).clamp(0.0, 1.0);
-
-    if (normalized < 0.2) return Colors.blue.shade900;
-    if (normalized < 0.4) return Colors.blue.shade500;
-    if (normalized < 0.6) return Colors.green.shade500;
-    if (normalized < 0.8) return Colors.orange.shade500;
-    return Colors.red.shade500;
-  }
-
-  /// Işınım harita katmanını oluştur
-  PolygonLayer? _buildIrradianceLayer(MapViewModel mapViewModel) {
-    if (mapViewModel.solarSummary.isEmpty) {
-      return null;
-    }
-
-    // Harita üzerine grid olarak ışınım verilerini göster
-    final polygons = mapViewModel.solarSummary.map((city) {
-      final irradiance = city.totalDailyIrradianceKwhM2 ?? 0;
-      final color = _getIrradianceColor(irradiance); // Zaten yıllık kWh/m²
-
-      return Polygon(
-        points: _getGridCellPoints(city.latitude, city.longitude),
-        color: color.withValues(alpha: 0.6),
-        borderColor: color,
-        borderStrokeWidth: 1,
-      );
-    }).toList();
-
-    return PolygonLayer(polygons: polygons);
-  }
-
-  /// Grid hücresi için nokta listesi oluştur
-  List<LatLng> _getGridCellPoints(double lat, double lon) {
-    const cellSize = 0.5; // 0.5 derece grid hücresi
-    return [
-      LatLng(lat - cellSize / 2, lon - cellSize / 2),
-      LatLng(lat + cellSize / 2, lon - cellSize / 2),
-      LatLng(lat + cellSize / 2, lon + cellSize / 2),
-      LatLng(lat - cellSize / 2, lon + cellSize / 2),
-    ];
-  }
-
   Widget _buildControlsColumn(MapViewModel mapViewModel, ThemeViewModel theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -879,7 +771,8 @@ class _MapScreenState extends State<MapScreen> {
     final value = isTemp ? nearestCity.temperature : nearestCity.windSpeed;
     final unit = isTemp ? '°C' : 'm/s';
     final icon = isTemp ? Icons.thermostat : Icons.air;
-    final color = isTemp ? _getTemperatureColor(value) : _getWindColor(value);
+    // Basit renk seçimi
+    final color = isTemp ? Colors.blue : Colors.green;
 
     return Container(
       padding: const EdgeInsets.all(12),
