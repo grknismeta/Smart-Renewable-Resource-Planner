@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../../providers/theme_provider.dart';
+import '../../viewmodels/theme_view_model.dart';
 
 /// Sidebar üst kısmı - Logo ve menü açma/kapama butonu
 class SidebarHeader extends StatelessWidget {
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
   final bool isCollapsed;
   final VoidCallback onToggle;
 

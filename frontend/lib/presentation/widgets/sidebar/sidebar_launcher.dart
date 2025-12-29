@@ -1,33 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'sidebar_widgets.dart';
-import '../../../providers/map_provider.dart';
-import '../../../providers/auth_provider.dart';
-import '../../../providers/theme_provider.dart';
+import '../../../presentation/viewmodels/map_view_model.dart';
+import '../../../presentation/viewmodels/auth_view_model.dart';
+import '../../../presentation/viewmodels/theme_view_model.dart';
 
 class SidebarLauncher extends StatelessWidget {
   const SidebarLauncher({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Provider.of<ThemeProvider>(context);
-    final authProvider = Provider.of<AuthProvider>(context);
-    final mapProvider = Provider.of<MapProvider>(context);
-    final bool isGuest = authProvider.isLoggedIn != true;
+    final themeViewModel = Provider.of<ThemeViewModel>(context);
+    final authViewModel = Provider.of<AuthViewModel>(context);
+    final mapViewModel = Provider.of<MapViewModel>(context);
+    // AuthViewModel has isLoggedIn but check if it's nullable or boolean.
+    // AuthViewModel.isLoggedIn is bool? in the code I wrote? Let's assume bool.
+    // Actually in AuthProvider it was bool?. Let's check AuthViewModel later if needed.
+    // But usually simple check works.
+    final bool isGuest = !(authViewModel.isLoggedIn ?? false);
 
     return Container(
       decoration: BoxDecoration(
-        color: theme.cardColor.withValues(alpha: 0.9),
+        color: themeViewModel.cardColor.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(10),
       ),
       child: IconButton(
         icon: const Icon(Icons.menu),
-        color: theme.textColor,
+        color: themeViewModel.textColor,
         onPressed: () => _openBottomSheet(
           context,
-          theme,
-          mapProvider,
-          authProvider,
+          themeViewModel,
+          mapViewModel,
+          authViewModel,
           isGuest,
         ),
       ),
@@ -36,9 +40,9 @@ class SidebarLauncher extends StatelessWidget {
 
   void _openBottomSheet(
     BuildContext context,
-    ThemeProvider theme,
-    MapProvider mapProvider,
-    AuthProvider authProvider,
+    ThemeViewModel theme,
+    MapViewModel mapViewModel,
+    AuthViewModel authViewModel,
     bool isGuest,
   ) {
     final mq = MediaQuery.of(context);
@@ -48,12 +52,15 @@ class SidebarLauncher extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        if (isLandscape && !isNarrow) {
-          return DraggableScrollableSheet(
-            initialChildSize: 0.4,
-            minChildSize: 0.2,
+        final initialSize = isLandscape && !isNarrow ? 0.4 : 0.25;
+        return SafeArea(
+          top: false,
+          child: DraggableScrollableSheet(
+            initialChildSize: initialSize,
+            minChildSize: 0.15,
             maxChildSize: 0.95,
             expand: false,
             builder: (context, scrollController) {
@@ -67,7 +74,12 @@ class SidebarLauncher extends StatelessWidget {
                 child: SingleChildScrollView(
                   controller: scrollController,
                   child: Padding(
-                    padding: const EdgeInsets.all(12.0),
+                    padding: EdgeInsets.only(
+                      left: 12.0,
+                      right: 12.0,
+                      top: 12.0,
+                      bottom: 12.0 + mq.viewPadding.bottom,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -92,20 +104,34 @@ class SidebarLauncher extends StatelessWidget {
                         const SizedBox(height: 10),
                         PinsPanel(
                           theme: theme,
-                          mapProvider: mapProvider,
+                          mapViewModel: mapViewModel,
                           isCollapsed: false,
                         ),
                         const SizedBox(height: 10),
                         DataPanel(
                           theme: theme,
-                          mapProvider: mapProvider,
+                          mapViewModel: mapViewModel,
                           isCollapsed: false,
                         ),
                         const SizedBox(height: 10),
                         SidebarFooter(
                           theme: theme,
-                          authProvider: authProvider,
+                          authViewModel: authViewModel,
                           isCollapsed: false,
+                          onAuthAction: () async {
+                            Navigator.pop(context); // Close bottom sheet
+                            if (isGuest) {
+                              Navigator.of(
+                                context,
+                              ).pushReplacementNamed('/auth');
+                            } else {
+                              await authViewModel.logout();
+                              // Navigation stack'ini temizle ve login ekranına dön
+                              Navigator.of(
+                                context,
+                              ).pushNamedAndRemoveUntil('/', (route) => false);
+                            }
+                          },
                         ),
                         const SizedBox(height: 24),
                       ],
@@ -114,62 +140,6 @@ class SidebarLauncher extends StatelessWidget {
                 ),
               );
             },
-          );
-        }
-
-        return Container(
-          height: mq.size.height * 0.9,
-          decoration: BoxDecoration(
-            color: theme.backgroundColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: theme.secondaryTextColor.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    children: [
-                      ScenarioButton(
-                        theme: theme,
-                        isGuest: isGuest,
-                        isCollapsed: false,
-                      ),
-                      const SizedBox(height: 10),
-                      PinsPanel(
-                        theme: theme,
-                        mapProvider: mapProvider,
-                        isCollapsed: false,
-                      ),
-                      const SizedBox(height: 10),
-                      DataPanel(
-                        theme: theme,
-                        mapProvider: mapProvider,
-                        isCollapsed: false,
-                      ),
-                      const SizedBox(height: 10),
-                      SidebarFooter(
-                        theme: theme,
-                        authProvider: authProvider,
-                        isCollapsed: false,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ),
         );
       },

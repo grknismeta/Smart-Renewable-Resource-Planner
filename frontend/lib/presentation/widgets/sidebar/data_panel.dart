@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
-import '../../../providers/theme_provider.dart';
-import '../../../providers/map_provider.dart';
+import '../../viewmodels/theme_view_model.dart';
+import '../../viewmodels/map_view_model.dart';
 
 /// Sidebar'daki veri paneli - Rüzgar/Güneş kaynakları özeti
 class DataPanel extends StatelessWidget {
-  final ThemeProvider theme;
-  final MapProvider mapProvider;
+  final ThemeViewModel theme;
+  final MapViewModel mapViewModel;
   final bool isCollapsed;
 
   const DataPanel({
     super.key,
     required this.theme,
-    required this.mapProvider,
+    required this.mapViewModel,
     required this.isCollapsed,
   });
 
@@ -23,10 +23,10 @@ class DataPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final windPins = mapProvider.pins
+    final windPins = mapViewModel.pins
         .where((p) => p.type.contains('Rüzgar') || p.type.contains('Wind'))
         .toList();
-    final solarPins = mapProvider.pins
+    final solarPins = mapViewModel.pins
         .where((p) => p.type.contains('Güneş') || p.type.contains('Solar'))
         .toList();
 
@@ -68,7 +68,7 @@ class DataPanel extends StatelessWidget {
   List<Widget> _buildCollapsedPinIndicators() {
     final indicators = <Widget>[];
 
-    for (final pin in mapProvider.pins.take(5)) {
+    for (final pin in mapViewModel.pins.take(5)) {
       bool isSolar = pin.type.contains('Güneş') || pin.type.contains('Solar');
       indicators.add(
         Padding(
@@ -85,7 +85,7 @@ class DataPanel extends StatelessWidget {
       );
     }
 
-    if (mapProvider.pins.length > 5) {
+    if (mapViewModel.pins.length > 5) {
       indicators.add(
         Padding(
           padding: const EdgeInsets.only(top: 4, left: 8),
@@ -174,7 +174,7 @@ class DataPanel extends StatelessWidget {
         const SizedBox(height: 20),
 
         // 7 Günlük En İyi Rüzgar (Ülke Geneli)
-        if (mapProvider.weatherSummary.isNotEmpty) ...[
+        if (mapViewModel.weatherSummary.isNotEmpty) ...[
           Text(
             "7 Gün – En İyi Rüzgar",
             style: TextStyle(
@@ -200,7 +200,7 @@ class DataPanel extends StatelessWidget {
         const SizedBox(height: 10),
 
         // Kaynak listesi
-        if (mapProvider.pins.isEmpty)
+        if (mapViewModel.pins.isEmpty)
           _buildEmptyState()
         else
           ..._buildPinList(),
@@ -209,7 +209,7 @@ class DataPanel extends StatelessWidget {
   }
 
   List<Widget> _buildTopWindCities() {
-    final sorted = [...mapProvider.weatherSummary]
+    final sorted = [...mapViewModel.weatherSummary]
       ..sort(
         (a, b) => (b.avgWindSpeed100m ?? 0).compareTo(a.avgWindSpeed100m ?? 0),
       );
@@ -270,14 +270,14 @@ class DataPanel extends StatelessWidget {
   }
 
   List<Widget> _buildPinList() {
-    return mapProvider.pins.map((pin) {
+    return mapViewModel.pins.map((pin) {
       bool isSolar = pin.type.contains('Güneş') || pin.type.contains('Solar');
       return _PinListItem(
         name: pin.name,
         capacity: pin.capacityMw,
         isSolar: isSolar,
         theme: theme,
-        onDelete: () => mapProvider.deletePin(pin.id),
+        onDelete: () => mapViewModel.deletePin(pin.id),
       );
     }).toList();
   }
@@ -356,7 +356,7 @@ class _PinListItem extends StatelessWidget {
   final String name;
   final double capacity;
   final bool isSolar;
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
   final VoidCallback onDelete;
 
   const _PinListItem({

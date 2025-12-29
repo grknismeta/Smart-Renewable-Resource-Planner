@@ -32,6 +32,7 @@ class MapConstants {
   static const double initialZoom = 6.0;
   static const double minZoom = 3.0;
   static const double maxZoom = 18.0;
+  static const double maxNativeZoom = 12.0; // Tiles beyond this will be scaled
 
   /// Verilen tip için arka plan rengini döndürür
   static Color getBackgroundColor(String type) {
@@ -45,7 +46,7 @@ class MapConstants {
 
   /// Verilen tip için ikonu döndürür
   static IconData getIcon(String type) {
-    return type == 'Güneş Paneli' ? Icons.wb_sunny : Icons.air;
+    return type == 'Güneş Paneli' ? Icons.wb_sunny : Icons.wind_power;
   }
 
   /// Harita stili için URL döndürür

@@ -21,6 +21,7 @@ class Pin {
   final int? turbineModelId;
   final int? panelModelId;
   final int? equipmentId;
+  final String? equipmentName;
 
   Pin({
     required this.id,
@@ -37,6 +38,7 @@ class Pin {
     this.turbineModelId,
     this.panelModelId,
     this.equipmentId,
+    this.equipmentName,
   });
 
   // Backend'e (POST /pins/ veya POST /pins/calculate) göndermek için
@@ -55,6 +57,7 @@ class Pin {
       'turbine_model_id': turbineModelId,
       'panel_model_id': panelModelId,
       'equipment_id': equipmentId,
+      // equipment_name read-only usually, but no harm sending
     };
   }
 
@@ -77,6 +80,7 @@ class Pin {
       turbineModelId: json['turbine_model_id'] as int?,
       panelModelId: json['panel_model_id'] as int?,
       equipmentId: json['equipment_id'] as int?,
+      equipmentName: json['equipment_name'] as String?,
     );
   }
 }

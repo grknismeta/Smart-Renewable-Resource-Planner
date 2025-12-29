@@ -1,30 +1,25 @@
-// lib/providers/map_provider.dart
-
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:frontend/core/api_service.dart';
-import 'package:frontend/data/models/pin_model.dart';
-import 'package:frontend/data/models/system_data_models.dart';
-import 'package:frontend/data/models/irradiance_model.dart';
-import 'auth_provider.dart';
 import 'dart:math' as math;
+import '../widgets/map/resource_heatmap_layer.dart';
+import '../../core/api_service.dart';
+import '../../core/base/base_view_model.dart';
+import '../../data/models/pin_model.dart';
+import '../../data/models/system_data_models.dart';
+import '../../data/models/irradiance_model.dart';
+import 'auth_view_model.dart';
 
-enum MapLayer { none, wind, temp }
+enum MapLayer { none, wind, temp, irradiance }
 
-// --- 1. GÜNCELLEME: Pin ekleme modunu String olarak tanımla ---
-// 'isPlacingMarker' boolean'ı yerine, ne eklediğimizi tutan bir String kullanıyoruz.
-// null = pin ekleme modu kapalı.
+// Pin ekleme modunu String olarak tanımla
 typedef PinType = String;
 
-class MapProvider extends ChangeNotifier {
+class MapViewModel extends BaseViewModel {
   final ApiService _apiService;
-  final AuthProvider _authProvider;
+  final AuthViewModel _authViewModel;
 
   List<Pin> _pins = [];
-  bool _isLoading = false;
-  // bool _isPlacingMarker = false; // <-- ESKİ
-  PinType? _placingPinType; // <-- YENİ
+  PinType? _placingPinType;
   MapLayer _currentLayer = MapLayer.none;
   PinCalculationResponse? _latestCalculationResult;
 
@@ -42,7 +37,7 @@ class MapProvider extends ChangeNotifier {
   String? _selectedCityForIrradiance;
   bool _isLoadingIrradiance = false;
 
-  // --- YENİ: BÖLGE SEÇİM MODUNUN STATE'İ (GÜNCELLENDİ - ÇOKLU KÖŞE) ---
+  // BÖLGE SEÇİM MODUNUN STATE'İ
   bool _isSelectingRegion = false; // Seçim modu açık mı?
   List<LatLng> _selectionPoints = []; // Seçilen tüm köşe noktaları
   int? _draggingPointIndex; // Sürüklenen nokta indeksi
@@ -51,12 +46,55 @@ class MapProvider extends ChangeNotifier {
   bool _equipmentsLoading = false;
 
   List<Pin> get pins => _pins;
-  bool get isLoading => _isLoading;
-  // bool get isPlacingMarker => _isPlacingMarker; // <-- ESKİ
-  PinType? get placingPinType => _placingPinType; // <-- YENİ
+  PinType? get placingPinType => _placingPinType;
   MapLayer get currentLayer => _currentLayer;
   PinCalculationResponse? get latestCalculationResult =>
       _latestCalculationResult;
+
+  // --- HEATMAP İÇİN VERİ DÖNÜŞÜMÜ ---
+  List<HeatmapPoint> get heatmapPoints {
+    if (_currentLayer == MapLayer.wind) {
+      return _weatherData.map((d) {
+        return HeatmapPoint(
+          latitude: d.lat,
+          longitude: d.lon,
+          value: d.windSpeed,
+        );
+      }).toList();
+    } else if (_currentLayer == MapLayer.temp) {
+      return _weatherData.map((d) {
+        return HeatmapPoint(
+          latitude: d.lat,
+          longitude: d.lon,
+          value: d.temperature,
+        );
+      }).toList();
+    } else if (_currentLayer == MapLayer.irradiance) {
+      return _solarSummary.map((d) {
+        return HeatmapPoint(
+          latitude: d.latitude,
+          longitude: d.longitude,
+          value: d.totalDailyIrradianceKwhM2 ?? 0,
+        );
+      }).toList();
+    }
+    return [];
+  }
+
+  // --- HEATMAP TİPİ DÖNÜŞÜMÜ ---
+  ResourceType get heatmapType {
+    switch (_currentLayer) {
+      case MapLayer.wind:
+        return ResourceType.wind;
+      case MapLayer.temp:
+        return ResourceType.temp;
+      case MapLayer.irradiance:
+        return ResourceType.solar;
+      default:
+        return ResourceType.temp; // Fallback
+    }
+  }
+
   List<CityWeatherData> get weatherData => _weatherData;
   DateTime get selectedTime => _selectedTime;
   List<CityWeatherSummary> get weatherSummary => _weatherSummary;
@@ -69,7 +107,7 @@ class MapProvider extends ChangeNotifier {
   String? get selectedCityForIrradiance => _selectedCityForIrradiance;
   bool get isLoadingIrradiance => _isLoadingIrradiance;
 
-  // --- YENİ: GETTERS (GÜNCELLENDİ) ---
+  // GETTERS
   bool get isSelectingRegion => _isSelectingRegion;
   List<LatLng> get selectionPoints => _selectionPoints;
   int? get draggingPointIndex => _draggingPointIndex;
@@ -79,16 +117,10 @@ class MapProvider extends ChangeNotifier {
   bool get isEquipmentLoading => _equipmentsLoading;
   bool get equipmentsLoading => _equipmentsLoading;
 
-  MapProvider(this._apiService, this._authProvider) {
-    _authProvider.addListener(_handleAuthChange);
-    // AuthProvider'ın mevcut durumunu kontrol et (constructor'ın çalışması sırasında notifyListeners yapılmayabilir)
-    debugPrint(
-      '[MapProvider constructor] _authProvider.isLoggedIn: ${_authProvider.isLoggedIn}',
-    );
-    if (_authProvider.isLoggedIn == true) {
-      debugPrint(
-        '[MapProvider constructor] Kullanıcı zaten logged in, pins yükleniyor...',
-      );
+  MapViewModel(this._apiService, this._authViewModel) {
+    _authViewModel.addListener(_handleAuthChange);
+    // AuthViewModel'in mevcut durumunu kontrol et
+    if (_authViewModel.isLoggedIn == true) {
       fetchPins();
     }
     // Ülke genelinde özet (7 gün) ön yükleme
@@ -98,64 +130,46 @@ class MapProvider extends ChangeNotifier {
   Future<void> _loadWeatherSummarySafe() async {
     try {
       _weatherSummary = await _apiService.fetchWeatherSummary(hours: 168);
+      // Işınım verilerini de yükle
+      _solarSummary = await _apiService.fetchSolarSummary(hours: 168);
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Weather/Solar summary yüklenirken hata: $e');
+    }
+  }
+
+  /// Veri yükleme hatası durumunda tekrar denemek için
+  Future<void> reloadWeatherSummary() async {
+    await _loadWeatherSummarySafe();
   }
 
   void _handleAuthChange() {
-    // ... (değişiklik yok) ...
-    debugPrint(
-      '[MapProvider._handleAuthChange] isLoggedIn durumu değişti: ${_authProvider.isLoggedIn}',
-    );
-    if (_authProvider.isLoggedIn == true) {
-      debugPrint(
-        '[MapProvider._handleAuthChange] Kullanıcı giriş yaptı, fetchPins çağrılıyor...',
-      );
+    if (_authViewModel.isLoggedIn == true) {
       fetchPins();
-    } else if (_authProvider.isLoggedIn == false) {
-      debugPrint(
-        '[MapProvider._handleAuthChange] Kullanıcı çıkış yaptı, pins sıfırlanıyor',
-      );
+    } else if (_authViewModel.isLoggedIn == false) {
       _pins = [];
       notifyListeners();
     }
   }
 
   Future<void> loadEquipments({String? type, bool forceRefresh = false}) async {
-    debugPrint(
-      '[MapProvider.loadEquipments] Çağrıldı: type=$type, forceRefresh=$forceRefresh',
-    );
-    if (_equipmentsLoading) {
-      debugPrint('[MapProvider.loadEquipments] Zaten yükleniyor, atlanıyor');
-      return;
-    }
-    if (!forceRefresh && _equipments.isNotEmpty && type == null) {
-      debugPrint(
-        '[MapProvider.loadEquipments] Zaten yüklü, atlanıyor: ${_equipments.length} ekipman',
-      );
-      return;
-    }
+    if (_equipmentsLoading) return;
+
+    if (!forceRefresh && _equipments.isNotEmpty && type == null) return;
 
     _equipmentsLoading = true;
     notifyListeners();
-    debugPrint('[MapProvider.loadEquipments] Loading başladı...');
     try {
       _equipments = await _apiService.fetchEquipments(type: type);
-      debugPrint(
-        '[MapProvider.loadEquipments] Başarılı: ${_equipments.length} ekipman yüklendi',
-      );
     } catch (e) {
-      debugPrint('[MapProvider.loadEquipments] Hata: $e');
+      debugPrint('[MapViewModel.loadEquipments] Hata: $e');
     } finally {
       _equipmentsLoading = false;
       notifyListeners();
-      debugPrint('[MapProvider.loadEquipments] Loading bitti');
     }
   }
 
   // --- UI İşlemleri ---
-  // ... (togglePlacingMarkerMode, changeMapLayer, clearCalculationResult - değişiklik yok) ...
-  // --- 2. GÜNCELLEME: 'toggle' yerine iki ayrı fonksiyon ---
   void startPlacingMarker(PinType type) {
     // Eğer zaten o tipte ekleme modundaysa, modu kapat
     if (_placingPinType == type) {
@@ -171,7 +185,7 @@ class MapProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- YENİ: BÖLGE SEÇİM METODLARI ---
+  // --- BÖLGE SEÇİM METODLARI ---
   /// Optimizasyon bölge seçim modunu başlat
   void startSelectingRegion() {
     _isSelectingRegion = true;
@@ -254,12 +268,13 @@ class MapProvider extends ChangeNotifier {
     double minDistanceM = 0.0,
   }) async {
     if (_selectionPoints.length < 3) {
-      throw Exception('Lütfen en az 3 köşe seçin.');
+      setError('Lütfen en az 3 köşe seçin.');
+      return;
     }
 
-    _isLoading = true;
+    setBusy(true);
     _optimizationResult = null;
-    notifyListeners();
+    // notifyListeners() is called by setBusy
 
     try {
       // Minimum sınırlayıcı kutu (bounding box) hesapla
@@ -285,14 +300,12 @@ class MapProvider extends ChangeNotifier {
       );
     } catch (e) {
       debugPrint('Optimizasyon hatası: $e');
-      throw Exception('Optimizasyon hesaplaması başarısız oldu.');
+      setError('Optimizasyon hesaplaması başarısız oldu.');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      setBusy(false);
     }
   }
 
-  // --- GÜNCELLEME SONU ---
   void setLayer(MapLayer layer) {
     _currentLayer = layer;
     notifyListeners();
@@ -307,6 +320,9 @@ class MapProvider extends ChangeNotifier {
         _currentLayer = MapLayer.temp;
         break;
       case MapLayer.temp:
+        _currentLayer = MapLayer.irradiance;
+        break;
+      case MapLayer.irradiance:
         _currentLayer = MapLayer.none;
         break;
     }
@@ -320,41 +336,37 @@ class MapProvider extends ChangeNotifier {
 
   // --- API İşlemleri ---
   Future<void> fetchPins() async {
-    // ... (değişiklik yok) ...
-    debugPrint(
-      '[MapProvider] fetchPins() çağrıldı, isLoggedIn: ${_authProvider.isLoggedIn}',
-    );
-    if (_authProvider.isLoggedIn != true) {
-      debugPrint('[MapProvider] isLoggedIn != true, fetchPins iptal edildi');
+    if (_authViewModel.isLoggedIn != true) {
       return;
     }
-    _isLoading = true;
-    notifyListeners();
+    setBusy(true);
     try {
       _pins = await _apiService.fetchPins();
-      debugPrint(
-        '[MapProvider] fetchPins başarılı, ${_pins.length} pin yüklendi',
-      );
     } catch (e) {
-      debugPrint('[MapProvider] Pin yüklenirken hata: $e');
+      debugPrint('[MapViewModel] Pin yüklenirken hata: $e');
+      // setError(e.toString()); // Pin yüklenemezse tüm haritayı bloke etmek istemeyebiliriz
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      setBusy(false);
     }
   }
 
-  // --- 2. GÜNCELLEME: 'addPin' fonksiyonu artık tüm verileri alıyor ---
-  Future<void> addPin(
+  Future<Pin> addPin(
     LatLng point,
     String name,
     String type,
     double capacityMw,
-    int? equipmentId, // Ekipman ID'si eklendi
+    int? equipmentId,
   ) async {
     try {
-      // Aldığı parametreleri 'api_service'e iletiyor
-      await _apiService.addPin(point, name, type, capacityMw, equipmentId);
-      await fetchPins(); // Yeni pini çekmek için listeyi yenile
+      final newPin = await _apiService.addPin(
+        point,
+        name,
+        type,
+        capacityMw,
+        equipmentId,
+      );
+      await fetchPins();
+      return newPin;
     } catch (e) {
       debugPrint('Pin eklenirken hata: $e');
       throw Exception('Pin eklenemedi. Lütfen tekrar deneyin.');
@@ -362,10 +374,9 @@ class MapProvider extends ChangeNotifier {
   }
 
   Future<void> deletePin(int pinId) async {
-    // ... (değişiklik yok) ...
     try {
       await _apiService.deletePin(pinId);
-      await fetchPins(); // Silme sonrası listeyi yenile
+      await fetchPins();
     } catch (e) {
       debugPrint('Pin silinirken hata: $e');
       throw Exception('Pin silinemedi. Lütfen tekrar deneyin.');
@@ -373,16 +384,14 @@ class MapProvider extends ChangeNotifier {
   }
 
   Future<void> calculatePotential({
-    // ... (değişiklik yok) ...
     required double lat,
     required double lon,
     required String type,
     required double capacityMw,
     double? panelArea,
   }) async {
-    _isLoading = true;
+    setBusy(true);
     _latestCalculationResult = null;
-    notifyListeners();
     try {
       _latestCalculationResult = await _apiService.calculateEnergyPotential(
         lat: lat,
@@ -393,10 +402,9 @@ class MapProvider extends ChangeNotifier {
       );
     } catch (e) {
       debugPrint('Hesaplama hatası: $e');
-      throw Exception('Hesaplama yapılamadı.');
+      setError('Hesaplama yapılamadı.');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      setBusy(false);
     }
   }
 
@@ -404,11 +412,24 @@ class MapProvider extends ChangeNotifier {
 
   /// Belirli bir zaman için hava durumu verilerini yükle
   Future<void> loadWeatherForTime(DateTime time) async {
-    _selectedTime = time;
+    // Dakika, saniye ve milisaniyeyi sıfırla (Backend saatlik veri bekliyor)
+    final truncatedTime = DateTime(
+      time.year,
+      time.month,
+      time.day,
+      time.hour,
+      0,
+      0,
+      0,
+      0,
+    );
+    _selectedTime = truncatedTime;
+
     try {
-      _weatherData = await _apiService.fetchWeatherForTime(time);
+      _weatherData = await _apiService.fetchWeatherForTime(truncatedTime);
     } catch (e) {
       debugPrint('Hava durumu yüklenirken hata: $e');
+      _weatherData = [];
     }
     notifyListeners();
   }
@@ -444,7 +465,6 @@ class MapProvider extends ChangeNotifier {
       }
     }
 
-    // 100km'den uzaksa null döndür
     if (minDistance > 100) return null;
     return nearest;
   }
@@ -482,16 +502,12 @@ class MapProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      debugPrint('[MapProvider.loadCityIrradiance] Yükleniyor: $cityName');
       _irradianceData = await _apiService.fetchCityIrradiance(
         cityName,
         hours: hours,
       );
-      debugPrint(
-        '[MapProvider.loadCityIrradiance] ${_irradianceData.length} kayıt yüklendi',
-      );
     } catch (e) {
-      debugPrint('[MapProvider.loadCityIrradiance] Hata: $e');
+      debugPrint('[MapViewModel.loadCityIrradiance] Hata: $e');
       _irradianceData = [];
     } finally {
       _isLoadingIrradiance = false;
@@ -505,13 +521,9 @@ class MapProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      debugPrint('[MapProvider.loadSolarSummary] Yükleniyor...');
       _solarSummary = await _apiService.fetchSolarSummary(hours: hours);
-      debugPrint(
-        '[MapProvider.loadSolarSummary] ${_solarSummary.length} şehir yüklendi',
-      );
     } catch (e) {
-      debugPrint('[MapProvider.loadSolarSummary] Hata: $e');
+      debugPrint('[MapViewModel.loadSolarSummary] Hata: $e');
       _solarSummary = [];
     } finally {
       _isLoadingIrradiance = false;
@@ -524,14 +536,10 @@ class MapProvider extends ChangeNotifier {
     int limit = 10,
   }) async {
     try {
-      debugPrint('[MapProvider.loadBestSolarCities] Yükleniyor...');
       final cities = await _apiService.fetchBestSolarCities(limit: limit);
-      debugPrint(
-        '[MapProvider.loadBestSolarCities] ${cities.length} şehir yüklendi',
-      );
       return cities;
     } catch (e) {
-      debugPrint('[MapProvider.loadBestSolarCities] Hata: $e');
+      debugPrint('[MapViewModel.loadBestSolarCities] Hata: $e');
       return [];
     }
   }
@@ -570,6 +578,51 @@ class MapProvider extends ChangeNotifier {
   void clearIrradianceData() {
     _irradianceData = [];
     _selectedCityForIrradiance = null;
+    notifyListeners();
+  }
+
+  // --- Geo Analysis State ---
+  Map<String, dynamic>? _latestGeoAnalysis;
+  bool _isAnalyzingGeo = false;
+  List<LatLng> _restrictedArea = [];
+
+  Map<String, dynamic>? get latestGeoAnalysis => _latestGeoAnalysis;
+  bool get isAnalyzingGeo => _isAnalyzingGeo;
+  List<LatLng> get restrictedArea => _restrictedArea;
+
+  Future<void> analyzeLocation(LatLng point) async {
+    _isAnalyzingGeo = true;
+    _latestGeoAnalysis = null;
+    _restrictedArea = [];
+    notifyListeners();
+
+    try {
+      final result = await _apiService.checkGeoSuitability(
+        point.latitude,
+        point.longitude,
+      );
+      _latestGeoAnalysis = result;
+
+      // Yasaklı alan varsa parse et
+      if (result['restricted_area'] != null) {
+        final List<dynamic> points = result['restricted_area'];
+        if (points.isNotEmpty) {
+          _restrictedArea = points
+              .map((p) => LatLng(p['lat'], p['lng']))
+              .toList();
+        }
+      }
+    } catch (e) {
+      debugPrint('Geo analiz hatası: $e');
+    } finally {
+      _isAnalyzingGeo = false;
+      notifyListeners();
+    }
+  }
+
+  void clearGeoAnalysis() {
+    _latestGeoAnalysis = null;
+    _restrictedArea = [];
     notifyListeners();
   }
 }

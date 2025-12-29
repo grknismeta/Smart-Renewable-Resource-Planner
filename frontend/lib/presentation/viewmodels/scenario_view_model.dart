@@ -1,55 +1,78 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import '../core/api_service.dart';
-import '../data/models/scenario_model.dart';
+import '../../core/api_service.dart';
+import '../../data/models/scenario_model.dart';
+import '../../core/base/base_view_model.dart';
 
-class ScenarioProvider extends ChangeNotifier {
+class ScenarioViewModel extends BaseViewModel {
   final ApiService _apiService;
 
-  ScenarioProvider(this._apiService);
+  ScenarioViewModel(this._apiService);
 
-  bool _isLoading = false;
   List<Scenario> _scenarios = [];
   Scenario? _selectedScenario;
 
-  bool get isLoading => _isLoading;
   List<Scenario> get scenarios => _scenarios;
   Scenario? get selectedScenario => _selectedScenario;
 
   Future<void> loadScenarios() async {
-    _isLoading = true;
-    notifyListeners();
+    setBusy(true);
 
     try {
       _scenarios = await _apiService.fetchScenarios();
     } catch (e) {
       debugPrint('Senaryolar yüklenemedi: $e');
       _scenarios = [];
+      setError('Senaryolar yüklenemedi');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      setBusy(false);
     }
   }
 
   Future<void> createScenario(ScenarioCreate scenarioCreate) async {
-    _isLoading = true;
-    notifyListeners();
+    setBusy(true);
 
     try {
       final newScenario = await _apiService.createScenario(scenarioCreate);
       _scenarios.insert(0, newScenario);
     } catch (e) {
       debugPrint('Senaryo oluşturulamadı: $e');
+      setError('Senaryo oluşturulamadı');
       rethrow;
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      setBusy(false);
+    }
+  }
+
+  Future<void> updateScenario(
+    int scenarioId,
+    ScenarioCreate scenarioCreate,
+  ) async {
+    setBusy(true);
+
+    try {
+      final updatedScenario = await _apiService.updateScenario(
+        scenarioId,
+        scenarioCreate,
+      );
+      final index = _scenarios.indexWhere((s) => s.id == scenarioId);
+      if (index != -1) {
+        _scenarios[index] = updatedScenario;
+        if (_selectedScenario?.id == scenarioId) {
+          _selectedScenario = updatedScenario;
+        }
+        notifyListeners(); // Liste güncellendi
+      }
+    } catch (e) {
+      debugPrint('Senaryo güncellenemedi: $e');
+      setError('Senaryo güncellenemedi');
+      rethrow;
+    } finally {
+      setBusy(false);
     }
   }
 
   Future<void> calculateScenario(int scenarioId) async {
-    _isLoading = true;
-    notifyListeners();
+    setBusy(true);
 
     try {
       final updatedScenario = await _apiService.calculateScenario(scenarioId);
@@ -62,10 +85,10 @@ class ScenarioProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Senaryo hesaplanamadı: $e');
+      setError('Senaryo hesaplanamadı');
       rethrow;
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      setBusy(false);
     }
   }
 

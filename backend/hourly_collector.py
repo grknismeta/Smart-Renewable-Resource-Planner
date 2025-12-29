@@ -148,6 +148,7 @@ def process_response(response, city: dict) -> list:
     for _, row in df.iterrows():
         record = HourlyWeatherData(
             city_name=city["name"],
+            district_name=city.get("district"),
             latitude=city["lat"],
             longitude=city["lon"],
             timestamp=row["timestamp"].to_pydatetime(),
@@ -209,11 +210,19 @@ def collect_all_cities_hourly(past_days: int = 7, force_refresh: bool = False):
                     
                     # Mevcut verileri kontrol et ve güncelle
                     for record in records:
-                        # Aynı şehir ve zaman için kayıt var mı?
-                        existing = db.query(HourlyWeatherData).filter(
+                        # Aynı şehir, ilçe ve zaman için kayıt var mı?
+                        query = db.query(HourlyWeatherData).filter(
                             HourlyWeatherData.city_name == record.city_name,
                             HourlyWeatherData.timestamp == record.timestamp
-                        ).first()
+                        )
+                        
+                        # District kontrolü ekle
+                        if record.district_name is not None:
+                            query = query.filter(HourlyWeatherData.district_name == record.district_name)
+                        else:
+                            query = query.filter(HourlyWeatherData.district_name.is_(None))
+                        
+                        existing = query.first()
                         
                         if existing:
                             # Güncelle

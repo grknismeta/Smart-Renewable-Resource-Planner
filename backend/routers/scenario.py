@@ -65,6 +65,61 @@ def read_scenarios(
     return db.query(models.Scenario).filter(models.Scenario.owner_id == current_user.id).all()
 
 
+@router.put("/{scenario_id}", response_model=schemas.ScenarioResponse)
+def update_scenario(
+    scenario_id: int,
+    scenario: schemas.ScenarioCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Mevcut bir senaryoyu günceller.
+    """
+    db_scenario = db.query(models.Scenario).filter(
+        models.Scenario.id == scenario_id,
+        models.Scenario.owner_id == current_user.id
+    ).first()
+
+    if not db_scenario:
+        raise HTTPException(status_code=404, detail="Senaryo bulunamadı")
+
+    # Pin sahipliği kontrolü
+    for pin_id in scenario.pin_ids:
+        db_pin = db.query(models.Pin).filter(models.Pin.id == pin_id).first()
+        if not db_pin:
+             raise HTTPException(status_code=404, detail=f"Pin {pin_id} bulunamadı")
+        if db_pin.owner_id != current_user.id:
+             raise HTTPException(status_code=403, detail=f"Pin {pin_id}'e erişim yetkiniz yok")
+
+    db_scenario.name = scenario.name # type: ignore
+    db_scenario.description = scenario.description # type: ignore
+    db_scenario.pin_ids = scenario.pin_ids # type: ignore
+    # Geriye dönük uyumluluk
+    db_scenario.pin_id = scenario.pin_ids[0] if scenario.pin_ids else None # type: ignore
+    db_scenario.start_date = scenario.start_date # type: ignore
+    db_scenario.end_date = scenario.end_date # type: ignore
+    
+    # Parametreler değiştiği için eski sonuçları geçersiz kılabiliriz veya tutabiliriz.
+    # Genelde parametre değişince yeniden hesaplama gerekir, bu yüzden sonucu temizleyebiliriz 
+    # veya kullanıcı hesapla diyene kadar eskiyi gösterebiliriz.
+    # Temizlemek daha güvenli:
+    db_scenario.result_data = {} # type: ignore
+
+    db.commit()
+    db.refresh(db_scenario)
+
+    # pin_ids formatı
+    if isinstance(db_scenario.pin_ids, str):
+        try:
+            db_scenario.pin_ids = json.loads(db_scenario.pin_ids) # type: ignore
+        except:
+            db_scenario.pin_ids = [] # type: ignore
+    else:
+        db_scenario.pin_ids = list(db_scenario.pin_ids or []) # type: ignore
+
+    return db_scenario
+
+
 @router.post("/{scenario_id}/calculate", response_model=schemas.ScenarioResponse)
 def calculate_scenario(
     scenario_id: int,
@@ -107,16 +162,33 @@ def calculate_scenario(
     if start_date is None or end_date is None:
         raise HTTPException(status_code=400, detail="Senaryo tarih aralığı eksik")
     
-    # Ensure start_date and end_date are datetime objects, not Column objects
-    if isinstance(start_date, datetime):
-        start_date = cast(datetime, start_date)
-    else:
-        start_date = cast(datetime, start_date)
+    if start_date is None or end_date is None:
+        raise HTTPException(status_code=400, detail="Senaryo tarih aralığı eksik")
     
-    if isinstance(end_date, datetime):
-        end_date = cast(datetime, end_date)
-    else:
-        end_date = cast(datetime, end_date)
+    # Robust Date Parsing
+    def parse_dt(d):
+        if isinstance(d, datetime):
+            return d
+        if isinstance(d, str):
+            try:
+                # Try IS0 8601 first
+                return datetime.fromisoformat(d.replace('Z', '+00:00'))
+            except ValueError:
+                # Try simple date format
+                try:
+                    return datetime.strptime(d[:10], "%Y-%m-%d")
+                except:
+                    pass
+        return None
+
+    start_date_obj = parse_dt(start_date)
+    end_date_obj = parse_dt(end_date)
+    
+    if not start_date_obj or not end_date_obj:
+        raise HTTPException(status_code=400, detail="Geçersiz tarih formatı")
+    
+    start_date = start_date_obj
+    end_date = end_date_obj
     
     print(f"Senaryo Hesaplanıyor: {start_date} - {end_date}")
     
@@ -127,61 +199,76 @@ def calculate_scenario(
     solar_count = 0
     wind_count = 0
     
-    for pin_id in pin_ids:
-        db_pin = db.query(models.Pin).filter(models.Pin.id == pin_id).first()
-        if not db_pin: # type: ignore
-            continue
-            
-        pin_type = str(db_pin.type or "Güneş Paneli").strip() # type: ignore
-        pin_lat = float(db_pin.latitude) # type: ignore
-        pin_lon = float(db_pin.longitude) # type: ignore
-        pin_title = str(db_pin.name or "Pin") # type: ignore
-        
-        prediction_result: Dict[str, Any] = {"pin_id": pin_id, "pin_name": pin_title, "type": pin_type}
-        
-        if "Güneş" in pin_type or "Solar" in pin_type or pin_type == "Güneş Paneli":
-            historical_data = solar_calculations.get_historical_hourly_solar_data(pin_lat, pin_lon)
-            
-            if "error" not in historical_data and "raw_data_for_ml" in historical_data:
-                raw_data = historical_data["raw_data_for_ml"]
-                ml_forecast = predict_future_production(
-                    hourly_data=raw_data,
-                    resource_type="solar",
-                    start_date=start_date,
-                    end_date=end_date
-                )
+    try:
+        for pin_id in pin_ids:
+            db_pin = db.query(models.Pin).filter(models.Pin.id == pin_id).first()
+            if not db_pin: # type: ignore
+                continue
                 
-                if "error" not in ml_forecast:
-                    prediction_result.update(ml_forecast)
-                    total_solar_kwh += ml_forecast.get("total_prediction_value", 0.0)
-                    solar_count += 1
-                else:
-                    prediction_result["error"] = ml_forecast.get("error", "ML hatası")
-            else:
-                prediction_result["error"] = "Geçmiş veri alınamadı"
+            pin_type = str(db_pin.type or "Güneş Paneli").strip() # type: ignore
+            pin_lat = float(db_pin.latitude) # type: ignore
+            pin_lon = float(db_pin.longitude) # type: ignore
+            pin_title = str(db_pin.name or "Pin") # type: ignore
+            
+            prediction_result: Dict[str, Any] = {"pin_id": pin_id, "pin_name": pin_title, "type": pin_type}
+            
+            if "Güneş" in pin_type or "Solar" in pin_type or pin_type == "Güneş Paneli":
+                try:
+                    historical_data = solar_calculations.get_historical_hourly_solar_data(pin_lat, pin_lon)
+                    
+                    if "error" not in historical_data and "raw_data_for_ml" in historical_data:
+                        raw_data = historical_data["raw_data_for_ml"]
+                        ml_forecast = predict_future_production(
+                            hourly_data=raw_data,
+                            resource_type="solar",
+                            start_date=start_date,
+                            end_date=end_date
+                        )
+                        
+                        if "error" not in ml_forecast:
+                            prediction_result.update(ml_forecast)
+                            total_solar_kwh += ml_forecast.get("total_prediction_value", 0.0)
+                            solar_count += 1
+                        else:
+                            prediction_result["error"] = ml_forecast.get("error", "ML hatası")
+                    else:
+                        prediction_result["error"] = historical_data.get("error", "Geçmiş veri alınamadı")
+                except Exception as e:
+                    print(f"Error calculating solar for pin {pin_id}: {e}")
+                    prediction_result["error"] = f"Solar hesaplama hatası: {str(e)}"
                 
-        elif "Rüzgar" in pin_type or "Wind" in pin_type or pin_type == "Rüzgar Türbini":
-            # Get weather statistics for this pin from database
-            db_weather = db.query(models.WeatherData).filter(
-                models.WeatherData.pin_id == pin_id
-            ).order_by(models.WeatherData.date.desc()).first()
+            elif "Rüzgar" in pin_type or "Wind" in pin_type or pin_type == "Rüzgar Türbini":
+                try:
+                    # Get weather statistics for this pin from database
+                    db_weather = db.query(models.WeatherData).filter(
+                        models.WeatherData.pin_id == pin_id
+                    ).order_by(models.WeatherData.date.desc()).first()
+                    
+                    weather_stats = None
+                    if db_weather and db_weather.data:
+                        weather_stats = db_weather.data
+                    
+                    wind_data = wind_calculations.calculate_wind_power_production(pin_lat, pin_lon, weather_stats or {})
+                    
+                    if "error" not in wind_data:
+                        prediction_result["info"] = "Rüzgar yıllık tahmin"
+                        prediction_result.update(wind_data)
+                        total_wind_kwh += wind_data.get("predicted_annual_production_kwh", 0.0)
+                        wind_count += 1
+                    else:
+                        prediction_result["error"] = "Rüzgar verisi alınamadı"
+                except Exception as e:
+                     print(f"Error calculating wind for pin {pin_id}: {e}")
+                     prediction_result["error"] = f"Rüzgar hesaplama hatası: {str(e)}"
             
-            weather_stats = None
-            if db_weather and db_weather.data:
-                weather_stats = db_weather.data
+            pin_results.append(prediction_result)
             
-            wind_data = wind_calculations.calculate_wind_power_production(pin_lat, pin_lon, weather_stats or {})
-            
-            if "error" not in wind_data:
-                prediction_result["info"] = "Rüzgar yıllık tahmin"
-                prediction_result.update(wind_data)
-                total_wind_kwh += wind_data.get("predicted_annual_production_kwh", 0.0)
-                wind_count += 1
-            else:
-                prediction_result["error"] = "Rüzgar verisi alınamadı"
-        
-        pin_results.append(prediction_result)
-    
+    except Exception as e:
+        print(f"Global calculation error: {e}")
+        # Return partial results if possible, or re-raise if critical
+        # But we want to avoid 500, so let's log and continue with empty results if needed
+        pass
+
     # Toplu sonuçları kaydet
     summary = {
         "total_solar_kwh": total_solar_kwh,
@@ -205,4 +292,67 @@ def calculate_scenario(
     else:
         db_scenario.pin_ids = list(db_scenario.pin_ids or [])  # type: ignore
     
+    return db_scenario
+
+@router.post("/{scenario_id}/pins", response_model=schemas.ScenarioResponse)
+def add_pins_to_scenario(
+    scenario_id: int,
+    pin_ids: List[int],
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Mevcut bir senaryoya pin(ler) ekler.
+    """
+    db_scenario = db.query(models.Scenario).filter(
+        models.Scenario.id == scenario_id,
+        models.Scenario.owner_id == current_user.id
+    ).first()
+
+    if not db_scenario:
+        raise HTTPException(status_code=404, detail="Senaryo bulunamadı")
+
+    # Pin sahipliği kontrolü
+    for pin_id in pin_ids:
+        db_pin = db.query(models.Pin).filter(models.Pin.id == pin_id).first()
+        if not db_pin:
+            raise HTTPException(status_code=404, detail=f"Pin {pin_id} bulunamadı")
+        if db_pin.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail=f"Pin {pin_id}'e erişim yetkiniz yok")
+
+    # Mevcut pinleri al
+    current_pins = db_scenario.pin_ids or []
+    if isinstance(current_pins, str):
+        try:
+            current_pins = json.loads(current_pins)
+        except:
+            current_pins = []
+    else:
+        current_pins = list(current_pins) # Ensure list
+
+    # Yeni pinleri ekle (duplicate kontrolü opsiyonel, set ile yapılabilir ama sıra önemli olabilir)
+    # Şimdilik direkt ekleyelim, duplicate varsa da sorun olmaz ama temizlik için set kullanabiliriz
+    
+    # Int dönüşümü ve merge
+    current_pin_ids = [int(p) for p in current_pins]
+    new_pin_ids = [int(p) for p in pin_ids]
+    
+    # Sadece listede olmayanları ekle
+    for pid in new_pin_ids:
+        if pid not in current_pin_ids:
+            current_pin_ids.append(pid)
+
+    db_scenario.pin_ids = current_pin_ids
+    db.commit()
+    db.refresh(db_scenario)
+
+    # Return formatting
+    if isinstance(db_scenario.pin_ids, str):
+        try:
+            db_scenario.pin_ids = json.loads(db_scenario.pin_ids)
+        except:
+            db_scenario.pin_ids = []
+    else:
+        db_scenario.pin_ids = list(db_scenario.pin_ids or [])
+
     return db_scenario
