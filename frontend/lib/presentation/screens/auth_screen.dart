@@ -4,7 +4,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
+import '../../presentation/viewmodels/auth_view_model.dart';
+// ViewState için
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -15,7 +16,6 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   bool _isLoginMode = true;
-  bool _isLoading = false;
 
   final _emailController = TextEditingController(text: "");
   final _passwordController = TextEditingController(text: "");
@@ -38,13 +38,12 @@ class _AuthScreenState extends State<AuthScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authViewModel = Provider.of<AuthViewModel>(context, listen: false);
 
     try {
       if (_isLoginMode) {
         // --- GİRİŞ YAP ---
-        await authProvider.login(
+        await authViewModel.login(
           _emailController.text,
           _passwordController.text,
         );
@@ -54,13 +53,13 @@ class _AuthScreenState extends State<AuthScreen> {
           throw Exception("Şifreler eşleşmiyor.");
         }
 
-        await authProvider.register(
+        await authViewModel.register(
           _emailController.text,
           _passwordController.text,
         );
 
         // Kayıt sonrası otomatik giriş
-        await authProvider.login(
+        await authViewModel.login(
           _emailController.text,
           _passwordController.text,
         );
@@ -75,22 +74,22 @@ class _AuthScreenState extends State<AuthScreen> {
         }
       }
 
-      // --- BAŞARILI İŞLEM SONRASI YÖNLENDİRME (KRİTİK DÜZELTME) ---
+      // --- BAŞARILI İŞLEM SONRASI YÖNLENDİRME ---
       if (mounted) {
-        // Misafir modundan geldiysek veya normal açılışsa, anasayfaya yönlendir ve geçmişi temizle.
         Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
       }
     } catch (e) {
       if (!mounted) return;
-      String errorMessage = e.toString().replaceAll("Exception:", "").trim();
+      // Hata mesajını ViewModel'den alabiliriz veya catch'teki e'den
+      String errorMessage =
+          authViewModel.errorMessage ??
+          e.toString().replaceAll("Exception:", "").trim();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("İşlem Hatası: $errorMessage"),
           backgroundColor: Colors.red,
         ),
       );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -106,214 +105,225 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      resizeToAvoidBottomInset: false,
-      body: Stack(
-        children: [
-          FlutterMap(
-            options: MapOptions(
-              initialCenter: _center,
-              initialZoom: 6.0,
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.none,
-              ),
-              cameraConstraint: CameraConstraint.contain(bounds: _turkeyBounds),
-            ),
+    // ViewModel state'ini dinlemek için Consumer
+    return Consumer<AuthViewModel>(
+      builder: (context, authViewModel, child) {
+        return Scaffold(
+          resizeToAvoidBottomInset: false,
+          body: Stack(
             children: [
-              TileLayer(
-                tileProvider: CancellableNetworkTileProvider(),
-                urlTemplate:
-                    'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+              FlutterMap(
+                options: MapOptions(
+                  initialCenter: _center,
+                  initialZoom: 6.0,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.none,
+                  ),
+                  cameraConstraint: CameraConstraint.contain(
+                    bounds: _turkeyBounds,
+                  ),
+                ),
+                children: [
+                  TileLayer(
+                    tileProvider: CancellableNetworkTileProvider(),
+                    urlTemplate:
+                        'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                  ),
+                ],
               ),
-            ],
-          ),
 
-          Container(color: Colors.black.withValues(alpha: 0.3)),
+              Container(color: Colors.black.withValues(alpha: 0.3)),
 
-          Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: 380,
-                    padding: const EdgeInsets.all(30),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E232F).withValues(alpha: 0.75),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.3),
-                          blurRadius: 20,
-                          spreadRadius: 5,
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.eco,
-                          size: 50,
-                          color: Colors.greenAccent,
-                        ),
-                        const SizedBox(height: 10),
-
-                        Text(
-                          _isLoginMode ? "SRRP Giriş" : "SRRP Kayıt Ol",
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: 1.2,
+              Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 380,
+                        padding: const EdgeInsets.all(30),
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFF1E232F,
+                          ).withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1),
                           ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          "Akıllı Yenilenebilir Kaynak Planlayıcı",
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white.withValues(alpha: 0.7),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 30),
-
-                        _buildGlassTextField(
-                          controller: _emailController,
-                          hintText: "E-posta",
-                          icon: Icons.email_outlined,
-                        ),
-                        const SizedBox(height: 15),
-
-                        _buildGlassTextField(
-                          controller: _passwordController,
-                          hintText: "Şifre",
-                          icon: Icons.lock_outline,
-                          isPassword: true,
-                        ),
-
-                        if (!_isLoginMode) ...[
-                          const SizedBox(height: 15),
-                          _buildGlassTextField(
-                            controller: _confirmPasswordController,
-                            hintText: "Şifre Tekrar",
-                            icon: Icons.lock_reset,
-                            isPassword: true,
-                          ),
-                        ],
-
-                        const SizedBox(height: 25),
-
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _submit,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _isLoginMode
-                                  ? Colors.blueAccent
-                                  : Colors.green,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              elevation: 5,
-                            ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : Text(
-                                    _isLoginMode ? "Giriş Yap" : "Kayıt Ol",
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        Wrap(
-                          alignment: WrapAlignment.center,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
-                              _isLoginMode
-                                  ? "Hesabın yok mu? "
-                                  : "Zaten hesabın var mı? ",
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.7),
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _isLoginMode = !_isLoginMode;
-                                  _confirmPasswordController.clear();
-                                });
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 8.0,
-                                ),
-                                child: Text(
-                                  _isLoginMode ? "Kayıt Ol" : "Giriş Yap",
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    decoration: TextDecoration.underline,
-                                  ),
-                                ),
-                              ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              blurRadius: 20,
+                              spreadRadius: 5,
                             ),
                           ],
                         ),
-
-                        TextButton(
-                          onPressed: _continueAsGuest,
-                          child: Text(
-                            "Giriş Yapmadan Devam Et",
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 12,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.eco,
+                              size: 50,
+                              color: Colors.greenAccent,
                             ),
-                          ),
-                        ),
+                            const SizedBox(height: 10),
 
-                        if (_isLoginMode)
-                          TextButton(
-                            onPressed: () {},
-                            child: Text(
-                              "Şifremi Unuttum",
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.4),
-                                fontSize: 12,
+                            Text(
+                              _isLoginMode ? "SRRP Giriş" : "SRRP Kayıt Ol",
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                letterSpacing: 1.2,
                               ),
                             ),
-                          ),
-                      ],
+                            const SizedBox(height: 5),
+                            Text(
+                              "Akıllı Yenilenebilir Kaynak Planlayıcı",
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withValues(alpha: 0.7),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 30),
+
+                            _buildGlassTextField(
+                              controller: _emailController,
+                              hintText: "E-posta",
+                              icon: Icons.email_outlined,
+                            ),
+                            const SizedBox(height: 15),
+
+                            _buildGlassTextField(
+                              controller: _passwordController,
+                              hintText: "Şifre",
+                              icon: Icons.lock_outline,
+                              isPassword: true,
+                            ),
+
+                            if (!_isLoginMode) ...[
+                              const SizedBox(height: 15),
+                              _buildGlassTextField(
+                                controller: _confirmPasswordController,
+                                hintText: "Şifre Tekrar",
+                                icon: Icons.lock_reset,
+                                isPassword: true,
+                              ),
+                            ],
+
+                            const SizedBox(height: 25),
+
+                            SizedBox(
+                              width: double.infinity,
+                              height: 50,
+                              child: ElevatedButton(
+                                onPressed: authViewModel.isBusy
+                                    ? null
+                                    : _submit,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _isLoginMode
+                                      ? Colors.blueAccent
+                                      : Colors.green,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 5,
+                                ),
+                                child: authViewModel.isBusy
+                                    ? const SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Text(
+                                        _isLoginMode ? "Giriş Yap" : "Kayıt Ol",
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  _isLoginMode
+                                      ? "Hesabın yok mu? "
+                                      : "Zaten hesabın var mı? ",
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.7),
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _isLoginMode = !_isLoginMode;
+                                      _confirmPasswordController.clear();
+                                    });
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8.0,
+                                    ),
+                                    child: Text(
+                                      _isLoginMode ? "Kayıt Ol" : "Giriş Yap",
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            TextButton(
+                              onPressed: _continueAsGuest,
+                              child: Text(
+                                "Giriş Yapmadan Devam Et",
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+
+                            if (_isLoginMode)
+                              TextButton(
+                                onPressed: () {},
+                                child: Text(
+                                  "Şifremi Unuttum",
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.4),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 

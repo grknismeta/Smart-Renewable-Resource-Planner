@@ -6,12 +6,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
+import 'dart:math' as math;
+
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../../../providers/map_provider.dart';
-import '../../../providers/theme_provider.dart';
+import '../../../presentation/viewmodels/map_view_model.dart';
+import '../../../presentation/viewmodels/theme_view_model.dart';
 import '../../features/map/viewmodels/map_screen_viewmodel.dart';
 import 'map_widgets.dart';
 
@@ -34,49 +35,153 @@ class _FlutterMapViewState extends State<FlutterMapView> {
   final GlobalKey<State> _mapKey = GlobalKey<State>();
   LatLng? _hoverPosition;
 
-  // Turkey bounds
-  static const double _minLat = 35.5;
-  static const double _maxLat = 42.5;
-  static const double _minLon = 25.5;
-  static const double _maxLon = 45.0;
-
-  void _handleMapTap(TapPosition tapPosition, LatLng point) {
-    final mapProvider = Provider.of<MapProvider>(context, listen: false);
+  Future<void> _handleMapTap(TapPosition tapPosition, LatLng point) async {
+    final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
 
     // Region selection mode
-    if (mapProvider.isSelectingRegion) {
+    if (mapViewModel.isSelectingRegion) {
       final clamped = LatLng(
-        point.latitude.clamp(_minLat, _maxLat),
-        point.longitude.clamp(_minLon, _maxLon),
+        point.latitude.clamp(
+          MapConstants.turkeyMinLat,
+          MapConstants.turkeyMaxLat,
+        ),
+        point.longitude.clamp(
+          MapConstants.turkeyMinLon,
+          MapConstants.turkeyMaxLon,
+        ),
       );
-      mapProvider.recordSelectionPoint(clamped);
+      mapViewModel.recordSelectionPoint(clamped);
       return;
     }
 
     // Pin placement mode
-    if (mapProvider.placingPinType != null) {
-      MapDialogs.showAddPinDialog(context, point, mapProvider.placingPinType!);
+    if (mapViewModel.placingPinType != null) {
+      // 1. Analizi Başlat
+      await mapViewModel.analyzeLocation(point);
+
+      if (!mounted) return;
+
+      final result = mapViewModel.latestGeoAnalysis;
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Analiz yapılamadı, lütfen tekrar deneyin.'),
+          ),
+        );
+        return;
+      }
+
+      final bool isSuitable = result['suitable'] ?? false;
+      final String recommendation = result['recommendation'] ?? '';
+
+      // 2. Sonucu Göster
+      if (!isSuitable) {
+        // UYGUN DEĞİL - EKRANA BAS
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('⛔ Kurulum Yapılamaz'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  recommendation,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Bu bölge coğrafi kısıtlamalar nedeniyle (Deniz, Göl, Yol, Bina, Eğim vb.) uygun değildir.',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  mapViewModel.clearGeoAnalysis(); // Kırmızı alanı temizle
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Tamam'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        // UYGUN - RİSK KONTROLÜ
+        final bool isSolar = mapViewModel.placingPinType == 'Güneş Paneli';
+        final details = isSolar
+            ? result['solar_details']
+            : result['wind_details'];
+        final bool specificSuitable = details != null
+            ? details['suitable']
+            : true;
+
+        if (!specificSuitable) {
+          // Genel uygun ama bu tür için riskli
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('⚠️ Uyarı'),
+              content: Text(
+                'Bu bölge genel olarak uygun olsa da, seçtiğiniz tür ($isSolar) için riskli olabilir.\n\nSebep: $recommendation',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('İptal'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    MapDialogs.showAddPinDialog(
+                      context,
+                      point,
+                      mapViewModel.placingPinType!,
+                    );
+                  },
+                  child: const Text('Yine de Ekle'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          // HER ŞEY MÜKEMMEL
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(recommendation),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          MapDialogs.showAddPinDialog(
+            context,
+            point,
+            mapViewModel.placingPinType!,
+          );
+        }
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final mapProvider = Provider.of<MapProvider>(context);
-    final theme = Provider.of<ThemeProvider>(context);
+    final mapViewModel = Provider.of<MapViewModel>(context);
+    final themeViewModel = Provider.of<ThemeViewModel>(context);
 
     return Stack(
       children: [
-        _buildMap(mapProvider, theme),
-        if (_hoverPosition != null && mapProvider.currentLayer != MapLayer.none)
-          _buildHoverInfo(mapProvider, theme),
+        _buildMap(mapViewModel, themeViewModel),
+        if (_hoverPosition != null &&
+            mapViewModel.currentLayer != MapLayer.none)
+          _buildHoverInfo(mapViewModel, themeViewModel),
       ],
     );
   }
 
-  Widget _buildMap(MapProvider mapProvider, ThemeProvider theme) {
-    final markers = _buildMarkers(mapProvider);
-    final weatherCircles = _buildWeatherCircles(mapProvider);
-    final polygons = _buildSelectionPolygons(mapProvider);
+  Widget _buildMap(MapViewModel mapViewModel, ThemeViewModel theme) {
+    final markers = _buildMarkers(mapViewModel);
+    // final weatherCircles = _buildWeatherCircles(mapViewModel); // Removed
+    final polygons = _buildSelectionPolygons(mapViewModel);
 
     return MouseRegion(
       onHover: (event) {
@@ -91,18 +196,25 @@ class _FlutterMapViewState extends State<FlutterMapView> {
         key: _mapKey,
         mapController: widget.mapController,
         options: MapOptions(
-          initialCameraFit: CameraFit.bounds(
-            bounds: LatLngBounds(
-              const LatLng(_minLat, _minLon),
-              const LatLng(_maxLat, _maxLon),
-            ),
-            padding: const EdgeInsets.all(12),
+          initialCenter: const LatLng(
+            MapConstants.turkeyCenterLat,
+            MapConstants.turkeyCenterLon,
           ),
-          minZoom: 5.8,
+          initialZoom: MapConstants.initialZoom,
+          cameraConstraint: CameraConstraint.contain(
+            bounds: LatLngBounds(
+              const LatLng(
+                MapConstants.turkeyMinLat,
+                MapConstants.turkeyMinLon,
+              ),
+              const LatLng(
+                MapConstants.turkeyMaxLat,
+                MapConstants.turkeyMaxLon,
+              ),
+            ),
+          ),
+          minZoom: MapConstants.minZoom,
           maxZoom: MapConstants.maxZoom,
-          onPositionChanged: (position, hasGesture) {
-            if (hasGesture) _constrainToTurkey(position.center);
-          },
           interactionOptions: const InteractionOptions(
             flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
           ),
@@ -111,22 +223,53 @@ class _FlutterMapViewState extends State<FlutterMapView> {
         ),
         children: [
           TileLayer(
-            tileProvider: CancellableNetworkTileProvider(),
+            tileProvider: NetworkTileProvider(),
             urlTemplate: MapConstants.getTileUrl(widget.selectedBaseMap),
+            maxNativeZoom: MapConstants.maxNativeZoom.ceil(),
+            userAgentPackageName: 'com.srrp.frontend',
             keepBuffer: 10,
             panBuffer: 1,
           ),
-          if (weatherCircles.isNotEmpty) CircleLayer(circles: weatherCircles),
+          ..._buildWeatherLayers(mapViewModel),
           if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
-          MarkerLayer(markers: _buildSelectionPointMarkers(mapProvider)),
+          // Restricted Area Layer (Hatch Pattern Simulation - Red semi-transparent)
+          if (mapViewModel.restrictedArea.isNotEmpty)
+            PolygonLayer(
+              polygons: [
+                Polygon(
+                  points: mapViewModel.restrictedArea,
+                  color: Colors.red.withValues(alpha: 0.4),
+                  borderColor: Colors.red,
+                  borderStrokeWidth: 3,
+                ),
+              ],
+            ),
+          MarkerLayer(markers: _buildSelectionPointMarkers(mapViewModel)),
           MarkerLayer(markers: markers),
+          if (mapViewModel.isAnalyzingGeo)
+            const Center(
+              child: Card(
+                color: Colors.white,
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 10),
+                      Text("Arazi Analiz Ediliyor..."),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  List<Marker> _buildMarkers(MapProvider mapProvider) {
-    final markers = mapProvider.pins.map((pin) {
+  List<Marker> _buildMarkers(MapViewModel mapViewModel) {
+    final markers = mapViewModel.pins.map((pin) {
       return Marker(
         width: 50.0,
         height: 50.0,
@@ -139,8 +282,8 @@ class _FlutterMapViewState extends State<FlutterMapView> {
     }).toList();
 
     // Add optimization markers
-    if (mapProvider.optimizationResult != null) {
-      final optimizedMarkers = mapProvider.optimizationResult!.points.map((
+    if (mapViewModel.optimizationResult != null) {
+      final optimizedMarkers = mapViewModel.optimizationResult!.points.map((
         point,
       ) {
         return Marker(
@@ -171,34 +314,71 @@ class _FlutterMapViewState extends State<FlutterMapView> {
     return markers;
   }
 
-  List<CircleMarker> _buildWeatherCircles(MapProvider mapProvider) {
-    if (mapProvider.currentLayer == MapLayer.none) return [];
-    if (mapProvider.weatherData.isEmpty) return [];
+  List<Widget> _buildWeatherLayers(MapViewModel mapViewModel) {
+    if (mapViewModel.currentLayer == MapLayer.none) return [];
+    if (mapViewModel.weatherData.isEmpty) return [];
 
-    return mapProvider.weatherData.map((city) {
-      final value = mapProvider.currentLayer == MapLayer.temp
-          ? city.temperature
-          : city.windSpeed;
-      final color = mapProvider.currentLayer == MapLayer.temp
-          ? MapScreenViewModel.getTemperatureColor(value)
-          : MapScreenViewModel.getWindColor(value);
+    if (mapViewModel.currentLayer == MapLayer.wind) {
+      // Wind Layer - Arrow Markers
+      final markers = mapViewModel.weatherData.map((city) {
+        final color = MapScreenViewModel.getWindColor(city.windSpeed);
+        
+        // Rüzgar yönü varsa oku döndür, yoksa yukarı (0) varsay veya gösterme
+        // Derece cinsinden geliyor (0=Kuzey, 90=Doğu vb.)
+        // ArrowUp iconu varsayılan olarak yukarı bakar (0 derece)
+        // Transform.rotate radyan ister.
+        // windDirection (derece) -> radyan: degree * pi / 180
+        // Rüzgarın GELİŞ yönü mü GİDİŞ yönü mü? Meteorolojide geliş yönü verilir.
+        // Okun rüzgarın estiği yöne bakması için: Geliş yönü + 180 derece döndürmeliyiz.
+        // Örneğin Kuzeyden (0) esiyorsa, ok güneye (180) bakmalı.
+        final angleDegrees = (city.windDirection ?? 0.0) + 180;
+        final angleRadian = angleDegrees * (math.pi / 180.0);
 
-      return CircleMarker(
-        point: LatLng(city.lat, city.lon),
-        radius: 15,
-        color: color.withValues(alpha: 0.6),
-        borderColor: color,
-        borderStrokeWidth: 2,
-      );
-    }).toList();
+        return Marker(
+          point: LatLng(city.lat, city.lon),
+          width: 30,
+          height: 30,
+          child: Transform.rotate(
+            angle: angleRadian,
+            child: Icon(
+              Icons.arrow_upward_rounded,
+              color: color,
+              size: 24,
+            ),
+          ),
+        );
+      }).toList();
+
+      return [MarkerLayer(markers: markers)];
+    } else {
+      // Temp Layer (or fallback) - Circles
+      final circles = mapViewModel.weatherData.map((city) {
+        final value = mapViewModel.currentLayer == MapLayer.temp
+            ? city.temperature
+            : city.windSpeed;
+        final color = mapViewModel.currentLayer == MapLayer.temp
+            ? MapScreenViewModel.getTemperatureColor(value)
+            : MapScreenViewModel.getWindColor(value);
+
+        return CircleMarker(
+          point: LatLng(city.lat, city.lon),
+          radius: 15,
+          color: color.withValues(alpha: 0.6),
+          borderColor: color,
+          borderStrokeWidth: 2,
+        );
+      }).toList();
+      
+      return [CircleLayer(circles: circles)];
+    }
   }
 
-  List<Polygon> _buildSelectionPolygons(MapProvider mapProvider) {
-    if (mapProvider.selectionPoints.isEmpty) return [];
+  List<Polygon> _buildSelectionPolygons(MapViewModel mapViewModel) {
+    if (mapViewModel.selectionPoints.isEmpty) return [];
 
     return [
       Polygon(
-        points: mapProvider.selectionPoints,
+        points: mapViewModel.selectionPoints,
         color: Colors.blue.withValues(alpha: 0.3),
         borderColor: Colors.blue,
         borderStrokeWidth: 2,
@@ -206,24 +386,24 @@ class _FlutterMapViewState extends State<FlutterMapView> {
     ];
   }
 
-  List<Marker> _buildSelectionPointMarkers(MapProvider mapProvider) {
-    if (mapProvider.selectionPoints.isEmpty) return [];
+  List<Marker> _buildSelectionPointMarkers(MapViewModel mapViewModel) {
+    if (mapViewModel.selectionPoints.isEmpty) return [];
 
-    return List.generate(mapProvider.selectionPoints.length, (index) {
-      final point = mapProvider.selectionPoints[index];
-      final isDragging = mapProvider.draggingPointIndex == index;
+    return List.generate(mapViewModel.selectionPoints.length, (index) {
+      final point = mapViewModel.selectionPoints[index];
+      final isDragging = mapViewModel.draggingPointIndex == index;
 
       return Marker(
         width: isDragging ? 56 : 48,
         height: isDragging ? 56 : 48,
         point: point,
         child: GestureDetector(
-          onPanStart: (_) => mapProvider.startDraggingPoint(index),
-          onPanUpdate: (details) => _handlePointDrag(details, mapProvider),
-          onPanEnd: (_) => mapProvider.endDraggingPoint(),
+          onPanStart: (_) => mapViewModel.startDraggingPoint(index),
+          onPanUpdate: (details) => _handlePointDrag(details, mapViewModel),
+          onPanEnd: (_) => mapViewModel.endDraggingPoint(),
           onLongPress: () {
             HapticFeedback.mediumImpact();
-            mapProvider.removePointAt(index);
+            mapViewModel.removePointAt(index);
           },
           child: Container(
             decoration: BoxDecoration(
@@ -250,7 +430,7 @@ class _FlutterMapViewState extends State<FlutterMapView> {
     });
   }
 
-  void _handlePointDrag(DragUpdateDetails details, MapProvider mapProvider) {
+  void _handlePointDrag(DragUpdateDetails details, MapViewModel mapViewModel) {
     try {
       final renderBox =
           _mapKey.currentContext?.findRenderObject() as RenderBox?;
@@ -261,21 +441,27 @@ class _FlutterMapViewState extends State<FlutterMapView> {
       var newPoint = camera.offsetToCrs(localPosition);
 
       newPoint = LatLng(
-        newPoint.latitude.clamp(_minLat, _maxLat),
-        newPoint.longitude.clamp(_minLon, _maxLon),
+        newPoint.latitude.clamp(
+          MapConstants.turkeyMinLat,
+          MapConstants.turkeyMaxLat,
+        ),
+        newPoint.longitude.clamp(
+          MapConstants.turkeyMinLon,
+          MapConstants.turkeyMaxLon,
+        ),
       );
 
-      mapProvider.dragPoint(newPoint);
+      mapViewModel.dragPoint(newPoint);
     } catch (e) {
       debugPrint('Drag error: $e');
     }
   }
 
-  Widget _buildHoverInfo(MapProvider mapProvider, ThemeProvider theme) {
-    final nearestCity = mapProvider.findNearestCity(_hoverPosition!);
+  Widget _buildHoverInfo(MapViewModel mapViewModel, ThemeViewModel theme) {
+    final nearestCity = mapViewModel.findNearestCity(_hoverPosition!);
     if (nearestCity == null) return const SizedBox.shrink();
 
-    final isTemp = mapProvider.currentLayer == MapLayer.temp;
+    final isTemp = mapViewModel.currentLayer == MapLayer.temp;
     final value = isTemp ? nearestCity.temperature : nearestCity.windSpeed;
     final unit = isTemp ? '°C' : 'm/s';
     final icon = isTemp ? Icons.thermostat : Icons.air;
@@ -289,14 +475,37 @@ class _FlutterMapViewState extends State<FlutterMapView> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: theme.cardColor.withValues(alpha: 0.95),
+          // İsteğe göre: Rüzgar rengi ise o rengin şeffaf hali
+          // Değilse (Sıcaklık) yine kendi rengi veya varsayılan kart rengi
+          color: !isTemp
+            ? color.withValues(alpha: 0.85) // Rüzgarda o rengin şeffafı
+            : theme.cardColor.withValues(alpha: 0.95), // Sıcaklıkta standart
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color, width: 2),
+          border: Border.all(
+            color: isTemp ? color : Colors.white.withValues(alpha: 0.5), 
+            width: 2
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 24),
+            if (!isTemp && nearestCity.windDirection != null) ...[
+              // Rüzgar yönü oku (popup içinde)
+              Transform.rotate(
+                angle: (nearestCity.windDirection! + 180) * (math.pi / 180.0),
+                child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 28),
+              ),
+              const SizedBox(width: 8),
+            ] else 
+              Icon(icon, color: isTemp ? color : Colors.white, size: 24),
+
             const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -305,7 +514,8 @@ class _FlutterMapViewState extends State<FlutterMapView> {
                 Text(
                   nearestCity.cityName,
                   style: TextStyle(
-                    color: theme.textColor,
+                    // Rüzgar modunda arka plan renkli olduğu için beyaz text
+                    color: isTemp ? theme.textColor : Colors.white,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
                   ),
@@ -313,32 +523,24 @@ class _FlutterMapViewState extends State<FlutterMapView> {
                 Text(
                   '${value.toStringAsFixed(1)} $unit',
                   style: TextStyle(
-                    color: color,
+                    color: isTemp ? color : Colors.white,
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
                   ),
                 ),
+                if (!isTemp && nearestCity.windDirection != null)
+                   Text(
+                    'Yön: ${nearestCity.windDirection!.toStringAsFixed(0)}°',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
               ],
             ),
           ],
         ),
       ),
     );
-  }
-
-  void _constrainToTurkey(LatLng? center) {
-    if (center == null) return;
-
-    double newLat = center.latitude.clamp(_minLat, _maxLat);
-    double newLon = center.longitude.clamp(_minLon, _maxLon);
-
-    if (newLat != center.latitude || newLon != center.longitude) {
-      Future.microtask(() {
-        widget.mapController.move(
-          LatLng(newLat, newLon),
-          widget.mapController.camera.zoom,
-        );
-      });
-    }
   }
 }

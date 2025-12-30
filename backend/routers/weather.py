@@ -11,8 +11,8 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 
-from ..database import SystemSessionLocal
-from ..models import HourlyWeatherData
+from backend.db.database import SystemSessionLocal
+from backend.db.models import HourlyWeatherData
 from ..turkey_cities import TURKEY_CITIES
 
 router = APIRouter(
@@ -51,6 +51,7 @@ class HourlyDataResponse(BaseModel):
 
 class CitySummary(BaseModel):
     city_name: str
+    district_name: Optional[str] = None
     lat: float
     lon: float
     last_update: Optional[datetime]
@@ -128,18 +129,19 @@ def get_all_cities_summary(
         description="Özet için saat aralığı (varsayılan 7 gün = 168 saat)",
     )
 ):
-    """Tüm şehirler için özet bilgi getir (varsayılan son 7 gün)."""
+    """Tüm şehirler ve ilçeler için özet bilgi getir (varsayılan son 7 gün)."""
     db = SystemSessionLocal()
     try:
         # İstenen saat aralığı için özet hesapla
         cutoff = datetime.now() - timedelta(hours=hours)
         
         summaries = []
-        for city in TURKEY_CITIES:
-            city_name = city["name"]
+        for location in TURKEY_CITIES:
+            city_name = location["name"]
+            district_name = location.get("district")
             
-            # İstatistikler
-            stats = db.query(
+            # İstatistikler (city_name + district_name kombinasyonu ile)
+            query = db.query(
                 func.count(HourlyWeatherData.id).label('record_count'),
                 func.max(HourlyWeatherData.timestamp).label('last_update'),
                 func.avg(HourlyWeatherData.wind_speed_10m).label('avg_wind_10'),
@@ -149,12 +151,21 @@ def get_all_cities_summary(
             ).filter(
                 HourlyWeatherData.city_name == city_name,
                 HourlyWeatherData.timestamp >= cutoff
-            ).first()
+            )
+            
+            # District filtresi ekle
+            if district_name is not None:
+                query = query.filter(HourlyWeatherData.district_name == district_name)
+            else:
+                query = query.filter(HourlyWeatherData.district_name.is_(None))
+            
+            stats = query.first()
             
             summaries.append(CitySummary(
                 city_name=city_name,
-                lat=city["lat"],
-                lon=city["lon"],
+                district_name=district_name,
+                lat=location["lat"],
+                lon=location["lon"],
                 last_update=stats.last_update if stats else None,
                 record_count=int(stats.record_count) if stats else 0,
                 avg_wind_speed_10m=round(stats.avg_wind_10, 2) if stats and stats.avg_wind_10 else None,
@@ -264,10 +275,19 @@ def get_weather_at_time(
         results = []
         for city in TURKEY_CITIES:
             city_name = city["name"]
+            district_name = city.get("district")
             
             # En yakın zaman damgasına sahip kaydı bul
-            data = db.query(HourlyWeatherData)\
-                .filter(HourlyWeatherData.city_name == city_name)\
+            query = db.query(HourlyWeatherData)\
+                .filter(HourlyWeatherData.city_name == city_name)
+            
+            # District filtresi
+            if district_name is not None:
+                query = query.filter(HourlyWeatherData.district_name == district_name)
+            else:
+                query = query.filter(HourlyWeatherData.district_name.is_(None))
+            
+            data = query\
                 .filter(HourlyWeatherData.timestamp >= target_time - tolerance)\
                 .filter(HourlyWeatherData.timestamp <= target_time + tolerance)\
                 .order_by(func.abs(
@@ -283,6 +303,7 @@ def get_weather_at_time(
                     "temperature_2m": data.temperature_2m,
                     "wind_speed_100m": data.wind_speed_100m,
                     "wind_speed_10m": data.wind_speed_10m,
+                    "wind_direction_10m": data.wind_direction_10m,
                     "shortwave_radiation": data.shortwave_radiation,
                     "timestamp": data.timestamp.isoformat()
                 })

@@ -1,5 +1,5 @@
-from .database import SystemEngine, SystemBase, SystemSessionLocal, UserEngine, UserBase, UserSessionLocal
-from . import models
+from .db.database import SystemEngine, SystemBase, SystemSessionLocal, UserEngine, UserBase, UserSessionLocal, UserPinsEngine, UserPinsBase
+from .db import models
 
 def init_db():
     # 1. User DB (Pinler, Kullanıcılar, Senaryolar) tablolarını oluştur
@@ -7,6 +7,9 @@ def init_db():
     
     # 2. System DB (Ekipmanlar, Grid Analizi) tablolarını oluştur
     models.SystemBase.metadata.create_all(bind=SystemEngine)
+
+    # 3. User Pins DB (Hesaplama Sonuçları) tabloyu oluştur
+    models.UserPinsBase.metadata.create_all(bind=UserPinsEngine)
     
     # Sadece System DB'ye yazmak için Session aç
     db = SystemSessionLocal()

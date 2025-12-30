@@ -1,7 +1,7 @@
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from .database import SystemSessionLocal, SystemEngine, SystemBase
-from .models import WeatherData, GridAnalysis
+from .db.database import SystemSessionLocal, SystemEngine, SystemBase
+from .db.models import WeatherData, GridAnalysis
 import time
 
 def generate_grid_analysis():
@@ -34,7 +34,7 @@ def generate_grid_analysis():
         # --- İstatistikleri Çek ---
         stats = db.query(
             func.avg(WeatherData.shortwave_radiation_sum).label("avg_rad"), # MJ/m2
-            func.avg(models.WeatherData.wind_speed_mean).label("avg_wind")  # m/s
+            func.avg(WeatherData.wind_speed_mean).label("avg_wind")  # m/s
         ).filter(
             WeatherData.latitude == lat,
             WeatherData.longitude == lon
@@ -90,5 +90,5 @@ def generate_grid_analysis():
     print("Flutter haritası artık bu verileri kullanabilir.")
 
 if __name__ == "__main__":
-    from . import models # Modelleri yüklemek için
+    from .db import models # Modelleri yüklemek için
     generate_grid_analysis()

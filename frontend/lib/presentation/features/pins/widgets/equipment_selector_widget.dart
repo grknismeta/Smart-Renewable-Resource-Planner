@@ -5,7 +5,7 @@
 
 import 'package:flutter/material.dart';
 import '../../../../data/models/system_data_models.dart';
-import '../../../../providers/theme_provider.dart';
+import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
 
 /// Ekipman seçici widget - Reusable component
 class EquipmentSelectorWidget extends StatelessWidget {
@@ -13,7 +13,7 @@ class EquipmentSelectorWidget extends StatelessWidget {
   final int? selectedEquipmentId;
   final bool isLoading;
   final ValueChanged<int?> onChanged;
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
   final String hintText;
 
   const EquipmentSelectorWidget({

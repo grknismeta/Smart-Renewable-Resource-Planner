@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import '../../../providers/theme_provider.dart';
+import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
 
 /// Tema uyumlu text field widget'ı
 class ThemedTextField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
   final bool isNumber;
   final bool obscureText;
   final String? Function(String?)? validator;
@@ -66,7 +66,7 @@ class ThemedDropdown<T> extends StatelessWidget {
   final T value;
   final List<DropdownMenuItem<T>> items;
   final String label;
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
   final void Function(T?) onChanged;
 
   const ThemedDropdown({

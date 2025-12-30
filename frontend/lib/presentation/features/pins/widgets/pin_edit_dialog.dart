@@ -5,8 +5,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../data/models/pin_model.dart';
-import '../../../../providers/map_provider.dart';
-import '../../../../providers/theme_provider.dart';
+import 'package:frontend/presentation/viewmodels/map_view_model.dart';
+import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
 import '../viewmodels/pin_dialog_viewmodel.dart';
 import 'equipment_selector_widget.dart';
 import '../../../widgets/map/map_constants.dart';
@@ -29,10 +29,10 @@ class _PinEditDialogState extends State<PinEditDialog> {
   @override
   void initState() {
     super.initState();
-    final mapProvider = Provider.of<MapProvider>(context, listen: false);
+    final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
 
     _viewModel = PinDialogViewModel(
-      mapProvider,
+      mapViewModel,
       widget.pin.type,
       initialEquipmentId: widget.pin.equipmentId,
     );
@@ -53,19 +53,19 @@ class _PinEditDialogState extends State<PinEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Provider.of<ThemeProvider>(context);
-    final mapProvider = Provider.of<MapProvider>(context);
+    final themeViewModel = Provider.of<ThemeViewModel>(context);
+    final mapViewModel = Provider.of<MapViewModel>(context);
 
     return ChangeNotifierProvider.value(
       value: _viewModel,
-      child: _buildDialog(context, theme, mapProvider),
+      child: _buildDialog(context, themeViewModel, mapViewModel),
     );
   }
 
   Widget _buildDialog(
     BuildContext context,
-    ThemeProvider theme,
-    MapProvider mapProvider,
+    ThemeViewModel theme,
+    MapViewModel mapViewModel,
   ) {
     return Consumer<PinDialogViewModel>(
       builder: (context, vm, _) {
@@ -95,9 +95,9 @@ class _PinEditDialogState extends State<PinEditDialog> {
                   _buildPanelAreaField(theme),
                 ],
                 if (vm.hasError) _buildErrorMessage(vm, theme),
-                if (mapProvider.isLoading) _buildLoadingIndicator(),
+                if (mapViewModel.isBusy) _buildLoadingIndicator(),
                 const SizedBox(height: 20),
-                _buildActions(vm, mapProvider, theme),
+                _buildActions(vm, mapViewModel, theme),
                 const SizedBox(height: 20),
               ],
             ),
@@ -107,7 +107,7 @@ class _PinEditDialogState extends State<PinEditDialog> {
     );
   }
 
-  Widget _buildHeader(ThemeProvider theme) {
+  Widget _buildHeader(ThemeViewModel theme) {
     final iconColor = MapConstants.getForegroundColor(widget.pin.type);
     final bgColor = MapConstants.getBackgroundColor(widget.pin.type);
     final iconData = MapConstants.getIcon(widget.pin.type);
@@ -145,14 +145,14 @@ class _PinEditDialogState extends State<PinEditDialog> {
     );
   }
 
-  Widget _buildInfo(ThemeProvider theme) {
+  Widget _buildInfo(ThemeViewModel theme) {
     return Text(
       'Yıllık Potansiyel: ${widget.pin.avgSolarIrradiance?.toStringAsFixed(2) ?? 'N/A'} kWh/m²',
       style: TextStyle(color: theme.textColor),
     );
   }
 
-  Widget _buildNameField(ThemeProvider theme) {
+  Widget _buildNameField(ThemeViewModel theme) {
     return TextField(
       controller: _nameController,
       style: TextStyle(color: theme.textColor),
@@ -171,7 +171,7 @@ class _PinEditDialogState extends State<PinEditDialog> {
     );
   }
 
-  Widget _buildTypeSelector(PinDialogViewModel vm, ThemeProvider theme) {
+  Widget _buildTypeSelector(PinDialogViewModel vm, ThemeViewModel theme) {
     return DropdownButtonFormField<String>(
       value: vm.selectedType,
       dropdownColor: theme.cardColor,
@@ -188,7 +188,7 @@ class _PinEditDialogState extends State<PinEditDialog> {
     );
   }
 
-  Widget _buildEquipmentSelector(PinDialogViewModel vm, ThemeProvider theme) {
+  Widget _buildEquipmentSelector(PinDialogViewModel vm, ThemeViewModel theme) {
     return EquipmentSelectorWidget(
       equipments: vm.availableEquipments,
       selectedEquipmentId: vm.selectedEquipmentId,
@@ -198,7 +198,7 @@ class _PinEditDialogState extends State<PinEditDialog> {
     );
   }
 
-  Widget _buildPanelAreaField(ThemeProvider theme) {
+  Widget _buildPanelAreaField(ThemeViewModel theme) {
     return TextField(
       controller: _panelAreaController,
       style: TextStyle(color: theme.textColor),
@@ -210,7 +210,7 @@ class _PinEditDialogState extends State<PinEditDialog> {
     );
   }
 
-  Widget _buildErrorMessage(PinDialogViewModel vm, ThemeProvider theme) {
+  Widget _buildErrorMessage(PinDialogViewModel vm, ThemeViewModel theme) {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Text(
@@ -229,8 +229,8 @@ class _PinEditDialogState extends State<PinEditDialog> {
 
   Widget _buildActions(
     PinDialogViewModel vm,
-    MapProvider mapProvider,
-    ThemeProvider theme,
+    MapViewModel mapViewModel,
+    ThemeViewModel theme,
   ) {
     return Row(
       children: [
@@ -238,7 +238,7 @@ class _PinEditDialogState extends State<PinEditDialog> {
           icon: const Icon(Icons.delete, color: Colors.redAccent),
           onPressed: () async {
             Navigator.of(context).pop();
-            await mapProvider.deletePin(widget.pin.id);
+            await mapViewModel.deletePin(widget.pin.id);
           },
         ),
         const Spacer(),
@@ -249,7 +249,7 @@ class _PinEditDialogState extends State<PinEditDialog> {
             backgroundColor: Colors.green,
             foregroundColor: Colors.white,
           ),
-          onPressed: vm.canSubmit ? () => _onCalculate(vm, mapProvider) : null,
+          onPressed: vm.canSubmit ? () => _onCalculate(vm, mapViewModel) : null,
         ),
       ],
     );
@@ -257,7 +257,7 @@ class _PinEditDialogState extends State<PinEditDialog> {
 
   Future<void> _onCalculate(
     PinDialogViewModel vm,
-    MapProvider mapProvider,
+    MapViewModel mapViewModel,
   ) async {
     final success = await vm.calculatePotential(
       lat: widget.pin.latitude,
