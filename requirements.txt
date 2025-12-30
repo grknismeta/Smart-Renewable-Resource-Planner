@@ -17,3 +17,4 @@ joblib
 numpy
 matplotlib
 seaborn
+scipy>=1.10.0

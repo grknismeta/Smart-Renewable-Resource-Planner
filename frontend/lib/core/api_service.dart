@@ -440,6 +440,25 @@ class ApiService {
     throw Exception('Rapor verisi alınamadı (status: ${response.statusCode})');
   }
 
+  Future<List<Map<String, dynamic>>> fetchInterpolatedMap(String type) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_apiBaseUrl/reports/interpolated-map?type=$type&resolution=0.1'),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        return data.cast<Map<String, dynamic>>();
+      } else {
+        throw Exception('Interpolated map fetch failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Interpolated Map Error: $e');
+      return []; // Hata durumunda boş dön
+    }
+  }
+
   // --- Senaryolar ---
 
   Future<List<Scenario>> fetchScenarios() async {

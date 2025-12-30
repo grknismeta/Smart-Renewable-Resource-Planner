@@ -12,7 +12,7 @@ from backend.schemas import schemas
 from backend.services import solar_service as solar_calculations, wind_service as wind_calculations
 from backend.db.database import get_db
 # ML modülünü import ediyoruz
-from ..ml_predictor import predict_future_production 
+# from ..ml_predictor import predict_future_production 
 
 router = APIRouter()
 

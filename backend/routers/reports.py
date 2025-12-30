@@ -8,7 +8,7 @@ from sqlalchemy import func
 from backend import auth
 from backend.db import models
 from backend.schemas import schemas
-from backend.db.database import get_system_db
+from backend.db.database import get_system_db, get_db
 # Yeni yapıdaki fonksiyonları ve veri setini import ediyoruz
 from ..turkey_cities import TURKEY_CITIES, get_location_by_name
 
@@ -244,3 +244,83 @@ def get_regional_report(
         items=items,
         stats=stats,
     )
+
+@router.get("/interpolated-map", response_model=List[Dict[str, float]])
+def get_interpolated_map(
+    type: str = Query(..., description="Solar veya Wind"),
+    resolution: float = Query(0.1, description="Grid resolution (degrees)"),
+    system_db: Session = Depends(get_system_db)
+):
+    """
+    Tüm Türkiye için enterpolasyon ile oluşturulmuş sürekli ısı haritası verisi döndürür.
+    """
+    from backend.services.interpolation_service import InterpolationService
+    
+    # 1. Mevcut Tüm Veriyi Topla (Grid + Hourly fallback)
+    
+    # A. GridAnalysis Verileri
+    grid_query = system_db.query(models.GridAnalysis).filter(
+        models.GridAnalysis.type == type,
+        models.GridAnalysis.overall_score > 0
+    ).all()
+    
+    points = []
+    for g in grid_query:
+        val = float(g.overall_score)
+        points.append({
+            "lat": float(g.latitude), 
+            "lon": float(g.longitude), 
+            "value": val
+        })
+        
+    # B. Eksik Bölgeler İçin Hourly Data (Fallback)
+    # Temperature için ana veri kaynağı burası olabilir (GridAnalysis'de Temp yoksa)
+    
+    cutoff = datetime.utcnow() - timedelta(hours=72)
+    
+    # Sorguyu dinamik yap (Type'a göre select değişebilir)
+    hourly_query = system_db.query(
+        models.HourlyWeatherData.city_name,
+        func.max(models.HourlyWeatherData.latitude).label("lat"),
+        func.max(models.HourlyWeatherData.longitude).label("lon"),
+        func.avg(models.HourlyWeatherData.wind_speed_100m).label("avg_wind"),
+        func.avg(models.HourlyWeatherData.temperature_2m).label("avg_temp"),
+        func.sum(models.HourlyWeatherData.shortwave_radiation).label("total_rad")
+    ).filter(models.HourlyWeatherData.timestamp >= cutoff).group_by(models.HourlyWeatherData.city_name).all()
+    
+    for h in hourly_query:
+        # Puanlama mantığı
+        val = 0.0
+        if type == "Wind":
+             # 10 m/s -> ~100 puan
+             val = float(h.avg_wind or 0) * 10
+        elif type == "Solar":
+             # Wh -> Score tahmini
+             solar_est = (float(h.total_rad or 0) * 0.12)
+             val = solar_est / 20.0
+        elif type == "Temperature":
+             # Doğrudan derece
+             val = float(h.avg_temp or 0)
+             
+        points.append({
+            "lat": float(h.lat),
+            "lon": float(h.lon),
+            "value": val
+        })
+        
+    if not points:
+        return []
+
+    # 2. Enterpolasyon Servisini Çağır
+    try:
+        # IDW Power ayarı (1.5 daha yumuşak)
+        interpolated_grid = InterpolationService.interpolate_points(
+            points, 
+            value_key="value", 
+            resolution=resolution,
+            power=1.5
+        )
+        return interpolated_grid
+    except Exception as e:
+        print(f"Interpolasyon hatası: {e}")
+        return []

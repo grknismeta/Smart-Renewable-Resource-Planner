@@ -51,8 +51,23 @@ class MapViewModel extends BaseViewModel {
   PinCalculationResponse? get latestCalculationResult =>
       _latestCalculationResult;
 
+  // --- Heatmap State ---
+  List<Map<String, dynamic>> _interpolatedData = [];
+  bool _isHeatmapLoading = false;
+
+  bool get isHeatmapLoading => _isHeatmapLoading;
+
   // --- HEATMAP İÇİN VERİ DÖNÜŞÜMÜ ---
   List<HeatmapPoint> get heatmapPoints {
+    // Eğer enterpolasyon verisi varsa onu kullan (Daha yüksek çözünürlük)
+    if (_interpolatedData.isNotEmpty) {
+       return _interpolatedData.map((d) => HeatmapPoint(
+         latitude: d['lat'],
+         longitude: d['lon'],
+         value: d['value'],
+       )).toList();
+    }
+
     if (_currentLayer == MapLayer.wind) {
       return _weatherData.map((d) {
         return HeatmapPoint(
@@ -308,25 +323,49 @@ class MapViewModel extends BaseViewModel {
 
   void setLayer(MapLayer layer) {
     _currentLayer = layer;
+    _fetchHeatmapDataForLayer(layer);
     notifyListeners();
   }
 
   void changeMapLayer() {
     switch (_currentLayer) {
       case MapLayer.none:
-        _currentLayer = MapLayer.wind;
+        setLayer(MapLayer.wind);
         break;
       case MapLayer.wind:
-        _currentLayer = MapLayer.temp;
+        setLayer(MapLayer.temp);
         break;
       case MapLayer.temp:
-        _currentLayer = MapLayer.irradiance;
+        setLayer(MapLayer.irradiance);
         break;
       case MapLayer.irradiance:
-        _currentLayer = MapLayer.none;
+        setLayer(MapLayer.none);
         break;
     }
+  }
+
+  Future<void> _fetchHeatmapDataForLayer(MapLayer layer) async {
+    _interpolatedData = []; // Önce temizle
+    _isHeatmapLoading = true;
     notifyListeners();
+
+    try {
+      if (layer == MapLayer.wind) {
+        // Wind Interpolation
+        _interpolatedData = await _apiService.fetchInterpolatedMap("Wind");
+      } else if (layer == MapLayer.irradiance) {
+        // Solar Interpolation
+        _interpolatedData = await _apiService.fetchInterpolatedMap("Solar");
+      } else if (layer == MapLayer.temp) {
+        // Temperature Interpolation
+        _interpolatedData = await _apiService.fetchInterpolatedMap("Temperature");
+      }
+    } catch (e) {
+      debugPrint('Heatmap loading error: $e');
+    } finally {
+      _isHeatmapLoading = false;
+      notifyListeners();
+    }
   }
 
   void clearCalculationResult() {
