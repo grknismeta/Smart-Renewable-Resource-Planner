@@ -657,6 +657,16 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
     );
   }
 
+  String _formatEnergy(double kwh) {
+    if (kwh >= 1000000) {
+      return '${(kwh / 1000000).toStringAsFixed(2)} GWh';
+    } else if (kwh >= 1000) {
+      return '${(kwh / 1000).toStringAsFixed(2)} MWh';
+    } else {
+      return '${kwh.toStringAsFixed(2)} kWh';
+    }
+  }
+
   Widget _buildResultSummary(Map<String, dynamic> data, ThemeViewModel theme) {
     final double totalSolar = (data['total_solar_kwh'] ?? 0).toDouble();
     final double totalWind = (data['total_wind_kwh'] ?? 0).toDouble();
@@ -678,7 +688,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
               Expanded(
                 child: _buildEnergyCard(
                   'Toplam Üretim',
-                  '${(totalEnergy / 1000).toStringAsFixed(2)} MWh',
+                  _formatEnergy(totalEnergy),
                   Icons.flash_on,
                   Colors.amber,
                   theme,
@@ -692,7 +702,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
               Expanded(
                 child: _buildEnergyCard(
                   'Güneş ($solarCount)',
-                  '${(totalSolar / 1000).toStringAsFixed(2)} MWh',
+                  _formatEnergy(totalSolar),
                   Icons.wb_sunny,
                   Colors.orangeAccent,
                   theme,
@@ -702,7 +712,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
               Expanded(
                 child: _buildEnergyCard(
                   'Rüzgar ($windCount)',
-                  '${(totalWind / 1000).toStringAsFixed(2)} MWh',
+                  _formatEnergy(totalWind),
                   Icons.air,
                   Colors.lightBlueAccent,
                   theme,

@@ -49,7 +49,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   // Restricted areas polygons to draw
-  List<List<LatLng>> _restrictedAreas = [];
+  final List<List<LatLng>> _restrictedAreas = [];
 
   void _handleMapTap(TapPosition tapPosition, LatLng point) async {
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
@@ -174,10 +174,12 @@ class _MapScreenState extends State<MapScreen> {
 
     // Uygunsa hangi tip için uygun olduğunu göster ve ekleme opsiyonu sun
     String suitableType = "Güneş Paneli"; // Varsayılan
-    if (wind['suitable'] == true && solar['suitable'] == false)
+    if (wind['suitable'] == true && solar['suitable'] == false) {
       suitableType = "Rüzgar Türbini";
-    if (solar['suitable'] == true && wind['suitable'] == false)
+    }
+    if (solar['suitable'] == true && wind['suitable'] == false) {
       suitableType = "Güneş Paneli";
+    }
     // İkisi de uygunsa kullanıcıya bırakabiliriz ama varsayılan Güneş
 
     _showResultDialog(

@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'dart:math' as math;
 
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -122,7 +123,7 @@ class _FlutterMapViewState extends State<FlutterMapView> {
             builder: (ctx) => AlertDialog(
               title: const Text('⚠️ Uyarı'),
               content: Text(
-                'Bu bölge genel olarak uygun olsa da, seçtiğiniz tür ($isSolar) için riskli olabilir.\n\nSebep: ${recommendation}',
+                'Bu bölge genel olarak uygun olsa da, seçtiğiniz tür ($isSolar) için riskli olabilir.\n\nSebep: $recommendation',
               ),
               actions: [
                 TextButton(
@@ -179,7 +180,7 @@ class _FlutterMapViewState extends State<FlutterMapView> {
 
   Widget _buildMap(MapViewModel mapViewModel, ThemeViewModel theme) {
     final markers = _buildMarkers(mapViewModel);
-    final weatherCircles = _buildWeatherCircles(mapViewModel);
+    // final weatherCircles = _buildWeatherCircles(mapViewModel); // Removed
     final polygons = _buildSelectionPolygons(mapViewModel);
 
     return MouseRegion(
@@ -229,7 +230,7 @@ class _FlutterMapViewState extends State<FlutterMapView> {
             keepBuffer: 10,
             panBuffer: 1,
           ),
-          if (weatherCircles.isNotEmpty) CircleLayer(circles: weatherCircles),
+          ..._buildWeatherLayers(mapViewModel),
           if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
           // Restricted Area Layer (Hatch Pattern Simulation - Red semi-transparent)
           if (mapViewModel.restrictedArea.isNotEmpty)
@@ -313,26 +314,63 @@ class _FlutterMapViewState extends State<FlutterMapView> {
     return markers;
   }
 
-  List<CircleMarker> _buildWeatherCircles(MapViewModel mapViewModel) {
+  List<Widget> _buildWeatherLayers(MapViewModel mapViewModel) {
     if (mapViewModel.currentLayer == MapLayer.none) return [];
     if (mapViewModel.weatherData.isEmpty) return [];
 
-    return mapViewModel.weatherData.map((city) {
-      final value = mapViewModel.currentLayer == MapLayer.temp
-          ? city.temperature
-          : city.windSpeed;
-      final color = mapViewModel.currentLayer == MapLayer.temp
-          ? MapScreenViewModel.getTemperatureColor(value)
-          : MapScreenViewModel.getWindColor(value);
+    if (mapViewModel.currentLayer == MapLayer.wind) {
+      // Wind Layer - Arrow Markers
+      final markers = mapViewModel.weatherData.map((city) {
+        final color = MapScreenViewModel.getWindColor(city.windSpeed);
+        
+        // Rüzgar yönü varsa oku döndür, yoksa yukarı (0) varsay veya gösterme
+        // Derece cinsinden geliyor (0=Kuzey, 90=Doğu vb.)
+        // ArrowUp iconu varsayılan olarak yukarı bakar (0 derece)
+        // Transform.rotate radyan ister.
+        // windDirection (derece) -> radyan: degree * pi / 180
+        // Rüzgarın GELİŞ yönü mü GİDİŞ yönü mü? Meteorolojide geliş yönü verilir.
+        // Okun rüzgarın estiği yöne bakması için: Geliş yönü + 180 derece döndürmeliyiz.
+        // Örneğin Kuzeyden (0) esiyorsa, ok güneye (180) bakmalı.
+        final angleDegrees = (city.windDirection ?? 0.0) + 180;
+        final angleRadian = angleDegrees * (math.pi / 180.0);
 
-      return CircleMarker(
-        point: LatLng(city.lat, city.lon),
-        radius: 15,
-        color: color.withValues(alpha: 0.6),
-        borderColor: color,
-        borderStrokeWidth: 2,
-      );
-    }).toList();
+        return Marker(
+          point: LatLng(city.lat, city.lon),
+          width: 30,
+          height: 30,
+          child: Transform.rotate(
+            angle: angleRadian,
+            child: Icon(
+              Icons.arrow_upward_rounded,
+              color: color,
+              size: 24,
+            ),
+          ),
+        );
+      }).toList();
+
+      return [MarkerLayer(markers: markers)];
+    } else {
+      // Temp Layer (or fallback) - Circles
+      final circles = mapViewModel.weatherData.map((city) {
+        final value = mapViewModel.currentLayer == MapLayer.temp
+            ? city.temperature
+            : city.windSpeed;
+        final color = mapViewModel.currentLayer == MapLayer.temp
+            ? MapScreenViewModel.getTemperatureColor(value)
+            : MapScreenViewModel.getWindColor(value);
+
+        return CircleMarker(
+          point: LatLng(city.lat, city.lon),
+          radius: 15,
+          color: color.withValues(alpha: 0.6),
+          borderColor: color,
+          borderStrokeWidth: 2,
+        );
+      }).toList();
+      
+      return [CircleLayer(circles: circles)];
+    }
   }
 
   List<Polygon> _buildSelectionPolygons(MapViewModel mapViewModel) {
@@ -437,14 +475,37 @@ class _FlutterMapViewState extends State<FlutterMapView> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: theme.cardColor.withValues(alpha: 0.95),
+          // İsteğe göre: Rüzgar rengi ise o rengin şeffaf hali
+          // Değilse (Sıcaklık) yine kendi rengi veya varsayılan kart rengi
+          color: !isTemp
+            ? color.withValues(alpha: 0.85) // Rüzgarda o rengin şeffafı
+            : theme.cardColor.withValues(alpha: 0.95), // Sıcaklıkta standart
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color, width: 2),
+          border: Border.all(
+            color: isTemp ? color : Colors.white.withValues(alpha: 0.5), 
+            width: 2
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 24),
+            if (!isTemp && nearestCity.windDirection != null) ...[
+              // Rüzgar yönü oku (popup içinde)
+              Transform.rotate(
+                angle: (nearestCity.windDirection! + 180) * (math.pi / 180.0),
+                child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 28),
+              ),
+              const SizedBox(width: 8),
+            ] else 
+              Icon(icon, color: isTemp ? color : Colors.white, size: 24),
+
             const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -453,7 +514,8 @@ class _FlutterMapViewState extends State<FlutterMapView> {
                 Text(
                   nearestCity.cityName,
                   style: TextStyle(
-                    color: theme.textColor,
+                    // Rüzgar modunda arka plan renkli olduğu için beyaz text
+                    color: isTemp ? theme.textColor : Colors.white,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
                   ),
@@ -461,11 +523,19 @@ class _FlutterMapViewState extends State<FlutterMapView> {
                 Text(
                   '${value.toStringAsFixed(1)} $unit',
                   style: TextStyle(
-                    color: color,
+                    color: isTemp ? color : Colors.white,
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
                   ),
                 ),
+                if (!isTemp && nearestCity.windDirection != null)
+                   Text(
+                    'Yön: ${nearestCity.windDirection!.toStringAsFixed(0)}°',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
               ],
             ),
           ],

@@ -5,14 +5,15 @@ import geopandas as gpd
 from shapely.geometry import Point, box
 import numpy as np
 
-class GeoAnalyzer:
+class GeoService:
     def __init__(self):
         print("\n" + "="*50)
         print("🌍 COĞRAFİ ANALİZ MOTORU BAŞLATILIYOR (SOLAR vs WIND)")
         print("="*50)
         
         # Dosya yollarını belirle (backend/data/...)
-        base_dir = os.path.dirname(os.path.abspath(__file__))
+        # services/geo_service.py -> (dirname) services -> (dirname) backend -> (join) data
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.data_dir = os.path.join(base_dir, "data")
         
         # --- 1. SINIRLAR ---

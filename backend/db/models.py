@@ -169,3 +169,39 @@ class Turbine(SystemBase):
     id = Column(Integer, primary_key=True, index=True)
     model_name = Column(String)
     is_default = Column(Boolean, default=False)
+
+# ===============================================
+# C) KULLANICI PIN VERİLERİ (UserPinsBase) - user_pins_data.db
+# ===============================================
+from .database import UserPinsBase
+
+class PinCalculationResult(UserPinsBase):
+    """
+    Kullanıcıların haritaya koyduğu pinler için hesaplanan detaylı sonuçlar.
+    Her hesaplamada burası güncellenir veya yeni kayıt atılır.
+    """
+    __tablename__ = "pin_calculation_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pin_id = Column(Integer, index=True) # UserDB'deki Pin ID'si (Loose Coupling)
+    latitude = Column(Float)
+    longitude = Column(Float)
+    
+    calculated_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Yıllık Toplamlar
+    annual_total_energy_kwh = Column(Float, default=0.0) # Üretilen toplam enerji tahmin
+    capacity_factor = Column(Float, default=0.0)
+    
+    # İklim Verileri (Özet)
+    avg_wind_speed = Column(Float, nullable=True)
+    avg_solar_irradiance = Column(Float, nullable=True) # kWh/m2/day
+    avg_temperature = Column(Float, nullable=True)
+    
+    # Detaylı Aylık Veri (JSON)
+    # Format: 
+    # [
+    #   {"month": 1, "avg_wind": 5.2, "avg_solar": 2.1, "avg_temp": 4.5, "energy_kwh": 350.0},
+    #   ...
+    # ]
+    monthly_data = Column(JSON)

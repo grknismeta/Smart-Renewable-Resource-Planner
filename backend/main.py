@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from .database import UserEngine, SystemEngine
-from . import models
+from .db.database import UserEngine, SystemEngine, UserPinsEngine
+from .db import models
 
 # --- ROUTERLARI IMPORT ET ---
 from .routers import pins, users, equipments, optimization, weather, reports, scenario, geo
@@ -10,6 +10,7 @@ from .routers import pins, users, equipments, optimization, weather, reports, sc
 # Veritabanı tablolarını oluştur
 models.SystemBase.metadata.create_all(bind=SystemEngine)
 models.UserBase.metadata.create_all(bind=UserEngine)
+models.UserPinsBase.metadata.create_all(bind=UserPinsEngine)
 
 
 # --- STARTUP/SHUTDOWN YAŞAM DÖNGÜSÜ ---
@@ -22,19 +23,19 @@ async def lifespan(app: FastAPI):
     
     # 1. Günlük veri eksiklerini kontrol et ve doldur
     try:
-        from .daily_updater import async_check_and_update
-        asyncio.create_task(async_check_and_update())
+        from .services.collectors.historical import async_update_daily_grid_data
+        asyncio.create_task(async_update_daily_grid_data())
         print("📅 Günlük veri güncelleyici başlatıldı")
     except Exception as e:
         print(f"[DailyUpdater] Başlatma hatası: {e}")
-    
-    # 2. Şehir bazlı saatlik verileri güncelle
+        
+    # 2. Saatlik verileri güncelle
     try:
-        from .hourly_collector import async_update_hourly
-        asyncio.create_task(async_update_hourly())
-        print("⏰ Saatlik veri güncelleyici başlatıldı")
+        from .services.collectors.hourly import async_update_hourly_data
+        asyncio.create_task(async_update_hourly_data())
+        print("⏱️ Saatlik veri güncelleyici başlatıldı")
     except Exception as e:
-        print(f"[HourlyCollector] Başlatma hatası: {e}")
+        print(f"[HourlyUpdater] Başlatma hatası: {e}")
     
     yield  # Uygulama çalışıyor
     

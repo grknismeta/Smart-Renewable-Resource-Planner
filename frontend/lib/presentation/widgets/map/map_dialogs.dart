@@ -270,72 +270,138 @@ class MapDialogs {
                         child: Center(child: CircularProgressIndicator()),
                       ),
                     const SizedBox(height: 20),
+                    const SizedBox(height: 20),
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         IconButton(
-                          icon: const Icon(
-                            Icons.delete,
-                            color: Colors.redAccent,
-                          ),
+                          icon: const Icon(Icons.delete, color: Colors.redAccent),
                           onPressed: () async {
-                            Navigator.of(ctx).pop();
-                            try {
-                              await mapViewModel.deletePin(pin.id);
-                            } catch (e) {
-                              showErrorDialog(context, e.toString());
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text("Silinsin mi?"),
+                                content: const Text("Bu kaynağı silmek istediğinize emin misiniz?"),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text("İptal"),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: const Text("Sil", style: TextStyle(color: Colors.red)),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (confirm == true) {
+                               Navigator.of(ctx).pop();
+                               try {
+                                 await mapViewModel.deletePin(pin.id);
+                               } catch (e) {
+                                 if (context.mounted) showErrorDialog(context, e.toString());
+                               }
                             }
                           },
                         ),
-                        const Spacer(),
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.calculate),
-                          label: const Text('Hesapla'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                          ),
-                          onPressed: () async {
-                            if (isCalculating) return;
-                            if (selectedEquipmentId == null) {
-                              showErrorDialog(
-                                context,
-                                'Lütfen bir model seçin',
-                              );
-                              return;
-                            }
-                            setStateSB(() {});
-                            try {
-                              // Seçilen equipment'ı bul
-                              final equipment = mapViewModel.equipments
-                                  .firstWhere(
-                                    (e) => e.id == selectedEquipmentId,
+                        Row(
+                          children: [
+                            // GÜNCELLE BUTONU
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.save),
+                              label: const Text('Kaydet'),
+                               style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blue,
+                              ),
+                              onPressed: () async {
+                                if (selectedEquipmentId == null) {
+                                  showErrorDialog(context, 'Lütfen bir model seçin');
+                                  return;
+                                }
+                                try {
+                                  // Seçilen equipment'ı bul
+                                  final equipment = mapViewModel.equipments.firstWhere(
+                                      (e) => e.id == selectedEquipmentId,
+                                      orElse: () => mapViewModel.equipments.first // Fallback
                                   );
-                              final capacityMw = equipment.ratedPowerKw / 1000;
+                                  final capacityMw = equipment.ratedPowerKw / 1000.0;
 
-                              await mapViewModel.calculatePotential(
-                                lat: pin.latitude,
-                                lon: pin.longitude,
-                                type: selectedType,
-                                capacityMw: capacityMw,
-                                panelArea:
-                                    double.tryParse(panelAreaController.text) ??
-                                    0.0,
-                              );
-                              Navigator.of(ctx).pop();
-                              if (mapViewModel.latestCalculationResult !=
-                                  null) {
-                                showCalculationResultDialog(
-                                  context,
-                                  mapViewModel.latestCalculationResult!,
-                                  themeViewModel,
-                                );
-                              }
-                            } catch (e) {
-                              if (ctx.mounted) {
-                                showErrorDialog(ctx, e.toString());
-                              }
-                            }
-                          },
+                                  await mapViewModel.updatePin(
+                                    pin.id,
+                                    LatLng(pin.latitude, pin.longitude),
+                                    nameController.text,
+                                    selectedType,
+                                    capacityMw,
+                                    selectedEquipmentId,
+                                  );
+
+                                  if (ctx.mounted) {
+                                    Navigator.of(ctx).pop();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Kaynak güncellendi'), backgroundColor: Colors.green),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (ctx.mounted) showErrorDialog(ctx, e.toString());
+                                }
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            // HESAPLA BUTONU
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.calculate),
+                              label: const Text('Hesapla'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () async {
+                                if (isCalculating) return;
+                                if (selectedEquipmentId == null) {
+                                  showErrorDialog(context, 'Lütfen bir model seçin');
+                                  return;
+                                }
+                                setStateSB(() {});
+                                try {
+                                  final equipment = mapViewModel.equipments.firstWhere(
+                                      (e) => e.id == selectedEquipmentId,
+                                  );
+                                  final capacityMw = equipment.ratedPowerKw / 1000;
+                                  
+                                  // Önce güncellemeyi dene (İsim vb. değişmiş olabilir)
+                                  await mapViewModel.updatePin(
+                                    pin.id,
+                                    LatLng(pin.latitude, pin.longitude),
+                                    nameController.text,
+                                    selectedType,
+                                    capacityMw,
+                                    selectedEquipmentId,
+                                  );
+
+                                  await mapViewModel.calculatePotential(
+                                    lat: pin.latitude,
+                                    lon: pin.longitude,
+                                    type: selectedType,
+                                    capacityMw: capacityMw,
+                                    panelArea: double.tryParse(panelAreaController.text) ?? 0.0,
+                                  );
+                                  Navigator.of(ctx).pop();
+                                  if (mapViewModel.latestCalculationResult != null) {
+                                    showCalculationResultDialog(
+                                      context,
+                                      mapViewModel.latestCalculationResult!,
+                                      themeViewModel,
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (ctx.mounted) {
+                                    showErrorDialog(ctx, e.toString());
+                                  }
+                                }
+                              },
+                            ),
+                          ],
                         ),
                       ],
                     ),

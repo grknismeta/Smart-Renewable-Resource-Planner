@@ -161,6 +161,37 @@ class ApiService {
     }
   }
 
+  Future<Pin> updatePin(
+    int pinId,
+    LatLng point,
+    String name,
+    String type,
+    double capacityMw,
+    int? equipmentId,
+  ) async {
+    final Map<String, dynamic> pinData = {
+      'latitude': point.latitude,
+      'longitude': point.longitude,
+      'title': name, // Backend'de şema 'title' kullanıyor (Schemas: title: Optional[str] = "Yeni Kaynak")
+      'type': type,
+      'capacity_mw': capacityMw,
+      if (equipmentId != null) 'equipment_id': equipmentId,
+    };
+
+    final response = await http.put(
+      Uri.parse('$_apiBaseUrl/pins/$pinId'),
+      headers: await _getHeaders(),
+      body: json.encode(pinData),
+    );
+
+    if (response.statusCode == 200) {
+      final jsonResponse = json.decode(utf8.decode(response.bodyBytes));
+      return Pin.fromJson(jsonResponse);
+    } else {
+      throw Exception('Pin güncellenemedi (Status code: ${response.statusCode})');
+    }
+  }
+
   Future<void> deletePin(int pinId) async {
     // ... (değişiklik yok) ...
     final response = await http.delete(
@@ -293,7 +324,7 @@ class ApiService {
 
   /// En iyi güneş potansiyeline sahip şehirler
   Future<List<Map<String, dynamic>>> fetchBestSolarCities({
-    int limit = 10,
+    int limit = 400,
   }) async {
     debugPrint('[ApiService.fetchBestSolarCities] Çağrıldı: limit=$limit');
     final uri = Uri.parse(
@@ -393,7 +424,7 @@ class ApiService {
   Future<RegionalReport> fetchRegionalReport({
     required String region,
     required String type,
-    int limit = 80,
+    int limit = 400,
   }) async {
     final uri = Uri.parse('$_apiBaseUrl/reports/regional').replace(
       queryParameters: {'region': region, 'type': type, 'limit': '$limit'},
@@ -527,6 +558,7 @@ class CityWeatherData {
   final double? cloudCover;
   final double? windSpeed10m;
   final double? relativeHumidity;
+  final double? windDirection;
 
   CityWeatherData({
     required this.cityName,
@@ -543,6 +575,7 @@ class CityWeatherData {
     this.cloudCover,
     this.windSpeed10m,
     this.relativeHumidity,
+    this.windDirection,
   });
 
   factory CityWeatherData.fromJson(Map<String, dynamic> json) {
@@ -566,6 +599,7 @@ class CityWeatherData {
       cloudCover: json['cloud_cover']?.toDouble(),
       windSpeed10m: json['wind_speed_10m']?.toDouble(),
       relativeHumidity: json['relative_humidity_2m']?.toDouble(),
+      windDirection: json['wind_direction_10m']?.toDouble(),
     );
   }
 

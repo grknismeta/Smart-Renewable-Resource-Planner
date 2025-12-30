@@ -806,6 +806,16 @@ class _ScenarioListPanel extends StatelessWidget {
     // ignore: unused_local_variable
     final windCount = resultData?['wind_count'] ?? 0;
 
+    String formatEnergy(double kwh) {
+      if (kwh >= 1000000) {
+        return '${(kwh / 1000000).toStringAsFixed(2)} GWh';
+      } else if (kwh >= 1000) {
+        return '${(kwh / 1000).toStringAsFixed(2)} MWh';
+      } else {
+        return '${kwh.toStringAsFixed(2)} kWh';
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -834,7 +844,7 @@ class _ScenarioListPanel extends StatelessWidget {
                   children: [
                     _ResultCard(
                       label: 'Toplam Üretim',
-                      value: '${(totalKwh as num).toStringAsFixed(1)} kWh',
+                      value: formatEnergy((totalKwh as num).toDouble()),
                       icon: Icons.flash_on,
                       color: Colors.greenAccent,
                     ),
@@ -844,8 +854,7 @@ class _ScenarioListPanel extends StatelessWidget {
                         Expanded(
                           child: _ResultCard(
                             label: 'Güneş',
-                            value:
-                                '${(totalSolarKwh as num).toStringAsFixed(1)} kWh',
+                            value: formatEnergy((totalSolarKwh as num).toDouble()),
                             icon: Icons.wb_sunny,
                             color: Colors.orangeAccent,
                           ),
@@ -854,8 +863,7 @@ class _ScenarioListPanel extends StatelessWidget {
                         Expanded(
                           child: _ResultCard(
                             label: 'Rüzgar',
-                            value:
-                                '${(totalWindKwh as num).toStringAsFixed(1)} kWh',
+                            value: formatEnergy((totalWindKwh as num).toDouble()),
                             icon: Icons.wind_power,
                             color: Colors.lightBlueAccent,
                           ),

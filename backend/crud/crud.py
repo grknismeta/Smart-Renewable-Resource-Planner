@@ -3,7 +3,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from typing import Optional, List, Union
 
-from . import models, schemas, auth
+# Updated imports
+from backend.db import models
+from backend.schemas import schemas
+from backend import auth
 
 # --- KULLANICI (User) İŞLEMLERİ ---
 
@@ -134,6 +137,26 @@ def delete_pin_by_id(db: Session, pin_id: int, user_id: int):
         return True
     
     return False
+
+# ... (delete_pin_by_id remains same)
+
+def update_pin(db: Session, pin_id: int, pin_update: schemas.PinCreate, user_id: int):
+    db_pin = db.query(models.Pin).filter(
+        models.Pin.id == pin_id,
+        models.Pin.owner_id == user_id
+    ).first()
+    
+    if not db_pin:
+        return None
+        
+    # Update fields
+    pin_data = pin_update.model_dump(exclude_unset=True)
+    for key, value in pin_data.items():
+        setattr(db_pin, key, value)
+        
+    db.commit()
+    db.refresh(db_pin)
+    return db_pin
 
 # --- WEATHER DATA (Sistem DB) İŞLEMLERİ ---
 

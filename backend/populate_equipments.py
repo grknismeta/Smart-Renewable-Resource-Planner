@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from .database import SystemSessionLocal, SystemEngine, SystemBase
-from .models import Equipment
+from .db.database import SystemSessionLocal, SystemEngine, SystemBase
+from .db.models import Equipment
 
 def populate_default_equipments():
     """

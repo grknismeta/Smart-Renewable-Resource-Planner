@@ -11,8 +11,8 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 
-from ..database import SystemSessionLocal
-from ..models import HourlyWeatherData
+from backend.db.database import SystemSessionLocal
+from backend.db.models import HourlyWeatherData
 from ..turkey_cities import TURKEY_CITIES
 
 router = APIRouter(
@@ -303,6 +303,7 @@ def get_weather_at_time(
                     "temperature_2m": data.temperature_2m,
                     "wind_speed_100m": data.wind_speed_100m,
                     "wind_speed_10m": data.wind_speed_10m,
+                    "wind_direction_10m": data.wind_direction_10m,
                     "shortwave_radiation": data.shortwave_radiation,
                     "timestamp": data.timestamp.isoformat()
                 })

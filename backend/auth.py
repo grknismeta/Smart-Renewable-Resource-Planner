@@ -7,10 +7,11 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
-# (DÜZELTME) Göreceli import'lar
-from . import schemas, crud, models
-from .database import SystemSessionLocal
-from .database import get_db
+# Updated imports
+from backend.schemas import schemas
+from backend.crud import crud
+from backend.db import models
+from backend.db.database import SystemSessionLocal, get_db
 
 # --- Security Constants and Settings ---
 ACCESS_TOKEN_EXPIRE_MINUTES = 2880

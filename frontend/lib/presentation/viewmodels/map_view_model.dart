@@ -373,6 +373,31 @@ class MapViewModel extends BaseViewModel {
     }
   }
 
+  Future<Pin> updatePin(
+    int pinId,
+    LatLng point,
+    String name,
+    String type,
+    double capacityMw,
+    int? equipmentId,
+  ) async {
+    try {
+      final updatedPin = await _apiService.updatePin(
+        pinId,
+        point,
+        name,
+        type,
+        capacityMw,
+        equipmentId,
+      );
+      await fetchPins(); // Listeyi güncelle
+      return updatedPin;
+    } catch (e) {
+      debugPrint('Pin güncellenirken hata: $e');
+      throw Exception('Pin güncellenemedi. Lütfen tekrar deneyin.');
+    }
+  }
+
   Future<void> deletePin(int pinId) async {
     try {
       await _apiService.deletePin(pinId);

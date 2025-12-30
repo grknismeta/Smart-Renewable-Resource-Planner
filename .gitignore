@@ -28,3 +28,4 @@ backend/system_data.db
 
 # Large Data Directories
 backend/Data/
+backend/data/

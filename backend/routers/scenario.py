@@ -4,8 +4,13 @@ from typing import List, cast, Any, Dict
 from datetime import datetime
 import json
 
-from .. import crud, models, schemas, auth, solar_calculations, wind_calculations
-from ..database import get_db
+from backend import auth
+from backend.crud import crud
+from backend.db import models
+from backend.schemas import schemas
+# Services moved
+from backend.services import solar_service as solar_calculations, wind_service as wind_calculations
+from backend.db.database import get_db
 # ML modülünü import ediyoruz
 from ..ml_predictor import predict_future_production 
 
@@ -62,7 +67,22 @@ def read_scenarios(
     current_user: models.User = Depends(auth.get_current_active_user)
 ):
     """Kullanıcının tüm senaryolarını listeler."""
-    return db.query(models.Scenario).filter(models.Scenario.owner_id == current_user.id).all()
+    scenarios = db.query(models.Scenario).filter(models.Scenario.owner_id == current_user.id).all()
+    
+    # JSON/String/None -> List Dönüşümü
+    for sc in scenarios:
+        if sc.pin_ids is None: # type: ignore
+            sc.pin_ids = [] # type: ignore
+        elif isinstance(sc.pin_ids, str):
+            try:
+                sc.pin_ids = json.loads(sc.pin_ids) # type: ignore
+            except:
+                sc.pin_ids = [] # type: ignore
+        else:
+            # Already a list or dict? Ensure list
+            sc.pin_ids = list(sc.pin_ids) # type: ignore
+            
+    return scenarios
 
 
 @router.put("/{scenario_id}", response_model=schemas.ScenarioResponse)
@@ -199,6 +219,9 @@ def calculate_scenario(
     solar_count = 0
     wind_count = 0
     
+    # On-Demand Service Import
+    from backend.services.collectors.on_demand import fetch_point_climate_data
+
     try:
         for pin_id in pin_ids:
             db_pin = db.query(models.Pin).filter(models.Pin.id == pin_id).first()
@@ -208,55 +231,115 @@ def calculate_scenario(
             pin_type = str(db_pin.type or "Güneş Paneli").strip() # type: ignore
             pin_lat = float(db_pin.latitude) # type: ignore
             pin_lon = float(db_pin.longitude) # type: ignore
-            pin_title = str(db_pin.name or "Pin") # type: ignore
+            pin_title = str(db_pin.title or "Pin") # type: ignore
             
             prediction_result: Dict[str, Any] = {"pin_id": pin_id, "pin_name": pin_title, "type": pin_type}
             
+            # --- Common Data Fetching (Efficient) ---
+            # Fetch climate data once for both Solar and Wind using the robust On-Demand service
+            # This avoids the complex and error-prone invalid DB queries for 'WeatherData'
+            # and fulfills the "No ML" requirement by using physical math on real data.
+            climate_data = fetch_point_climate_data(pin_lat, pin_lon, years=1)
+            
+            if "error" in climate_data:
+                prediction_result["error"] = f"Hava verisi alınamadı: {climate_data['error']}"
+                pin_results.append(prediction_result)
+                continue
+
+            annual_summary = climate_data.get("annual_summary", {})
+
             if "Güneş" in pin_type or "Solar" in pin_type or pin_type == "Güneş Paneli":
                 try:
-                    historical_data = solar_calculations.get_historical_hourly_solar_data(pin_lat, pin_lon)
+                    # Basit Fiziksel Hesap (NO ML)
+                    # E = H * A * eff * PR
+                    annual_solar_kwh_m2 = annual_summary.get("total_solar_kwh_m2", 1600.0)
                     
-                    if "error" not in historical_data and "raw_data_for_ml" in historical_data:
-                        raw_data = historical_data["raw_data_for_ml"]
-                        ml_forecast = predict_future_production(
-                            hourly_data=raw_data,
-                            resource_type="solar",
-                            start_date=start_date,
-                            end_date=end_date
-                        )
+                    # Varsayılanlar
+                    panel_area = float(db_pin.panel_area or 10.0) # type: ignore
+                    efficiency = 0.20
+                    PR = 0.80
+                    
+                    annual_production = annual_solar_kwh_m2 * panel_area * efficiency * PR
+                    
+                    # Sonuçları formatla
+                    prediction_result.update({
+                        "total_prediction_value": round(annual_production, 2),
+                        "daily_avg_production": round(annual_production / 365, 2),
+                        "info": "Yıllık fiziksel simülasyon (ML Kullanılmadı)"
+                    })
+                    
+                    # Aylık dağılım (Grafik için)
+                    monthly_data = climate_data.get("monthly_data", [])
+                    history = []
+                    today = datetime.now()
+                    for m in monthly_data:
+                         # Basit bir tarih oluştur (Geçmiş 1 yıl gibi göster)
+                         # 2024-01-15 gibi
+                         m_num = m['month']
+                         y_val = today.year - 1 if m_num > today.month else today.year
+                         d_str = f"{y_val}-{m_num:02d}-15"
+                         
+                         m_prod = m['total_solar_kwh_m2'] * panel_area * efficiency * PR
+                         history.append({
+                             "ds": d_str,
+                             "y": round(m_prod, 2)
+                         })
+                    
+                    prediction_result["history"] = history
+                    prediction_result["future"] = [] # ML yok, gelecek tahmini boş
+
+                    total_solar_kwh += annual_production
+                    solar_count += 1
                         
-                        if "error" not in ml_forecast:
-                            prediction_result.update(ml_forecast)
-                            total_solar_kwh += ml_forecast.get("total_prediction_value", 0.0)
-                            solar_count += 1
-                        else:
-                            prediction_result["error"] = ml_forecast.get("error", "ML hatası")
-                    else:
-                        prediction_result["error"] = historical_data.get("error", "Geçmiş veri alınamadı")
                 except Exception as e:
                     print(f"Error calculating solar for pin {pin_id}: {e}")
                     prediction_result["error"] = f"Solar hesaplama hatası: {str(e)}"
                 
             elif "Rüzgar" in pin_type or "Wind" in pin_type or pin_type == "Rüzgar Türbini":
                 try:
-                    # Get weather statistics for this pin from database
-                    db_weather = db.query(models.WeatherData).filter(
-                        models.WeatherData.pin_id == pin_id
-                    ).order_by(models.WeatherData.date.desc()).first()
+                    # Wind Service Reuse (Logic only)
+                    avg_speed = annual_summary.get("avg_wind", 6.0)
                     
-                    weather_stats = None
-                    if db_weather and db_weather.data:
-                        weather_stats = db_weather.data
+                    weather_stats_adapter = {
+                        "annual_avg": {"wind": avg_speed}
+                    }
                     
-                    wind_data = wind_calculations.calculate_wind_power_production(pin_lat, pin_lon, weather_stats or {})
+                    wind_calc = wind_calculations.calculate_wind_power_production(pin_lat, pin_lon, weather_stats_adapter)
+                    annual_prod = wind_calc["predicted_annual_production_kwh"]
                     
-                    if "error" not in wind_data:
-                        prediction_result["info"] = "Rüzgar yıllık tahmin"
-                        prediction_result.update(wind_data)
-                        total_wind_kwh += wind_data.get("predicted_annual_production_kwh", 0.0)
-                        wind_count += 1
-                    else:
-                        prediction_result["error"] = "Rüzgar verisi alınamadı"
+                    prediction_result.update({
+                        "total_prediction_value": round(annual_prod, 2),
+                        "daily_avg_production": round(annual_prod / 365, 2),
+                        "info": "Rüzgar fiziksel hesaplama"
+                    })
+                    
+                    # Aylık Dağılım (Simüle veya Gerçek Rüzgar Verisinden)
+                    monthly_data = climate_data.get("monthly_data", [])
+                    history = []
+                    today = datetime.now()
+                    
+                    # Rüzgar hızı küpü ile orantılı dağıt
+                    total_speed_cubed = sum([m['avg_wind']**3 for m in monthly_data]) if monthly_data else 1
+                    
+                    for m in monthly_data:
+                         m_num = m['month']
+                         y_val = today.year - 1 if m_num > today.month else today.year
+                         d_str = f"{y_val}-{m_num:02d}-15"
+                         
+                         share = (m['avg_wind']**3) / total_speed_cubed if total_speed_cubed > 0 else 1/12
+                         m_prod = annual_prod * share
+                         
+                         history.append({
+                             "ds": d_str,
+                             "y": round(m_prod, 2)
+                         })
+                         
+                    prediction_result["history"] = history
+                    prediction_result["future"] = []
+
+                    total_wind_kwh += annual_prod
+                    wind_count += 1
+                    
                 except Exception as e:
                      print(f"Error calculating wind for pin {pin_id}: {e}")
                      prediction_result["error"] = f"Rüzgar hesaplama hatası: {str(e)}"
@@ -265,8 +348,6 @@ def calculate_scenario(
             
     except Exception as e:
         print(f"Global calculation error: {e}")
-        # Return partial results if possible, or re-raise if critical
-        # But we want to avoid 500, so let's log and continue with empty results if needed
         pass
 
     # Toplu sonuçları kaydet
