@@ -159,60 +159,7 @@ class MainMapControls extends StatefulWidget {
   State<MainMapControls> createState() => _MainMapControlsState();
 }
 
-class _MainMapControlsState extends State<MainMapControls>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _btn1Scale;
-  late Animation<double> _btn2Scale;
-  late Animation<double> _btn1Fade;
-  late Animation<double> _btn2Fade;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-
-    // Staggered Animations
-    // Button 1: T=0.0 -> 0.6
-    _btn1Scale = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.6, curve: Curves.elasticOut),
-      ),
-    );
-    _btn1Fade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.4, curve: Curves.easeIn),
-      ),
-    );
-
-    // Button 2: T=0.2 -> 0.8
-    _btn2Scale = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.2, 0.8, curve: Curves.elasticOut),
-      ),
-    );
-    _btn2Fade = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.2, 0.6, curve: Curves.easeIn),
-      ),
-    );
-
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
+class _MainMapControlsState extends State<MainMapControls> {
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -220,33 +167,21 @@ class _MainMapControlsState extends State<MainMapControls>
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         // Button 1: Add Pin
-        ScaleTransition(
-          scale: _btn1Scale,
-          child: FadeTransition(
-            opacity: _btn1Fade,
-            child: MapControlButton(
-              icon: Icons.add_location_alt_outlined,
-              tooltip: "Kaynak Ekle",
-              onTap: widget.onAddPin,
-              color: Colors.blueAccent,
-              theme: widget.theme,
-            ),
-          ),
+        MapControlButton(
+          icon: Icons.add_location_alt_outlined,
+          tooltip: "Kaynak Ekle",
+          onTap: widget.onAddPin,
+          color: Colors.blueAccent,
+          theme: widget.theme,
         ),
         const SizedBox(height: 12),
         // Button 2: Region Analysis
-        ScaleTransition(
-          scale: _btn2Scale,
-          child: FadeTransition(
-            opacity: _btn2Fade,
-            child: MapControlButton(
-              icon: Icons.map_outlined,
-              tooltip: "Bölge Analizi",
-              onTap: widget.onSelectRegion,
-              color: Colors.purpleAccent,
-              theme: widget.theme,
-            ),
-          ),
+        MapControlButton(
+          icon: Icons.map_outlined,
+          tooltip: "Bölge Analizi",
+          onTap: widget.onSelectRegion,
+          color: Colors.purpleAccent,
+          theme: widget.theme,
         ),
       ],
     );

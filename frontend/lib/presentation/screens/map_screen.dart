@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -298,13 +299,20 @@ class _MapScreenState extends State<MapScreen> {
       selector: (_, viewModel) => [
         viewModel.pins,
         viewModel.optimizationResult,
+        viewModel.currentLayer, // Added
+        viewModel.isHeatmapLoading, // Added
+        viewModel.heatmapPoints, // Added
       ],
       shouldRebuild: (previous, next) {
-        return previous[0] != next[0] || previous[1] != next[1];
+        // Simple equality check for list elements is enough if references change
+        // deep collection equality is expensive, but here heatmapPoints reference changes on update
+        const listEquals = ListEquality();
+        return !listEquals.equals(previous, next);
       },
       builder: (context, data, _) {
         final pins = data[0] as List;
         final optimizationResult = data[1];
+        // We don't need to extract others locally as we access via mapViewModel provider below
 
         final markers = pins.map((pin) {
           return Marker(
@@ -575,9 +583,29 @@ class _MapScreenState extends State<MapScreen> {
 
           // YENİ MERKEZİ ISI HARİTASI KATMANI
           if (mapViewModel.currentLayer != MapLayer.none)
-            ResourceHeatmapLayer(
-              data: mapViewModel.heatmapPoints,
-              type: mapViewModel.heatmapType,
+            Stack(
+              children: [
+                ResourceHeatmapLayer(
+                  data: mapViewModel.heatmapPoints,
+                  type: mapViewModel.heatmapType,
+                  opacity: mapViewModel.isHeatmapLoading ? 0.4 : 0.6,
+                ),
+                if (mapViewModel.isHeatmapLoading)
+                  const Positioned(
+                    top: 20,
+                    right: 20, // Kontrollerin altında
+                    child: Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
 
           // Yasaklı Alanlar Katmanı

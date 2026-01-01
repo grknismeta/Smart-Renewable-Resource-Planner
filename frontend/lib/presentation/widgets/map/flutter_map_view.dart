@@ -230,7 +230,7 @@ class _FlutterMapViewState extends State<FlutterMapView> {
             keepBuffer: 10,
             panBuffer: 1,
           ),
-          ..._buildWeatherLayers(mapViewModel),
+          // ..._buildWeatherLayers(mapViewModel), // Legacy katmanlar devre dışı
           if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
           // Restricted Area Layer (Hatch Pattern Simulation - Red semi-transparent)
           if (mapViewModel.restrictedArea.isNotEmpty)

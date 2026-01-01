@@ -1,26 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'dart:math' as math;
-import '../widgets/map/resource_heatmap_layer.dart';
 import '../../core/api_service.dart';
 import '../../core/base/base_view_model.dart';
 import '../../data/models/pin_model.dart';
 import '../../data/models/system_data_models.dart';
 import '../../data/models/irradiance_model.dart';
 import 'auth_view_model.dart';
+import 'mixins/map_layer_mixin.dart'; // Mixin import
+export 'mixins/map_layer_mixin.dart' show MapLayer;
 
-enum MapLayer { none, wind, temp, irradiance }
 
 // Pin ekleme modunu String olarak tanımla
 typedef PinType = String;
 
-class MapViewModel extends BaseViewModel {
+class MapViewModel extends BaseViewModel with MapLayerMixin {
   final ApiService _apiService;
   final AuthViewModel _authViewModel;
 
+  @override
+  ApiService get apiService => _apiService;
+
   List<Pin> _pins = [];
   PinType? _placingPinType;
-  MapLayer _currentLayer = MapLayer.none;
+  // MapLayer _currentLayer  <- Moved to mixin
   PinCalculationResponse? _latestCalculationResult;
 
   // Hava durumu verileri
@@ -47,68 +50,10 @@ class MapViewModel extends BaseViewModel {
 
   List<Pin> get pins => _pins;
   PinType? get placingPinType => _placingPinType;
-  MapLayer get currentLayer => _currentLayer;
+  // MapLayer get currentLayer => _currentLayer; <- Moved to mixin
   PinCalculationResponse? get latestCalculationResult =>
       _latestCalculationResult;
 
-  // --- Heatmap State ---
-  List<Map<String, dynamic>> _interpolatedData = [];
-  bool _isHeatmapLoading = false;
-
-  bool get isHeatmapLoading => _isHeatmapLoading;
-
-  // --- HEATMAP İÇİN VERİ DÖNÜŞÜMÜ ---
-  List<HeatmapPoint> get heatmapPoints {
-    // Eğer enterpolasyon verisi varsa onu kullan (Daha yüksek çözünürlük)
-    if (_interpolatedData.isNotEmpty) {
-       return _interpolatedData.map((d) => HeatmapPoint(
-         latitude: d['lat'],
-         longitude: d['lon'],
-         value: d['value'],
-       )).toList();
-    }
-
-    if (_currentLayer == MapLayer.wind) {
-      return _weatherData.map((d) {
-        return HeatmapPoint(
-          latitude: d.lat,
-          longitude: d.lon,
-          value: d.windSpeed,
-        );
-      }).toList();
-    } else if (_currentLayer == MapLayer.temp) {
-      return _weatherData.map((d) {
-        return HeatmapPoint(
-          latitude: d.lat,
-          longitude: d.lon,
-          value: d.temperature,
-        );
-      }).toList();
-    } else if (_currentLayer == MapLayer.irradiance) {
-      return _solarSummary.map((d) {
-        return HeatmapPoint(
-          latitude: d.latitude,
-          longitude: d.longitude,
-          value: d.totalDailyIrradianceKwhM2 ?? 0,
-        );
-      }).toList();
-    }
-    return [];
-  }
-
-  // --- HEATMAP TİPİ DÖNÜŞÜMÜ ---
-  ResourceType get heatmapType {
-    switch (_currentLayer) {
-      case MapLayer.wind:
-        return ResourceType.wind;
-      case MapLayer.temp:
-        return ResourceType.temp;
-      case MapLayer.irradiance:
-        return ResourceType.solar;
-      default:
-        return ResourceType.temp; // Fallback
-    }
-  }
 
   List<CityWeatherData> get weatherData => _weatherData;
   DateTime get selectedTime => _selectedTime;
@@ -321,52 +266,6 @@ class MapViewModel extends BaseViewModel {
     }
   }
 
-  void setLayer(MapLayer layer) {
-    _currentLayer = layer;
-    _fetchHeatmapDataForLayer(layer);
-    notifyListeners();
-  }
-
-  void changeMapLayer() {
-    switch (_currentLayer) {
-      case MapLayer.none:
-        setLayer(MapLayer.wind);
-        break;
-      case MapLayer.wind:
-        setLayer(MapLayer.temp);
-        break;
-      case MapLayer.temp:
-        setLayer(MapLayer.irradiance);
-        break;
-      case MapLayer.irradiance:
-        setLayer(MapLayer.none);
-        break;
-    }
-  }
-
-  Future<void> _fetchHeatmapDataForLayer(MapLayer layer) async {
-    _interpolatedData = []; // Önce temizle
-    _isHeatmapLoading = true;
-    notifyListeners();
-
-    try {
-      if (layer == MapLayer.wind) {
-        // Wind Interpolation
-        _interpolatedData = await _apiService.fetchInterpolatedMap("Wind");
-      } else if (layer == MapLayer.irradiance) {
-        // Solar Interpolation
-        _interpolatedData = await _apiService.fetchInterpolatedMap("Solar");
-      } else if (layer == MapLayer.temp) {
-        // Temperature Interpolation
-        _interpolatedData = await _apiService.fetchInterpolatedMap("Temperature");
-      }
-    } catch (e) {
-      debugPrint('Heatmap loading error: $e');
-    } finally {
-      _isHeatmapLoading = false;
-      notifyListeners();
-    }
-  }
 
   void clearCalculationResult() {
     _latestCalculationResult = null;
@@ -491,6 +390,11 @@ class MapViewModel extends BaseViewModel {
 
     try {
       _weatherData = await _apiService.fetchWeatherForTime(truncatedTime);
+
+      // EĞER HARİTA KATMANI AÇIKSA, ONU DA GÜNCELLE
+      if (currentLayer != MapLayer.none) {
+        fetchHeatmapDataForLayer(currentLayer);
+      }
     } catch (e) {
       debugPrint('Hava durumu yüklenirken hata: $e');
       _weatherData = [];
