@@ -131,7 +131,7 @@ class ApiService {
   }
 
   // --- 1. GÜNCELLEME: 'addPin' fonksiyonu artık tüm verileri alıyor ---
-  Future<void> addPin(
+  Future<Pin> addPin(
     LatLng point,
     String name,
     String type,
@@ -153,8 +153,42 @@ class ApiService {
       headers: await _getHeaders(),
       body: json.encode(pinData),
     );
-    if (response.statusCode != 201) {
+    if (response.statusCode == 201) {
+      final jsonResponse = json.decode(utf8.decode(response.bodyBytes));
+      return Pin.fromJson(jsonResponse);
+    } else {
       throw Exception('Pin eklenemedi (Status code: ${response.statusCode})');
+    }
+  }
+
+  Future<Pin> updatePin(
+    int pinId,
+    LatLng point,
+    String name,
+    String type,
+    double capacityMw,
+    int? equipmentId,
+  ) async {
+    final Map<String, dynamic> pinData = {
+      'latitude': point.latitude,
+      'longitude': point.longitude,
+      'title': name, // Backend'de şema 'title' kullanıyor (Schemas: title: Optional[str] = "Yeni Kaynak")
+      'type': type,
+      'capacity_mw': capacityMw,
+      if (equipmentId != null) 'equipment_id': equipmentId,
+    };
+
+    final response = await http.put(
+      Uri.parse('$_apiBaseUrl/pins/$pinId'),
+      headers: await _getHeaders(),
+      body: json.encode(pinData),
+    );
+
+    if (response.statusCode == 200) {
+      final jsonResponse = json.decode(utf8.decode(response.bodyBytes));
+      return Pin.fromJson(jsonResponse);
+    } else {
+      throw Exception('Pin güncellenemedi (Status code: ${response.statusCode})');
     }
   }
 
@@ -290,7 +324,7 @@ class ApiService {
 
   /// En iyi güneş potansiyeline sahip şehirler
   Future<List<Map<String, dynamic>>> fetchBestSolarCities({
-    int limit = 10,
+    int limit = 400,
   }) async {
     debugPrint('[ApiService.fetchBestSolarCities] Çağrıldı: limit=$limit');
     final uri = Uri.parse(
@@ -321,10 +355,16 @@ class ApiService {
 
     // CityWeatherSummary'den CitySolarSummary'ye dönüştür
     return summaries.map((weather) {
-      // totalRadiation zaten kWh/m² cinsinden
-      final dailyKwhM2 = weather.totalRadiation != null
-          ? weather.totalRadiation! /
-                1000.0 // W'den kW'ye
+      // Ortalama radyasyon (W/m²)
+      final avgRadiationWm2 =
+          weather.totalRadiation != null && weather.recordCount > 0
+          ? weather.totalRadiation! / weather.recordCount
+          : null;
+
+      // Yıllık potansiyel (kWh/m²/yıl) - ortalamadan hesapla
+      // Ortalama W/m² * 24 saat * 365 gün / 1000 = kWh/m²/yıl
+      final dailyKwhM2 = avgRadiationWm2 != null
+          ? (avgRadiationWm2 * 24 * 365) / 1000.0
           : null;
 
       return CitySolarSummary(
@@ -333,9 +373,7 @@ class ApiService {
         longitude: weather.lon,
         lastUpdate: weather.lastUpdate,
         recordCount: weather.recordCount,
-        avgShortwaveRadiation: weather.totalRadiation != null
-            ? weather.totalRadiation! / weather.recordCount
-            : null,
+        avgShortwaveRadiation: avgRadiationWm2,
         avgDirectRadiation: null, // Summary'de yok
         avgDiffuseRadiation: null, // Summary'de yok
         totalDailyIrradianceKwhM2: dailyKwhM2,
@@ -386,7 +424,7 @@ class ApiService {
   Future<RegionalReport> fetchRegionalReport({
     required String region,
     required String type,
-    int limit = 80,
+    int limit = 400,
   }) async {
     final uri = Uri.parse('$_apiBaseUrl/reports/regional').replace(
       queryParameters: {'region': region, 'type': type, 'limit': '$limit'},
@@ -400,6 +438,25 @@ class ApiService {
     }
 
     throw Exception('Rapor verisi alınamadı (status: ${response.statusCode})');
+  }
+
+  Future<List<Map<String, dynamic>>> fetchInterpolatedMap(String type) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_apiBaseUrl/reports/interpolated-map?type=$type&resolution=0.1'),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+        return data.cast<Map<String, dynamic>>();
+      } else {
+        throw Exception('Interpolated map fetch failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Interpolated Map Error: $e');
+      return []; // Hata durumunda boş dön
+    }
   }
 
   // --- Senaryolar ---
@@ -433,6 +490,24 @@ class ApiService {
     throw Exception('Senaryo oluşturulamadı (status: ${response.statusCode})');
   }
 
+  Future<Scenario> updateScenario(
+    int scenarioId,
+    ScenarioCreate scenario,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$_apiBaseUrl/scenarios/$scenarioId'),
+      headers: await _getHeaders(),
+      body: json.encode(scenario.toJson()),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
+      return Scenario.fromJson(data);
+    }
+
+    throw Exception('Senaryo güncellenemedi (status: ${response.statusCode})');
+  }
+
   Future<Scenario> calculateScenario(int scenarioId) async {
     final response = await http.post(
       Uri.parse('$_apiBaseUrl/scenarios/$scenarioId/calculate'),
@@ -445,6 +520,42 @@ class ApiService {
     }
 
     throw Exception('Senaryo hesaplanamadı (status: ${response.statusCode})');
+  }
+
+  Future<Scenario> addPinsToScenario(int scenarioId, List<int> pinIds) async {
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/scenarios/$scenarioId/pins'),
+      headers: await _getHeaders(),
+      body: json.encode(pinIds),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
+      return Scenario.fromJson(data);
+    }
+
+    throw Exception(
+      'Senaryoya pin eklenemedi (status: ${response.statusCode})',
+    );
+  }
+
+  // --- Geo Analysis ---
+
+  Future<Map<String, dynamic>> checkGeoSuitability(
+    double lat,
+    double lon,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$_apiBaseUrl/geo/check-suitability'),
+      headers: await _getHeaders(),
+      body: json.encode({'latitude': lat, 'longitude': lon}),
+    );
+
+    if (response.statusCode == 200) {
+      return json.decode(utf8.decode(response.bodyBytes));
+    } else {
+      throw Exception('Coğrafi analiz yapılamadı: ${response.statusCode}');
+    }
   }
 }
 
@@ -466,6 +577,7 @@ class CityWeatherData {
   final double? cloudCover;
   final double? windSpeed10m;
   final double? relativeHumidity;
+  final double? windDirection;
 
   CityWeatherData({
     required this.cityName,
@@ -482,6 +594,7 @@ class CityWeatherData {
     this.cloudCover,
     this.windSpeed10m,
     this.relativeHumidity,
+    this.windDirection,
   });
 
   factory CityWeatherData.fromJson(Map<String, dynamic> json) {
@@ -505,6 +618,7 @@ class CityWeatherData {
       cloudCover: json['cloud_cover']?.toDouble(),
       windSpeed10m: json['wind_speed_10m']?.toDouble(),
       relativeHumidity: json['relative_humidity_2m']?.toDouble(),
+      windDirection: json['wind_direction_10m']?.toDouble(),
     );
   }
 
@@ -526,6 +640,7 @@ class CityWeatherData {
 /// Şehir özet hava durumu verisi
 class CityWeatherSummary {
   final String cityName;
+  final String? districtName;
   final double lat;
   final double lon;
   final double? avgTemperature;
@@ -537,6 +652,7 @@ class CityWeatherSummary {
 
   CityWeatherSummary({
     required this.cityName,
+    this.districtName,
     required this.lat,
     required this.lon,
     this.avgTemperature,
@@ -550,6 +666,7 @@ class CityWeatherSummary {
   factory CityWeatherSummary.fromJson(Map<String, dynamic> json) {
     return CityWeatherSummary(
       cityName: json['city_name'] ?? '',
+      districtName: json['district_name'],
       lat: (json['lat'] ?? 0).toDouble(),
       lon: (json['lon'] ?? 0).toDouble(),
       avgTemperature: json['avg_temperature']?.toDouble(),

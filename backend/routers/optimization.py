@@ -4,8 +4,11 @@ from typing import List, Dict, Any, Optional, cast
 from pydantic import BaseModel
 import math
 
-from .. import crud, models, schemas, auth
-from ..database import get_system_db
+from backend import auth
+from backend.crud import crud
+from backend.schemas import schemas
+from backend.db import models
+from backend.db.database import get_system_db
 
 router = APIRouter(
     prefix="/optimization",

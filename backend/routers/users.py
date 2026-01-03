@@ -3,8 +3,11 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
 
-from .. import crud, schemas, auth, models
-from ..database import get_db
+from backend import auth
+from backend.db import models
+from backend.schemas import schemas
+from backend.crud import crud
+from backend.db.database import get_db
 
 # DÜZELTME: 'prefix' ve 'tags' parametrelerini buradan siliyoruz.
 # Çünkü main.py dosyasında app.include_router(...) içinde zaten tanımladık.

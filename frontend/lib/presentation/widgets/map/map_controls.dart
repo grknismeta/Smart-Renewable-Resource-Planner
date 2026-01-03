@@ -1,27 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../providers/map_provider.dart';
-import '../../../providers/theme_provider.dart';
-import 'map_constants.dart';
+import 'package:frontend/presentation/viewmodels/map_view_model.dart';
+import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
 
 /// Sol üst köşede gösterilen dashboard widget'ı
 class MapDashboard extends StatelessWidget {
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
 
   const MapDashboard({super.key, required this.theme});
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<MapProvider>(
-      builder: (context, mapProvider, _) {
+    return Consumer<MapViewModel>(
+      builder: (context, mapViewModel, _) {
         // Pin sayılarını hesapla
-        final windPins = mapProvider.pins
+        final windPins = mapViewModel.pins
             .where((p) => p.type == 'Rüzgar Türbini')
             .length;
-        final solarPins = mapProvider.pins
+        final solarPins = mapViewModel.pins
             .where((p) => p.type == 'Güneş Paneli')
             .length;
-        final totalCapacity = mapProvider.pins.fold<double>(
+        final totalCapacity = mapViewModel.pins.fold<double>(
           0,
           (sum, pin) => sum + pin.capacityMw,
         );
@@ -109,8 +108,9 @@ class PlacementIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     if (placingPinType == null) return const SizedBox.shrink();
 
-    final bgColor = MapConstants.getBackgroundColor(placingPinType!);
-    final fgColor = MapConstants.getForegroundColor(placingPinType!);
+    // Kullanıcı isteği: Yeşil renk
+    const bgColor = Colors.green;
+    const fgColor = Colors.white;
 
     return Center(
       child: Container(
@@ -124,10 +124,10 @@ class PlacementIndicator extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.touch_app, color: fgColor),
+            const Icon(Icons.touch_app, color: fgColor),
             const SizedBox(width: 8),
             Text(
-              "$placingPinType Eklemek için Haritaya Dokunun",
+              "⚡ Haritaya Dokun",
               style: TextStyle(fontWeight: FontWeight.bold, color: fgColor),
             ),
             const SizedBox(width: 10),
@@ -142,9 +142,104 @@ class PlacementIndicator extends StatelessWidget {
   }
 }
 
+/// Ana kontrol butonları (Pin Ekle, Alan Seç)
+class MainMapControls extends StatefulWidget {
+  final ThemeViewModel theme;
+  final VoidCallback onAddPin;
+  final VoidCallback onSelectRegion;
+
+  const MainMapControls({
+    super.key,
+    required this.theme,
+    required this.onAddPin,
+    required this.onSelectRegion,
+  });
+
+  @override
+  State<MainMapControls> createState() => _MainMapControlsState();
+}
+
+class _MainMapControlsState extends State<MainMapControls> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // Button 1: Add Pin
+        MapControlButton(
+          icon: Icons.add_location_alt_outlined,
+          tooltip: "Kaynak Ekle",
+          onTap: widget.onAddPin,
+          color: Colors.blueAccent,
+          theme: widget.theme,
+        ),
+        const SizedBox(height: 12),
+        // Button 2: Region Analysis
+        MapControlButton(
+          icon: Icons.map_outlined,
+          tooltip: "Bölge Analizi",
+          onTap: widget.onSelectRegion,
+          color: Colors.purpleAccent,
+          theme: widget.theme,
+        ),
+      ],
+    );
+  }
+}
+
+class MapControlButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final Color color;
+  final ThemeViewModel theme;
+  final double size;
+  final double iconSize;
+
+  const MapControlButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    required this.color,
+    required this.theme,
+    this.size = 50,
+    this.iconSize = 26,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: theme.cardColor,
+        elevation: 4,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: theme.secondaryTextColor.withValues(alpha: 0.2),
+                width: 1,
+              ),
+            ),
+            child: Icon(icon, color: color, size: iconSize),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Zoom kontrolleri
 class ZoomControls extends StatelessWidget {
-  final ThemeProvider theme;
+  final ThemeViewModel theme;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
 
@@ -157,11 +252,12 @@ class ZoomControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        _buildZoomButton(Icons.add, onZoomIn),
-        const SizedBox(height: 8),
         _buildZoomButton(Icons.remove, onZoomOut),
+        const SizedBox(width: 8),
+        _buildZoomButton(Icons.add, onZoomIn),
       ],
     );
   }
@@ -176,7 +272,7 @@ class ZoomControls extends StatelessWidget {
       child: IconButton(
         icon: Icon(icon, color: theme.textColor),
         onPressed: onTap,
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
     );
   }
@@ -184,15 +280,15 @@ class ZoomControls extends StatelessWidget {
 
 /// Harita katmanları paneli
 class LayersPanel extends StatelessWidget {
-  final ThemeProvider theme;
-  final MapProvider mapProvider;
+  final ThemeViewModel theme;
+  final MapViewModel mapViewModel;
   final String selectedBaseMap;
   final ValueChanged<String> onBaseMapChanged;
 
   const LayersPanel({
     super.key,
     required this.theme,
-    required this.mapProvider,
+    required this.mapViewModel,
     required this.selectedBaseMap,
     required this.onBaseMapChanged,
   });
@@ -234,6 +330,7 @@ class LayersPanel extends StatelessWidget {
           Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2)),
           _buildLayerSwitch("Rüzgar Haritası", MapLayer.wind),
           _buildLayerSwitch("Sıcaklık Haritası", MapLayer.temp),
+          _buildLayerSwitch("Işınım Haritası", MapLayer.irradiance),
         ],
       ),
     );
@@ -267,9 +364,15 @@ class LayersPanel extends StatelessWidget {
   }
 
   Widget _buildLayerSwitch(String title, MapLayer layer) {
-    final bool isActive = mapProvider.currentLayer == layer;
+    final bool isActive = mapViewModel.currentLayer == layer;
     return InkWell(
-      onTap: () => mapProvider.changeMapLayer(),
+      onTap: () {
+        if (isActive) {
+          mapViewModel.setLayer(MapLayer.none);
+        } else {
+          mapViewModel.setLayer(layer);
+        }
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6.0),
         child: Row(
