@@ -1,10 +1,13 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../presentation/viewmodels/scenario_view_model.dart';
 import '../../presentation/viewmodels/theme_view_model.dart';
 import '../../presentation/viewmodels/map_view_model.dart';
 import '../../data/models/scenario_model.dart';
+import '../../core/utils/format_utils.dart';
+import '../widgets/common/app_background.dart';
+import '../widgets/common/custom_app_bar.dart';
+import '../widgets/common/glass_container.dart';
 
 class ScenarioScreen extends StatefulWidget {
   const ScenarioScreen({super.key});
@@ -485,14 +488,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
     final scenarioViewModel = Provider.of<ScenarioViewModel>(context);
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0E1621), Color(0xFF111827), Color(0xFF0B1220)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
+      body: AppBackground(
         child: SafeArea(
           child: Column(
             children: [
@@ -555,23 +551,10 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
   Widget _buildHeader(ThemeViewModel theme) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => Navigator.of(context).pushReplacementNamed('/map'),
-            icon: const Icon(Icons.arrow_back),
-            color: Colors.white,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Senaryolar',
-            style: TextStyle(
-              color: theme.textColor,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
+      child: CustomAppBar(
+        title: 'Senaryolar',
+        textColor: theme.textColor,
+        onBack: () => Navigator.of(context).pushReplacementNamed('/map'),
       ),
     );
   }
@@ -585,87 +568,69 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
       onTap: () => _showScenarioDetail(scenario, theme),
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withOpacity(0.12)),
+        child: GlassContainer(
+          padding: const EdgeInsets.all(16),
+          color: Colors.white.withOpacity(0.08),
+          borderRadius: 16,
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blueAccent.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.bar_chart,
+                  color: Colors.blueAccent,
+                  size: 28,
+                ),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.blueAccent.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      scenario.name,
+                      style: TextStyle(
+                        color: theme.textColor,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.bar_chart,
-                      color: Colors.blueAccent,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          scenario.name,
-                          style: TextStyle(
-                            color: theme.textColor,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
+                    const SizedBox(height: 4),
+                    if (scenario.description != null)
+                      Text(
+                        scenario.description!,
+                        style: TextStyle(
+                          color: theme.secondaryTextColor,
+                          fontSize: 13,
                         ),
-                        const SizedBox(height: 4),
-                        if (scenario.description != null)
-                          Text(
-                            scenario.description!,
-                            style: TextStyle(
-                              color: theme.secondaryTextColor,
-                              fontSize: 13,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        const SizedBox(height: 8),
-                        Text(
-                          duration > 0
-                              ? '$duration gün · ${scenario.pinIds.length} kaynak'
-                              : '${scenario.pinIds.length} kaynak',
-                          style: TextStyle(
-                            color: theme.secondaryTextColor.withOpacity(0.7),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      duration > 0
+                          ? '$duration gün · ${scenario.pinIds.length} kaynak'
+                          : '${scenario.pinIds.length} kaynak',
+                      style: TextStyle(
+                        color: theme.secondaryTextColor.withOpacity(0.7),
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
-                  Icon(Icons.chevron_right, color: theme.secondaryTextColor),
-                ],
+                  ],
+                ),
               ),
-            ),
+              Icon(Icons.chevron_right, color: theme.secondaryTextColor),
+            ],
           ),
         ),
       ),
     );
   }
 
-  String _formatEnergy(double kwh) {
-    if (kwh >= 1000000) {
-      return '${(kwh / 1000000).toStringAsFixed(2)} GWh';
-    } else if (kwh >= 1000) {
-      return '${(kwh / 1000).toStringAsFixed(2)} MWh';
-    } else {
-      return '${kwh.toStringAsFixed(2)} kWh';
-    }
-  }
 
   Widget _buildResultSummary(Map<String, dynamic> data, ThemeViewModel theme) {
     final double totalSolar = (data['total_solar_kwh'] ?? 0).toDouble();
@@ -688,7 +653,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
               Expanded(
                 child: _buildEnergyCard(
                   'Toplam Üretim',
-                  _formatEnergy(totalEnergy),
+                  FormatUtils.formatEnergy(totalEnergy),
                   Icons.flash_on,
                   Colors.amber,
                   theme,
@@ -702,7 +667,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
               Expanded(
                 child: _buildEnergyCard(
                   'Güneş ($solarCount)',
-                  _formatEnergy(totalSolar),
+                  FormatUtils.formatEnergy(totalSolar),
                   Icons.wb_sunny,
                   Colors.orangeAccent,
                   theme,
@@ -712,7 +677,7 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
               Expanded(
                 child: _buildEnergyCard(
                   'Rüzgar ($windCount)',
-                  _formatEnergy(totalWind),
+                  FormatUtils.formatEnergy(totalWind),
                   Icons.air,
                   Colors.lightBlueAccent,
                   theme,

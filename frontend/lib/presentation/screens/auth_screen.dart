@@ -1,10 +1,11 @@
-import 'dart:ui'; // ImageFilter için
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import '../../presentation/viewmodels/auth_view_model.dart';
+import '../widgets/common/glass_container.dart';
 // ViewState için
 
 class AuthScreen extends StatefulWidget {
@@ -137,30 +138,22 @@ class _AuthScreenState extends State<AuthScreen> {
               Center(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(20),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        width: 380,
-                        padding: const EdgeInsets.all(30),
-                        decoration: BoxDecoration(
-                          color: const Color(
-                            0xFF1E232F,
-                          ).withValues(alpha: 0.75),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.1),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.3),
-                              blurRadius: 20,
-                              spreadRadius: 5,
-                            ),
-                          ],
-                        ),
+                  child: GlassContainer(
+                    width: 380,
+                    padding: const EdgeInsets.all(30),
+                    borderRadius: 20,
+                    blur: 10,
+                    color: const Color(0xFF1E232F).withValues(alpha: 0.75),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.1),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -315,9 +308,7 @@ class _AuthScreenState extends State<AuthScreen> {
                               ),
                           ],
                         ),
-                      ),
                     ),
-                  ),
                 ),
               ),
             ],
@@ -333,12 +324,10 @@ class _AuthScreenState extends State<AuthScreen> {
     required IconData icon,
     bool isPassword = false,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
+    return GlassContainer(
+      borderRadius: 12,
+      color: Colors.white.withValues(alpha: 0.1),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
       child: TextField(
         controller: controller,
         obscureText: isPassword,

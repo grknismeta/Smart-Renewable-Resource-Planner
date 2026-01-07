@@ -7,11 +7,13 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/api_service.dart';
+import '../../core/utils/map_utils.dart'; // Added
 import '../../presentation/viewmodels/map_view_model.dart';
 import '../../presentation/viewmodels/theme_view_model.dart';
 import '../widgets/sidebar/sidebar_widgets.dart';
 import '../widgets/map/map_widgets.dart';
 import '../widgets/map/resource_heatmap_layer.dart';
+// Ensure this is available if not already
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -29,12 +31,6 @@ class _MapScreenState extends State<MapScreen> {
   // Zaman slider penceresinin üst sınırı (sabit referans)
   // Mouse hover için
   LatLng? _hoverPosition;
-
-  // Türkiye sınırları
-  static const double _minLat = 35.5;
-  static const double _maxLat = 42.5;
-  static const double _minLon = 25.5;
-  static const double _maxLon = 45.0;
 
   @override
   void initState() {
@@ -58,8 +54,8 @@ class _MapScreenState extends State<MapScreen> {
     // Bölge seçim modundaysa
     if (mapViewModel.isSelectingRegion) {
       final clamped = LatLng(
-        point.latitude.clamp(_minLat, _maxLat),
-        point.longitude.clamp(_minLon, _maxLon),
+        point.latitude.clamp(MapConstants.turkeyMinLat, MapConstants.turkeyMaxLat),
+        point.longitude.clamp(MapConstants.turkeyMinLon, MapConstants.turkeyMaxLon),
       );
       mapViewModel.recordSelectionPoint(clamped);
       return;
@@ -276,15 +272,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _constrainToTurkey(LatLng center) {
-    final clampedLat = center.latitude.clamp(_minLat, _maxLat);
-    final clampedLon = center.longitude.clamp(_minLon, _maxLon);
-
-    if (clampedLat != center.latitude || clampedLon != center.longitude) {
-      _mapController.move(
-        LatLng(clampedLat, clampedLon),
-        _mapController.camera.zoom,
-      );
-    }
+    MapUtils.constrainMapCamera(_mapController);
   }
 
   @override
@@ -554,8 +542,8 @@ class _MapScreenState extends State<MapScreen> {
         options: MapOptions(
           initialCameraFit: CameraFit.bounds(
             bounds: LatLngBounds(
-              const LatLng(_minLat, _minLon),
-              const LatLng(_maxLat, _maxLon),
+              const LatLng(MapConstants.turkeyMinLat, MapConstants.turkeyMinLon),
+              const LatLng(MapConstants.turkeyMaxLat, MapConstants.turkeyMaxLon),
             ),
             padding: const EdgeInsets.all(12),
           ),
@@ -681,8 +669,8 @@ class _MapScreenState extends State<MapScreen> {
                 var newPoint = camera.offsetToCrs(localPosition);
                 // Sınırlar içinde tut
                 newPoint = LatLng(
-                  newPoint.latitude.clamp(_minLat, _maxLat),
-                  newPoint.longitude.clamp(_minLon, _maxLon),
+                  newPoint.latitude.clamp(MapConstants.turkeyMinLat, MapConstants.turkeyMaxLat),
+                  newPoint.longitude.clamp(MapConstants.turkeyMinLon, MapConstants.turkeyMaxLon),
                 );
 
                 mapViewModel.dragPoint(newPoint);
