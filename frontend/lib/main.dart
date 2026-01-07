@@ -3,22 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 // Servisler
-import 'core/api_service.dart';
+import 'core/api_services/api_service.dart';
 import 'core/secure_storage_service.dart';
 
 // ViewModels
 import 'presentation/viewmodels/auth_view_model.dart';
-import 'presentation/viewmodels/map_view_model.dart';
+import 'presentation/features/map/viewmodels/map_view_model.dart';
 import 'presentation/viewmodels/theme_view_model.dart';
 import 'presentation/viewmodels/report_view_model.dart';
-import 'presentation/viewmodels/scenario_view_model.dart';
+import 'presentation/features/scenario/viewmodels/scenario_view_model.dart';
 
 // Ekranlar
 import 'presentation/screens/splash_screen.dart';
 import 'presentation/screens/auth_screen.dart';
-import 'presentation/screens/map_screen.dart';
+import 'presentation/features/map/map_screen.dart';
 import 'presentation/screens/report_screen.dart';
-import 'presentation/screens/scenario_screen.dart';
+import 'presentation/features/scenario/scenario_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();

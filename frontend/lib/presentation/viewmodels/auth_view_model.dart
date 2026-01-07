@@ -1,4 +1,4 @@
-import '../../core/api_service.dart';
+import '../../core/api_services/api_service.dart';
 import '../../core/secure_storage_service.dart';
 import '../../core/base/base_view_model.dart';
 
@@ -29,7 +29,7 @@ class AuthViewModel extends BaseViewModel {
   Future<void> login(String email, String password) async {
     setBusy(true);
     try {
-      await _apiService.login(email, password);
+      await _apiService.auth.login(email, password);
       _isLoggedIn = true;
       notifyListeners();
     } catch (e) {
@@ -51,7 +51,7 @@ class AuthViewModel extends BaseViewModel {
 
     setBusy(true);
     try {
-      await _apiService.register(email, password);
+      await _apiService.auth.register(email, password);
     } catch (e) {
       setError(e.toString());
       rethrow; // Hatayı UI'a ilet

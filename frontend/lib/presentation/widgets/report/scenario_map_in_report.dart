@@ -4,9 +4,9 @@ import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_ti
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../../../presentation/viewmodels/map_view_model.dart';
-import '../../../presentation/viewmodels/scenario_view_model.dart';
-import '../map/map_constants.dart';
+import '../../features/map/viewmodels/map_view_model.dart';
+import '../../features/scenario/viewmodels/scenario_view_model.dart';
+import '../../features/map/widgets/map_constants.dart';
 
 class ScenarioMapInReport extends StatelessWidget {
   final MapController mapController;

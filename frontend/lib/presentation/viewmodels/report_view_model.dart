@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import '../../core/api_service.dart';
+import '../../core/api_services/api_service.dart';
 import '../../data/models/system_data_models.dart';
 import '../../core/base/base_view_model.dart';
 import 'package:flutter/material.dart' show debugPrint;
@@ -25,7 +25,7 @@ class ReportViewModel extends BaseViewModel {
     setBusy(true);
 
     try {
-      _currentReport = await _apiService.fetchRegionalReport(
+      _currentReport = await _apiService.report.fetchRegionalReport(
         region: _selectedRegion,
         type: _selectedType,
       );

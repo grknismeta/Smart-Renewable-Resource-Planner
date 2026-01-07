@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/utils/format_utils.dart';
-import '../../../presentation/viewmodels/map_view_model.dart';
-import '../../../presentation/viewmodels/scenario_view_model.dart';
+import '../../features/map/viewmodels/map_view_model.dart';
+import '../../features/scenario/viewmodels/scenario_view_model.dart';
 
 class ScenarioResultPanel extends StatelessWidget {
   final int scenarioId;

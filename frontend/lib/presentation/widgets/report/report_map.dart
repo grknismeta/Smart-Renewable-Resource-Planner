@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 import '../../../core/utils/map_utils.dart';
 import '../../../data/models/system_data_models.dart';
 import '../../../presentation/viewmodels/report_view_model.dart';
-import '../map/map_constants.dart';
+import '../../features/map/widgets/map_constants.dart';
 
 class ReportMap extends StatelessWidget {
   final MapController mapController;

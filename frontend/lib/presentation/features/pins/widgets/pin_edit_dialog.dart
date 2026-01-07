@@ -5,11 +5,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../data/models/pin_model.dart';
-import 'package:frontend/presentation/viewmodels/map_view_model.dart';
+import '../../map/viewmodels/map_view_model.dart';
 import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
 import '../viewmodels/pin_dialog_viewmodel.dart';
 import 'equipment_selector_widget.dart';
-import '../../../widgets/map/map_constants.dart';
+import '../../map/widgets/map_constants.dart';
 
 /// Pin düzenleme dialog'u - ViewModel pattern ile sadeleştirilmiş
 class PinEditDialog extends StatefulWidget {

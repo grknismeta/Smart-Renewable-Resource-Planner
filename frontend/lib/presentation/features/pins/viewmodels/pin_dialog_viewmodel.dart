@@ -5,7 +5,7 @@
 
 import 'package:flutter/foundation.dart';
 import '../../../../data/models/system_data_models.dart';
-import '../../../viewmodels/map_view_model.dart';
+import '../../map/viewmodels/map_view_model.dart';
 
 /// Pin dialog için ViewModel - UI state ve business logic burada
 class PinDialogViewModel extends ChangeNotifier {

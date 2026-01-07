@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/models/system_data_models.dart';
 import '../../presentation/viewmodels/report_view_model.dart';
-import '../../presentation/viewmodels/scenario_view_model.dart';
+import '../features/scenario/viewmodels/scenario_view_model.dart';
 import '../../presentation/viewmodels/theme_view_model.dart';
 import '../widgets/common/app_background.dart';
 import '../widgets/common/custom_app_bar.dart';

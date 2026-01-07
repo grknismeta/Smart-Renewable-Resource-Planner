@@ -4,8 +4,8 @@
 // Reusable, temiz UI component
 
 import 'package:flutter/material.dart';
-import 'package:frontend/presentation/viewmodels/map_view_model.dart';
-import '../../../widgets/map/map_widgets.dart';
+import '../viewmodels/map_view_model.dart';
+import 'map_widgets.dart';
 
 /// Kaynak ekleme butonları (Güneş Paneli + Rüzgar Türbini)
 class ResourceActionButtons extends StatelessWidget {
