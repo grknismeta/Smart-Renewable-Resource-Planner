@@ -1,6 +1,6 @@
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import '../../presentation/features/map/widgets/map_constants.dart';
+import '../../presentation/features/map/widgets/components/map_constants.dart';
 
 class MapUtils {
   MapUtils._();

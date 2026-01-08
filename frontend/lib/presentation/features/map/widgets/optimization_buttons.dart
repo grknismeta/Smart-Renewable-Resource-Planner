@@ -7,7 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../viewmodels/map_view_model.dart';
 import 'package:frontend/presentation/viewmodels/theme_view_model.dart';
-import 'map_widgets.dart';
+
+import '../dialogs/optimization_dialog.dart';
 
 /// Optimizasyon butonları (Bölge Seç / Hesapla)
 class OptimizationButtons extends StatelessWidget {

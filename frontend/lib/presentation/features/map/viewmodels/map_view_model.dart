@@ -9,8 +9,8 @@ import '../../../../data/models/system_data_models.dart';
 import '../../../../data/models/weather_model.dart';
 import '../../../viewmodels/auth_view_model.dart';
 import 'map_layer_mixin.dart'; // Mixin import
-import '../widgets/map_layers_system.dart';
-export '../widgets/map_layers_system.dart' show MapLayerType;
+import '../widgets/components/map_layers_system.dart';
+export '../widgets/components/map_layers_system.dart' show MapLayerType;
 
 
 // Pin ekleme modunu String olarak tanımla
@@ -124,6 +124,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     try {
       _equipments = await _apiService.equipment.fetchEquipments(type: type);
     } catch (e) {
+    
       debugPrint('[MapViewModel.loadEquipments] Hata: $e');
     } finally {
       _equipmentsLoading = false;

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../presentation/viewmodels/theme_view_model.dart';
 import '../viewmodels/map_view_model.dart';
-import '../models/map_models.dart';
+
 
 class LayersPanel extends StatelessWidget {
   final ThemeViewModel theme;

@@ -7,9 +7,9 @@ import sys
 import os
 
 # Add parent directory to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
-from backend.init_db import init_db
+from app.db.init_db import init_db
 
 if __name__ == "__main__":
     print("🔄 Initializing database...")

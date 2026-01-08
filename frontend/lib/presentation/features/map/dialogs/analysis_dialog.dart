@@ -20,7 +20,9 @@ class AnalysisDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint("AnalysisDialog: Building... Result: ${result.resourceType}");
     final theme = Provider.of<ThemeViewModel>(context);
+    debugPrint("AnalysisDialog: Theme loaded. CardColor: ${theme.cardColor}");
 
     // Using Dialog with transparent bg to match previous style (container handles look)
     return Dialog(

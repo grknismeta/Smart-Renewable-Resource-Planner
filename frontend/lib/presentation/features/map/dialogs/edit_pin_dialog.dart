@@ -5,12 +5,11 @@ import 'package:latlong2/latlong.dart';
 import '../../../../data/models/pin_model.dart';
 import '../../../viewmodels/theme_view_model.dart';
 import '../../map/viewmodels/map_view_model.dart';
-import '../../map/widgets/map_constants.dart';
+import '../../map/widgets/components/map_constants.dart';
 import '../../pins/viewmodels/pin_dialog_viewmodel.dart';
 
 import '../../../widgets/common/themed_inputs.dart';
 import '../../pins/widgets/equipment_selector_widget.dart';
-import '../widgets/map_dialog_base.dart';
 import 'map_dialogs.dart'; // For error/calculation dialogs
 
 class EditPinDialog extends StatefulWidget {
@@ -18,13 +17,25 @@ class EditPinDialog extends StatefulWidget {
 
   const EditPinDialog({super.key, required this.pin});
 
-  static void show(BuildContext context, Pin pin) {
-    showModalBottomSheet(
+  static void show(BuildContext context, Pin pin) async {
+    final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent, // Let content duplicate theme color
       builder: (_) => EditPinDialog(pin: pin),
     );
+
+    if (result is PinCalculationResponse && context.mounted) {
+       debugPrint("EditPinDialog: Got result, showing AnalysisDialog");
+       final theme = Provider.of<ThemeViewModel>(context, listen: false);
+       try {
+         MapDialogs.showCalculationResultDialog(context, result, theme);
+       } catch (e) {
+         debugPrint("EditPinDialog: Error showing dialog: $e");
+       }
+    } else {
+       debugPrint("EditPinDialog: No result or context unmounted. Result type: ${result.runtimeType}");
+    }
   }
 
   @override
@@ -50,6 +61,10 @@ class _EditPinDialogState extends State<EditPinDialog> {
       widget.pin.type,
       initialEquipmentId: widget.pin.equipmentId,
     );
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _viewModel.loadInitialData();
+    });
   }
 
   @override
@@ -259,21 +274,25 @@ class _EditPinDialogState extends State<EditPinDialog> {
     }
   }
 
-  Future<void> _handleUpdate(BuildContext context, PinDialogViewModel viewModel) async {
+  Future<void> _performUpdate(BuildContext context, PinDialogViewModel viewModel) async {
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
     final capacityMw = viewModel.getSelectedCapacityMw();
 
-    if (capacityMw == null) return;
+    if (capacityMw == null) throw Exception("Kapasite seçilmedi");
 
+    await mapViewModel.updatePin(
+      widget.pin.id,
+      LatLng(widget.pin.latitude, widget.pin.longitude),
+      _nameController.text,
+      viewModel.selectedType,
+      capacityMw,
+      viewModel.selectedEquipmentId,
+    );
+  }
+
+  Future<void> _handleUpdate(BuildContext context, PinDialogViewModel viewModel) async {
     try {
-      await mapViewModel.updatePin(
-        widget.pin.id,
-        LatLng(widget.pin.latitude, widget.pin.longitude),
-        _nameController.text,
-        viewModel.selectedType,
-        capacityMw,
-        viewModel.selectedEquipmentId,
-      );
+      await _performUpdate(context, viewModel);
 
       if (context.mounted) {
         Navigator.pop(context);
@@ -287,27 +306,17 @@ class _EditPinDialogState extends State<EditPinDialog> {
   }
 
   Future<void> _handleCalculate(BuildContext context, PinDialogViewModel viewModel) async {
-    // Önce update yap, sonra hesapla
-    await _handleUpdate(context, viewModel);
-    
-    if (!context.mounted) return;
-
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
 
     try {
-        // Redo update logic without pop
+        // 1. Önce güncellemeyi yap (Pop etmeden)
+        await _performUpdate(context, viewModel);
+        
+        // 2. Kapasite bilgisini tekrar al
         final capacityMw = viewModel.getSelectedCapacityMw();
         if (capacityMw == null) return;
 
-        await mapViewModel.updatePin(
-            widget.pin.id,
-            LatLng(widget.pin.latitude, widget.pin.longitude),
-            _nameController.text,
-            viewModel.selectedType,
-            capacityMw,
-            viewModel.selectedEquipmentId,
-        );
-
+        // 3. Hesaplamayı başlat
         await mapViewModel.calculatePotential(
             lat: widget.pin.latitude,
             lon: widget.pin.longitude,
@@ -316,19 +325,10 @@ class _EditPinDialogState extends State<EditPinDialog> {
             panelArea: double.tryParse(_panelAreaController.text) ?? 0.0,
         );
 
-        // Result is in viewModel.latestCalculationResult
+        // 4. Sonuç varsa dialogu kapat ve sonucu dön
         if (mapViewModel.latestCalculationResult != null && context.mounted) {
-
-             final nav = Navigator.of(context);
-             final theme = Provider.of<ThemeViewModel>(context, listen: false);
-             
-             final result = mapViewModel.latestCalculationResult!;
-             
-             if (mounted) Navigator.of(context).pop(); // Close sheet
-             
-             if (mounted) {
-
-                MapDialogs.showCalculationResultDialog(context, result, theme);
+             if (Navigator.canPop(context)) {
+                Navigator.of(context).pop(mapViewModel.latestCalculationResult);
              }
         }
     } catch (e) {

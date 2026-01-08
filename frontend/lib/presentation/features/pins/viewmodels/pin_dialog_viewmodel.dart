@@ -23,9 +23,8 @@ class PinDialogViewModel extends ChangeNotifier {
     String initialType, {
     int? initialEquipmentId,
   }) : _selectedType = initialType,
-       _selectedEquipmentId = initialEquipmentId {
-    _loadEquipments();
-  }
+       _selectedEquipmentId = initialEquipmentId;
+
 
   // Getters
   String get selectedType => _selectedType;
@@ -65,6 +64,12 @@ class PinDialogViewModel extends ChangeNotifier {
   }
 
   // Business Logic
+  Future<void> loadInitialData() async {
+    final type = _selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
+    await _mapViewModel.loadEquipments(type: type, forceRefresh: true);
+    notifyListeners();
+  }
+
   Future<void> _loadEquipments() async {
     final type = _selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
     await _mapViewModel.loadEquipments(type: type, forceRefresh: true);

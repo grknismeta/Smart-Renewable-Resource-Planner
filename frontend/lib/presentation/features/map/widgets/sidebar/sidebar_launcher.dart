@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'sidebar_widgets.dart';
+import 'report_button.dart';
 import '../../viewmodels/map_view_model.dart';
 import '../../../../viewmodels/auth_view_model.dart';
 import '../../../../viewmodels/theme_view_model.dart';
@@ -96,19 +97,32 @@ class SidebarLauncher extends StatelessWidget {
                             ),
                           ),
                         ),
-                        ScenarioButton(
-                          theme: theme,
-                          isGuest: isGuest,
-                          isCollapsed: false,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ScenarioButton(
+                                theme: theme,
+                                isGuest: isGuest,
+                                isCollapsed: false,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ReportButton(
+                                theme: theme,
+                                isCollapsed: false,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 10),
-                        PinsPanel(
+                        // Removed SizedBox height here as buttons have bottom margin
+                        DataPanel(
                           theme: theme,
                           mapViewModel: mapViewModel,
                           isCollapsed: false,
                         ),
                         const SizedBox(height: 10),
-                        DataPanel(
+                        PinsPanel(
                           theme: theme,
                           mapViewModel: mapViewModel,
                           isCollapsed: false,

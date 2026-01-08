@@ -173,42 +173,57 @@ class DataPanel extends StatelessWidget {
 
         const SizedBox(height: 20),
 
-        // 7 Günlük En İyi Rüzgar (Ülke Geneli)
-        if (mapViewModel.weatherSummary.isNotEmpty) ...[
-          Text(
-            "7 Gün – En İyi Rüzgar",
-            style: TextStyle(
-              color: theme.secondaryTextColor,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 7 Günlük En İyi Rüzgar
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                   Text(
+                    "7 Gün – En İyi Rüzgar",
+                    style: TextStyle(
+                      color: theme.secondaryTextColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ..._buildTopWindCities(),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          ..._buildTopWindCities(),
-          const SizedBox(height: 16),
-        ],
+            
+            const SizedBox(width: 12),
 
-        // Kaynaklar listesi başlığı
-        Text(
-          "Kaynaklar",
-          style: TextStyle(
-            color: theme.secondaryTextColor,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
+             // 7 Günlük En İyi Işınım
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                   Text(
+                    "7 Gün – En İyi Işınım",
+                    style: TextStyle(
+                      color: theme.secondaryTextColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ..._buildTopSolarCities(),
+                ],
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 10),
-
-        // Kaynak listesi
-        if (mapViewModel.pins.isEmpty)
-          _buildEmptyState()
-        else
-          ..._buildPinList(),
       ],
     );
   }
 
   List<Widget> _buildTopWindCities() {
+    if (mapViewModel.weatherSummary.isEmpty) return [const SizedBox()];
+    
     final sorted = [...mapViewModel.weatherSummary]
       ..sort(
         (a, b) => (b.avgWindSpeed100m ?? 0).compareTo(a.avgWindSpeed100m ?? 0),
@@ -224,20 +239,20 @@ class DataPanel extends StatelessWidget {
             const Icon(
               Icons.wind_power,
               color: Colors.lightBlueAccent,
-              size: 16,
+              size: 14,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
             Expanded(
               child: Text(
                 c.cityName,
-                style: TextStyle(color: theme.textColor, fontSize: 12),
+                style: TextStyle(color: theme.textColor, fontSize: 11),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             if (v != null)
               Text(
                 '${v.toStringAsFixed(1)} m/s',
-                style: TextStyle(color: theme.secondaryTextColor, fontSize: 12),
+                style: TextStyle(color: theme.secondaryTextColor, fontSize: 10),
               ),
           ],
         ),
@@ -245,45 +260,55 @@ class DataPanel extends StatelessWidget {
     }).toList();
   }
 
-  Widget _buildEmptyState() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      alignment: Alignment.center,
-      child: Column(
-        children: [
-          Icon(
-            Icons.add_location_alt_outlined,
-            size: 30,
-            color: theme.secondaryTextColor.withValues(alpha: 0.3),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            "Henüz kaynak eklenmedi",
-            style: TextStyle(
-              color: theme.textColor.withValues(alpha: 0.7),
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  List<Widget> _buildTopSolarCities() {
+    if (mapViewModel.weatherSummary.isEmpty) return [const SizedBox()];
+      
+    final sortedByRad = [...mapViewModel.weatherSummary]
+       ..sort((a,b) => (b.totalRadiation ?? 0).compareTo(a.totalRadiation ?? 0));
 
-  List<Widget> _buildPinList() {
-    return mapViewModel.pins.map((pin) {
-      bool isSolar = pin.type.contains('Güneş') || pin.type.contains('Solar');
-      return _PinListItem(
-        name: pin.name,
-        capacity: pin.capacityMw,
-        isSolar: isSolar,
-        theme: theme,
-        onDelete: () => mapViewModel.deletePin(pin.id),
+    final top = sortedByRad.take(3).toList();
+    
+    return top.map((c) {
+      final v = c.totalRadiation;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.wb_sunny,
+              color: Colors.orangeAccent,
+              size: 14,
+            ),
+             const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                c.cityName,
+                style: TextStyle(color: theme.textColor, fontSize: 11),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (v != null)
+              Text(
+                _formatRadiation(v),
+                style: TextStyle(color: theme.secondaryTextColor, fontSize: 10),
+              ),
+          ],
+        ),
       );
     }).toList();
   }
-}
 
-/// İstatistik kartı widget'ı
+  String _formatRadiation(double value) {
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(2)} MW/m²';
+    } else if (value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(2)} kW/m²';
+    } else {
+      return '${value.toStringAsFixed(0)} W/m²';
+    }
+  }
+}
+// _StatCard kept if needed, but removed _PinListItem
 class _StatCard extends StatelessWidget {
   final String title;
   final String count;
@@ -346,70 +371,6 @@ class _StatCard extends StatelessWidget {
             style: const TextStyle(color: Colors.white70, fontSize: 11),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Pin listesi öğesi widget'ı
-class _PinListItem extends StatelessWidget {
-  final String name;
-  final double capacity;
-  final bool isSolar;
-  final ThemeViewModel theme;
-  final VoidCallback onDelete;
-
-  const _PinListItem({
-    required this.name,
-    required this.capacity,
-    required this.isSolar,
-    required this.theme,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bgColor = isSolar ? DataPanel.solarBgColor : DataPanel.windBgColor;
-    final fgColor = isSolar ? DataPanel.solarFgColor : DataPanel.windFgColor;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: ListTile(
-        dense: true,
-        contentPadding: EdgeInsets.zero,
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: bgColor,
-            shape: BoxShape.circle,
-            border: Border.all(color: fgColor, width: 1.5),
-          ),
-          child: Icon(
-            isSolar ? Icons.wb_sunny : Icons.air,
-            color: fgColor,
-            size: 14,
-          ),
-        ),
-        title: Text(
-          name,
-          style: TextStyle(
-            color: theme.textColor,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        subtitle: Text(
-          "$capacity MW",
-          style: TextStyle(color: theme.secondaryTextColor, fontSize: 12),
-        ),
-        trailing: IconButton(
-          icon: Icon(
-            Icons.delete_outline,
-            color: theme.secondaryTextColor.withValues(alpha: 0.7),
-            size: 20,
-          ),
-          onPressed: onDelete,
-        ),
       ),
     );
   }

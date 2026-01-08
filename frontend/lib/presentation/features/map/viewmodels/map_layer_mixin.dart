@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/api_services/api_service.dart';
 import '../../../../core/base/base_view_model.dart';
 import '../models/map_models.dart';
-import '../widgets/map_layers_system.dart';
+import '../widgets/components/map_layers_system.dart';
 
 mixin MapLayerMixin on BaseViewModel {
   // Abstract dependency

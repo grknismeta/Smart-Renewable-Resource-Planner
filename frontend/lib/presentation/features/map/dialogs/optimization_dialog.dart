@@ -76,6 +76,11 @@ class _OptimizationDialogContentState
         .where((e) => e.type == 'Wind')
         .toList();
 
+    // Ensure selectedId corresponds to an actual equipment in the list
+    if (selectedEquipmentId != null && !windEquipments.any((e) => e.id == selectedEquipmentId)) {
+      selectedEquipmentId = null;
+    }
+
     if (selectedEquipmentId == null && windEquipments.isNotEmpty) {
       selectedEquipmentId = windEquipments.first.id;
     }
@@ -168,15 +173,18 @@ class _OptimizationDialogContentState
                 ),
               ),
               items: windEquipments
-                  .map(
-                    (e) => DropdownMenuItem<int>(
+                  .map((e) => e.id)
+                  .toSet() // Ensure unique IDs
+                  .map((id) {
+                    final e = windEquipments.firstWhere((element) => element.id == id);
+                    return DropdownMenuItem<int>(
                       value: e.id,
                       child: Text(
                         '${e.name} • ${e.ratedPowerKw.toStringAsFixed(0)} kW',
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  )
+                    );
+                  })
                   .toList(),
               onChanged: _isLoading
                   ? null
@@ -200,7 +208,13 @@ class _OptimizationDialogContentState
       ),
       actions: [
         TextButton(
-          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+          onPressed: _isLoading 
+              ? null 
+              : () {
+                  if (Navigator.canPop(context)) {
+                    Navigator.of(context).pop();
+                  }
+                },
           child: const Text('İptal'),
         ),
         ElevatedButton.icon(
@@ -224,7 +238,9 @@ class _OptimizationDialogContentState
                       equipmentId: selectedEquipmentId!,
                     );
                     if (mounted) {
-                      Navigator.of(context).pop();
+                      if (Navigator.canPop(context)) {
+                        Navigator.of(context).pop();
+                      }
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(

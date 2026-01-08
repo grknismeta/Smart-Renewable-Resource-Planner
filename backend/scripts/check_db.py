@@ -3,11 +3,11 @@
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
-from backend.db.database import UserSessionLocal
-from backend.db import models
-from backend.crud import crud
+from app.db.database import UserSessionLocal
+from app.db import models
+from app.crud import crud
 
 db = UserSessionLocal()
 

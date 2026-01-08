@@ -7,12 +7,14 @@ import 'viewmodels/map_view_model.dart';
 import '../../viewmodels/theme_view_model.dart';
 
 // New Atomic Components
-import 'widgets/map_view.dart';
-import 'widgets/map_controls.dart';
-import 'widgets/map_overlays.dart';
+import 'widgets/components/map_view.dart';
+import 'widgets/components/map_controls.dart';
+import 'widgets/components/map_overlays.dart';
 
 import 'widgets/sidebar/sidebar_launcher.dart';
-import 'widgets/map_widgets.dart'; // For LayersPanel (or move LayersPanel to its own file)
+import 'widgets/components/map_widgets.dart'; 
+import 'dialogs/add_pin_dialog.dart'; // Import AddPinDialog
+
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -192,22 +194,34 @@ class _MapScreenState extends State<MapScreen> {
        // Looking at MapViewModel, it has `checkGeoSuitability` method from previous turn fixes?
        // The user said "Login Transfer: UI içindeki tüm setState gerektiren fonksiyonları... MapViewModel'e taşı."
        
-       final result = await viewModel.geoCheck(point); // Assuming I add this to VM
+       final result = await viewModel.geoCheck(point);
        
-       if (mounted) Navigator.pop(context); // Close loading
-       
-       // Show Result Dialog
-       // This UI part can stay here or be in a Dialog helper
-       // _handleGeoResult(point, result); // This needs to be moved/kept
-       
-       // For speed, I'll implement _handleGeoResult logic briefly here or extract to DialogHelper
-       if (result != null) {
-          // Show result dialog logic...
+       if (context.mounted) Navigator.pop(context); // Close loading
+
+       if (result != null && context.mounted) {
+          // Eğer yasaklı alan ise uyarı verebiliriz (Opsiyonel)
+          if (result['suitable'] == false) {
+             // Show warning but still allow adding? Or block?
+             // For now just show AddPinDialog as before
+          }
+
+          showDialog(
+            context: context,
+            builder: (ctx) => AddPinDialog(
+               point: point,
+               initialPinType: viewModel.placingPinType ?? 'Güneş Paneli',
+            ),
+          ).then((_) {
+             // Dialog kapanınca ekleme modunu bitir
+             viewModel.stopPlacingMarker();
+          });
        }
-       
     } catch (e) {
-       if (mounted) Navigator.pop(context);
-       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Hata: $e')));
+       debugPrint("Geo Check Exception: $e");
+       if (context.mounted) Navigator.pop(context);
+       if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Hata: $e')));
+       }
     }
   }
 

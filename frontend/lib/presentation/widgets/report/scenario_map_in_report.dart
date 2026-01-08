@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../features/map/viewmodels/map_view_model.dart';
 import '../../features/scenario/viewmodels/scenario_view_model.dart';
-import '../../features/map/widgets/map_constants.dart';
+import '../../features/map/widgets/components/map_constants.dart';
 
 class ScenarioMapInReport extends StatelessWidget {
   final MapController mapController;

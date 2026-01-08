@@ -6,10 +6,10 @@ This drops all user_db tables and recreates them
 import os
 import sys
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
-from backend.database import UserEngine, UserBase
-from backend import models
+from app.db.database import UserBase, UserEngine, UserPinsBase, UserPinsEngine
+from app.db import models
 
 def reset_user_db():
     """Drop all tables in user_db and recreate them"""

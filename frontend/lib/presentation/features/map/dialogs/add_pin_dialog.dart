@@ -10,7 +10,7 @@ import '../../map/viewmodels/map_view_model.dart';
 
 import '../../../widgets/common/themed_inputs.dart';
 import '../../pins/widgets/equipment_selector_widget.dart';
-import '../widgets/map_dialog_base.dart';
+import '../widgets/components/map_dialog_base.dart';
 import 'map_dialogs.dart'; // For error dialog
 
 class AddPinDialog extends StatefulWidget {
@@ -51,9 +51,10 @@ class _AddPinDialogState extends State<AddPinDialog> {
       widget.initialPinType,
     );
 
-    // Load scenarios
+    // Load scenarios and initial equipments
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<ScenarioViewModel>(context, listen: false).loadScenarios();
+      _viewModel.loadInitialData();
     });
   }
 

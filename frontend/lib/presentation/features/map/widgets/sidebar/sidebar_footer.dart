@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../viewmodels/theme_view_model.dart';
 import '../../../../viewmodels/auth_view_model.dart';
+import '../../../help/help_dialog.dart';
 
 /// Sidebar alt kısmı - Tema değiştirme, yardım ve çıkış butonları
 class SidebarFooter extends StatelessWidget {
@@ -40,7 +41,7 @@ class SidebarFooter extends StatelessWidget {
             icon: Icons.help_outline,
             label: "Yardım",
             color: theme.secondaryTextColor,
-            onTap: () {},
+            onTap: () => HelpDialog.show(context),
           ),
 
           // Giriş/Çıkış

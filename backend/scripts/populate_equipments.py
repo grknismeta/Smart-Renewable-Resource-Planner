@@ -1,11 +1,12 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 
 from sqlalchemy.orm import Session
-from backend.db.database import SystemSessionLocal, SystemEngine, SystemBase
-from backend.db.models import Equipment
-
+from app.db.database import SystemSessionLocal, SystemEngine, SystemBase
+from app.db import models
+from app.crud import crud
+    
 def populate_default_equipments():
     """
     Sistem veritabanını varsayılan Güneş Panelleri ve Rüzgar Türbinleri ile doldurur.
@@ -13,6 +14,14 @@ def populate_default_equipments():
     # Tabloların varlığından emin ol
     SystemBase.metadata.create_all(bind=SystemEngine)
     db = SystemSessionLocal()
+
+    # ... items definition ... (skipping for brevity in search, matching start)
+    
+    # Correction: Use models.Equipment
+    pass
+
+# We can't match huge block. Let's do small chunks.
+
 
     # --- RÜZGAR TÜRBİNLERİ ---
     turbines = [
@@ -115,9 +124,9 @@ def populate_default_equipments():
     
     for item in all_items:
         # Önce var mı kontrol et (Tekrar tekrar çalıştırılınca çakışmasın)
-        exists = db.query(Equipment).filter(Equipment.name == item["name"]).first()
+        exists = db.query(models.Equipment).filter(models.Equipment.name == item["name"]).first()
         if not exists:
-            db_item = Equipment(**item)
+            db_item = models.Equipment(**item)
             db.add(db_item)
             count += 1
     

@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../../data/models/pin_model.dart';
-import '../../../../data/models/system_data_models.dart';
 import '../../../viewmodels/theme_view_model.dart';
-import '../../map/viewmodels/map_view_model.dart';
 
 // Import modular dialogs
 import 'add_pin_dialog.dart';

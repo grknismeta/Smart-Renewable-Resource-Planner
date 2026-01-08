@@ -5,7 +5,7 @@
 
 import 'package:flutter/material.dart';
 import '../viewmodels/map_view_model.dart';
-import 'map_widgets.dart';
+import 'components/map_widgets.dart';
 
 /// Kaynak ekleme butonları (Güneş Paneli + Rüzgar Türbini)
 class ResourceActionButtons extends StatelessWidget {
