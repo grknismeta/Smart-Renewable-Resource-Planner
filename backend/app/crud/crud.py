@@ -6,7 +6,7 @@ from typing import Optional, List, Union
 # Updated imports
 from app.db import models
 from app.schemas import schemas
-from app.core import security as auth
+from app import auth
 
 # --- KULLANICI (User) İŞLEMLERİ ---
 

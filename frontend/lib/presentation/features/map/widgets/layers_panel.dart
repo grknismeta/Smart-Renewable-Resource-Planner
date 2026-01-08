@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
 import '../../../../presentation/viewmodels/theme_view_model.dart';
 import '../viewmodels/map_view_model.dart';
 
@@ -19,43 +20,74 @@ class LayersPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 220,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.cardColor.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.secondaryTextColor.withValues(alpha: 0.1),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          width: 240,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.cardColor.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: theme.secondaryTextColor.withValues(alpha: 0.1),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    "Harita Görünümü",
+                    style: TextStyle(
+                      color: theme.textColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                "Harita Stili",
+                style: TextStyle(
+                  color: theme.secondaryTextColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildBaseMapOption("Koyu Mod", "dark"),
+              _buildBaseMapOption("Uydu Görüntüsü", "satellite"),
+              _buildBaseMapOption("Sokak Haritası", "street"),
+              
+              const SizedBox(height: 16),
+              Text(
+                "Veri Katmanları",
+                style: TextStyle(
+                  color: theme.secondaryTextColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildLayerSwitch("Rüzgar Hızı", MapLayerType.wind),
+              _buildLayerSwitch("Sıcaklık", MapLayerType.temp),
+              _buildLayerSwitch("Güneş Işınımı", MapLayerType.irradiance),
+            ],
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Harita Stili",
-            style: TextStyle(
-              color: theme.textColor,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2)),
-          _buildBaseMapOption("ArcGIS Koyu", "dark"),
-          _buildBaseMapOption("Uydu (Satellite)", "satellite"),
-          _buildBaseMapOption("Sokak Haritası", "street"),
-          const SizedBox(height: 10),
-          Text(
-            "Veri Katmanları",
-            style: TextStyle(
-              color: theme.textColor,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2)),
-          _buildLayerSwitch("Rüzgar Haritası", MapLayerType.wind),
-          _buildLayerSwitch("Sıcaklık Haritası", MapLayerType.temp),
-          _buildLayerSwitch("Işınım Haritası", MapLayerType.irradiance),
-        ],
       ),
     );
   }

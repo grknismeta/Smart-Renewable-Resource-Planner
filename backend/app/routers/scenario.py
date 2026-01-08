@@ -4,7 +4,7 @@ from typing import List, cast, Any, Dict
 from datetime import datetime
 import json
 
-from app.core import security as auth
+from app import auth
 from app.crud import crud
 from app.db import models
 from app.schemas import schemas

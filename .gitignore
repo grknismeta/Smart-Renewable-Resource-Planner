@@ -25,6 +25,7 @@ backend/user_data.db
 .DS_Store
 Thumbs.db
 backend/system_data.db 
+backend/user_data.db
 
 # Large Data Directories
 backend/Data/

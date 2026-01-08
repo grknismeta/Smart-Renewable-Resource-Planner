@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional, cast
 from pydantic import BaseModel
 import math
 
-from app.core import security as auth
+from app import auth
 from app.crud import crud
 from app.schemas import schemas
 from app.db import models

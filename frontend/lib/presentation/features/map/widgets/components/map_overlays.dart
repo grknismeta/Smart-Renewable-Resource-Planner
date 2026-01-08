@@ -46,7 +46,7 @@ class MapOverlays extends StatelessWidget {
         // 3. Layers Panel (Below Controls, Top Right)
         if (layersPanel != null)
            Positioned(
-             top: 140, // Adjust based on control height
+             top: 190, // Positioned below the Top Right controls stack
              right: 20,
              child: layersPanel!,
            ),

@@ -29,25 +29,11 @@ class MapControls extends StatelessWidget {
     return Stack(
       children: [
         // 1. Zoom Buttons (Center Right)
+        // 1. Top Right Controls (Add Pin & Layers)
         Positioned(
+          top: 20,
           right: 20,
-          bottom: 120, // Move up slightly
           child: Column(
-            children: [
-              _buildZoomButton(Icons.add, onZoomIn),
-              const SizedBox(height: 8),
-              _buildZoomButton(Icons.remove, onZoomOut),
-            ],
-          ),
-        ),
-
-        // 2. Action Buttons (Bottom Center)
-        Positioned(
-          bottom: 40,
-          left: 0,
-          right: 0,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // Add Pin
               MapControlButton(
@@ -57,26 +43,29 @@ class MapControls extends StatelessWidget {
                 color: Colors.blueAccent,
                 theme: theme,
               ),
-              const SizedBox(width: 16),
+              const SizedBox(height: 16),
               
-              // Select Region
-              MapControlButton(
-                icon: isSelectingRegion ? Icons.stop_circle_outlined : Icons.map_outlined,
-                tooltip: isSelectingRegion ? "Seçimi İptal Et" : "Bölge Analizi",
-                onTap: onSelectRegion,
-                color: isSelectingRegion ? Colors.redAccent : Colors.purpleAccent,
-                theme: theme,
-              ),
-              const SizedBox(width: 16),
-              
-              // Toggle Layers
+              // Map Layers
               MapControlButton(
                 icon: Icons.layers_outlined,
                 tooltip: "Katmanlar",
                 onTap: onToggleLayers,
-                color: isLayersPanelVisible ? Colors.greenAccent : Colors.orangeAccent,
+                color: isLayersPanelVisible ? Colors.greenAccent : theme.textColor,
                 theme: theme,
               ),
+            ],
+          ),
+        ),
+
+        // 2. Zoom Buttons (Bottom Left)
+        Positioned(
+          bottom: 40, // Sheet is minimized (only handle at ~20-30px), so 40-50 is safe.
+          left: 20,
+          child: Column(
+            children: [
+              _buildZoomButton(Icons.add, onZoomIn),
+              const SizedBox(height: 8),
+              _buildZoomButton(Icons.remove, onZoomOut),
             ],
           ),
         ),

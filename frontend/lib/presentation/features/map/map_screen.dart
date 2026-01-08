@@ -11,7 +11,8 @@ import 'widgets/components/map_view.dart';
 import 'widgets/components/map_controls.dart';
 import 'widgets/components/map_overlays.dart';
 
-import 'widgets/sidebar/sidebar_launcher.dart';
+
+import 'widgets/components/map_bottom_sheet.dart';
 import 'widgets/components/map_widgets.dart'; 
 import 'dialogs/add_pin_dialog.dart'; // Import AddPinDialog
 
@@ -97,8 +98,8 @@ class _MapScreenState extends State<MapScreen> {
                        isLayersPanelVisible: _showLayersPanel,
                      ),
 
-                     // 4. Sidebar Launcher
-                     const Positioned(top: 110, left: 20, child: SidebarLauncher()),
+                     // 4. Map Bottom Sheet (Persistent Sidebar Replacement)
+                     const MapBottomSheet(),
 
                      // 5. Contextual Action Indicators (e.g., "Click to place pin")
                      if (mapViewModel.placingPinType != null)
