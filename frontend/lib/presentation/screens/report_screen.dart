@@ -26,6 +26,7 @@ class _ReportScreenState extends State<ReportScreen> {
   final MapController _mapController = MapController();
   String _region = 'Tümü';
   String _type = 'Wind';
+  String _timeInterval = 'Yıllık'; // Varsayılan: Yıllık
   int? _selectedScenarioId; // Yeni: Seçili senaryo
 
   @override
@@ -142,6 +143,22 @@ class _ReportScreenState extends State<ReportScreen> {
           ),
           const SizedBox(width: 12),
         ],
+        // Yeni: Zaman Aralığı Seçici (Yıllık/Aylık/Anlık)
+        _buildDropdown(
+          value: _timeInterval,
+          items: const ['Yıllık', 'Aylık', 'Anlık'],
+          onChanged: (val) {
+            if (val == null) return;
+            setState(() => _timeInterval = val);
+            
+            // ViewModel üzerinden veriyi güncelle
+            Provider.of<ReportViewModel>(
+              context,
+              listen: false,
+            ).fetchReport(region: _region, type: _type, interval: val);
+          },
+        ),
+        const SizedBox(width: 12),
         _buildDropdown(
           value: _region,
           items: const [

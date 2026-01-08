@@ -147,17 +147,26 @@ class ReportListPanel extends StatelessWidget {
                         spacing: 8,
                         runSpacing: 6,
                         children: [
-                          if (site.annualSolarIrradianceKwhM2 != null)
+                          if (site.displayValue != null)
                             MetricChip(
-                              label: 'Güneş (kWh/m²-yıl)',
-                              value: site.annualSolarIrradianceKwhM2!
-                                  .toStringAsFixed(0),
-                            ),
-                          if (site.avgWindSpeedMs != null)
-                            MetricChip(
-                              label: 'Rüzgar (m/s)',
-                              value: site.avgWindSpeedMs!.toStringAsFixed(1),
-                            ),
+                              label: site.displayUnit ?? 'Değer',
+                              value: site.displayValue!.toStringAsFixed(
+                                site.displayUnit == 'm/s' ? 1 : 0,
+                              ),
+                            )
+                          else ...[
+                            if (site.annualSolarIrradianceKwhM2 != null)
+                              MetricChip(
+                                label: 'Güneş (kWh/m²-yıl)',
+                                value: site.annualSolarIrradianceKwhM2!
+                                    .toStringAsFixed(0),
+                              ),
+                            if (site.avgWindSpeedMs != null)
+                              MetricChip(
+                                label: 'Rüzgar (m/s)',
+                                value: site.avgWindSpeedMs!.toStringAsFixed(1),
+                              ),
+                          ],
                           MetricChip(label: 'Tip', value: site.type),
                         ],
                       ),

@@ -1,9 +1,23 @@
 import os
 import glob
-import rasterio
-import geopandas as gpd
-from shapely.geometry import Point, box
+# import rasterio # Optional dependency
+# import geopandas as gpd
+# from shapely.geometry import Point, box
 import numpy as np
+
+# Dummy shim if libraries are missing
+try:
+    import rasterio
+except ImportError:
+    rasterio = None
+
+try:
+    import geopandas as gpd
+    from shapely.geometry import Point, box
+except ImportError:
+    gpd = None
+    Point = None
+    box = None
 
 class GeoService:
     def __init__(self):
@@ -54,6 +68,16 @@ class GeoService:
 
     def analyze_location(self, lat, lon):
         """Verilen koordinat için kapsamlı analiz yapar."""
+        if gpd is None or Point is None:
+            return {
+                "suitable": False,
+                "recommendation": "Gerekli kütüphaneler (geopandas) eksik.",
+                "location": {"province": "N/A", "district": "N/A"},
+                "elevation": 0, "slope": 0, "restricted_area": [],
+                "solar_details": {"suitable": False, "message": "Kütüphane Hatası", "reasons": ["Geopandas yüklü değil"], "notes": []},
+                "wind_details": {"suitable": False, "message": "Kütüphane Hatası", "reasons": ["Geopandas yüklü değil"], "notes": []}
+            }
+
         point = Point(lon, lat)
         
         # Ortak Veriler (Konum, Eğim)
@@ -234,7 +258,7 @@ class GeoService:
         return info
 
     def _get_terrain_data(self, lat, lon):
-        if not self.dem_files:
+        if not self.dem_files or rasterio is None:
             return 0.0, 0.0
             
         for f in self.dem_files:

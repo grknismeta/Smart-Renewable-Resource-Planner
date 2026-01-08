@@ -208,3 +208,29 @@ def get_weather_stats(system_db: Session, latitude: float, longitude: float):
         },
         "monthly": monthly_dict
     }
+
+# --- PIN ANALİZİ (PinAnalysis) İŞLEMLERİ ---
+
+def create_or_update_pin_analysis(db: Session, pin_id: int, result_data: dict):
+    """
+    Pin için hesaplanan analiz sonucunu kaydeder veya günceller.
+    """
+    # Mevcut analizi kontrol et
+    db_analysis = db.query(models.PinAnalysis).filter(models.PinAnalysis.pin_id == pin_id).first()
+    
+    if db_analysis:
+        # Varsa güncelle
+        db_analysis.result_data = result_data
+    else:
+        # Yoksa oluştur
+        db_analysis = models.PinAnalysis(pin_id=pin_id, result_data=result_data)
+        db.add(db_analysis)
+        
+    try:
+        db.commit()
+        db.refresh(db_analysis)
+        return db_analysis
+    except Exception as e:
+        db.rollback()
+        print(f"Analiz kaydedilirken hata: {e}")
+        return None

@@ -169,9 +169,200 @@ class GridService:
             
             current_lat += step
 
-        end_time = datetime.now()
         duration = (end_time - start_time).total_seconds() / 60
         print(f"\n--- Grid Scan Complete ({resource_type}) ---")
         print(f"Total Points Checked: {total_points}")
         print(f"New/Updated Points: {new_data_count}")
         print(f"Duration: {duration:.1f} minutes.")
+
+    def calculate_and_update_from_local_db(self, db: Session):
+        """
+        Uses LOCAL HourlyWeatherData to populate GridAnalysis.
+        BROADCASTS Province data to all its Districts to ensure full coverage.
+        Calculates REAL monthly averages.
+        """
+        from sqlalchemy import func, extract
+        from datetime import datetime
+        from ..core.constants import TURKEY_CITIES
+        
+        print("\n[GridService] Starting Local Aggregation (Real Monthly + Broadcast)...")
+        start_time = datetime.now()
+        
+        # 1. Calculate Monthly Stats per PROVINCE (city_name)
+        # We assume HourlyWeatherData is mostly Province-based.
+        # Structure: { "Adana": { "Wind": {1: 3.5, 2: 4.0...}, "Solar": {1: 120, ...} } }
+        
+        print("[GridService] step 1: Aggregating Weather Data by Province & Month...")
+        
+        # We need to process Wind and Solar separately or together.
+        # Group by City and Month.
+        # SQLite extract('month', ...) can be tricky, let's try strict SQL approach or python grouping.
+        # Since we have ~150k rows, Python iteration is okay but SQL is better.
+        # Let's use a simpler approach: Get all City Names first.
+        
+        unique_cities = db.query(models.HourlyWeatherData.city_name).distinct().all()
+        unique_cities = [c[0] for c in unique_cities]
+        
+        province_stats = {} 
+        
+        for city in unique_cities:
+            # Get all data for this city
+            # Optional: Limit to last year? .filter(models.HourlyWeatherData.timestamp >= ...)
+            # For now take all available history for "Average"
+            
+            raw_data = db.query(
+                models.HourlyWeatherData.timestamp,
+                models.HourlyWeatherData.wind_speed_100m,
+                models.HourlyWeatherData.shortwave_radiation
+            ).filter(
+                models.HourlyWeatherData.city_name == city
+            ).all()
+            
+            p_data = {
+                "wind_sums": {}, "wind_counts": {},
+                "solar_sums": {} # Sum of Solar Radiation (Wh/m2)
+            }
+            
+            for row in raw_data:
+                m = row.timestamp.month
+                
+                # Wind
+                w = row.wind_speed_100m or 0.0
+                p_data["wind_sums"][m] = p_data["wind_sums"].get(m, 0.0) + w
+                p_data["wind_counts"][m] = p_data["wind_counts"].get(m, 0) + 1
+                
+                # Solar
+                s = row.shortwave_radiation or 0.0
+                p_data["solar_sums"][m] = p_data["solar_sums"].get(m, 0.0) + s
+            
+            # Finalize Monthly Avgs
+            final_months = {}
+            total_annual_solar = 0.0
+            total_annual_wind_accum = 0.0
+            total_annual_wind_count = 0
+            
+            # Map month numbers to Turkish names
+            month_map = {
+                1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+            }
+            
+            for m in range(1, 13):
+                m_name = month_map[m]
+                
+                # Wind Avg
+                w_sum = p_data["wind_sums"].get(m, 0.0)
+                w_cnt = p_data["wind_counts"].get(m, 0)
+                w_avg = (w_sum / w_cnt) if w_cnt > 0 else 0.0
+                
+                # Solar Total (Monthly) -> Convert Wh to kWh
+                # Note: 'shortwave_radiation' is usually instantaneous Power (W/m2) or Hourly Energy?
+                # If it's W/m2 (Power) from ERA5 hourly, then Sum of 24h = Daily Energy (Wh/m2).
+                # Sum of Month = Monthly Energy (Wh/m2).
+                
+                s_sum = p_data["solar_sums"].get(m, 0.0)
+                s_kwh = s_sum / 1000.0
+                
+                final_months[m_name] = {
+                    "wind": w_avg,
+                    "solar": s_kwh
+                }
+                
+                total_annual_solar += s_kwh
+                total_annual_wind_accum += w_sum
+                total_annual_wind_count += w_cnt
+
+            avg_annual_wind = (total_annual_wind_accum / total_annual_wind_count) if total_annual_wind_count > 0 else 0.0
+            
+            province_stats[city] = {
+                "monthly": final_months,
+                "annual_solar": total_annual_solar,
+                "annual_wind": avg_annual_wind
+            }
+            
+        print(f"[GridService] Aggregated data for {len(province_stats)} provinces.")
+
+        # 2. MATCH & DISTRIBUTE to GridAnalysis (All Districts)
+        # We iterate over TURKEY_CITIES (which contains all districts)
+        # If a district's province is in our stats, we use that data.
+        
+        updated_count = 0
+        
+        for location_def in TURKEY_CITIES:
+            p_name = location_def["province"]
+            
+            # Find stats for this province (Case insensitive?)
+            # Database cities might differ slightly? 'istanbul' vs 'İstanbul'
+            # Let's try direct match first, then normalized
+            
+            stats = province_stats.get(p_name)
+            if not stats:
+                continue # No data for this province yet
+                
+            # Prepare Data
+            lat = location_def["lat"]
+            lon = location_def["lon"]
+            
+            monthly_wind = {k: v["wind"] for k, v in stats["monthly"].items()}
+            monthly_solar = {k: v["solar"] for k, v in stats["monthly"].items()}
+            # Add "Ortalama"
+            monthly_wind["Ortalama"] = stats["annual_wind"]
+            monthly_solar["Ortalama"] = stats["annual_solar"] / 12.0
+            
+            # Logistics Score
+            log_score = self._calculate_logistics_score(lat)
+            
+            # --- WIND UPDATE ---
+            wind_val = stats["annual_wind"]
+            wind_score = min(100.0, wind_val * 10) * log_score
+            self._upsert_grid_analysis(
+                db, lat, lon, "Wind", wind_val, None, wind_score, log_score, monthly_wind
+            )
+            
+            # --- SOLAR UPDATE ---
+            solar_val = stats["annual_solar"]
+            solar_score = min(100.0, (solar_val / 20.0)) * log_score
+            self._upsert_grid_analysis(
+                db, lat, lon, "Solar", None, solar_val, solar_score, log_score, monthly_solar
+            )
+            
+            updated_count += 1
+            
+        try:
+            db.commit()
+            print(f"[GridService] Broadcast Complete. Updated {updated_count} grid points (Districts included) in {(datetime.now() - start_time).total_seconds():.1f}s")
+        except Exception as e:
+            print(f"[GridService] Error committing: {e}")
+            db.rollback()
+
+    def _upsert_grid_analysis(
+        self, db: Session, lat, lon, type_str, wind_val, solar_val, overall, log_score, monthly
+    ):
+        # Optional: Snap to grid? Or use exact city coords.
+        # Sticking to exact coords from HourlyData is better for "City" based reports.
+        
+        existing = db.query(models.GridAnalysis).filter(
+            models.GridAnalysis.latitude == lat,
+            models.GridAnalysis.longitude == lon,
+            models.GridAnalysis.type == type_str
+        ).first()
+        
+        if existing:
+            existing.avg_wind_speed_ms = wind_val
+            existing.annual_potential_kwh_m2 = solar_val
+            existing.overall_score = overall
+            existing.logistics_score = log_score
+            existing.predicted_monthly_data = monthly
+            existing.updated_at = datetime.now()
+        else:
+            new_rec = models.GridAnalysis(
+                latitude=lat,
+                longitude=lon,
+                type=type_str,
+                avg_wind_speed_ms=wind_val,
+                annual_potential_kwh_m2=solar_val,
+                overall_score=overall,
+                logistics_score=log_score,
+                predicted_monthly_data=monthly
+            )
+            db.add(new_rec)

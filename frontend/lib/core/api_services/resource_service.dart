@@ -36,6 +36,7 @@ class ResourceService extends BaseService {
     String type,
     double capacityMw,
     int? equipmentId,
+    double? panelArea,
   ) async {
     final Map<String, dynamic> pinData = {
       'latitude': point.latitude,
@@ -43,6 +44,7 @@ class ResourceService extends BaseService {
       'name': name,
       'type': type,
       'capacity_mw': capacityMw,
+      'panel_area': panelArea,
       if (equipmentId != null) 'equipment_id': equipmentId,
     };
 
@@ -66,6 +68,7 @@ class ResourceService extends BaseService {
     String type,
     double capacityMw,
     int? equipmentId,
+    double? panelArea,
   ) async {
     final Map<String, dynamic> pinData = {
       'latitude': point.latitude,
@@ -73,6 +76,7 @@ class ResourceService extends BaseService {
       'title': name,
       'type': type,
       'capacity_mw': capacityMw,
+      'panel_area': panelArea,
       if (equipmentId != null) 'equipment_id': equipmentId,
     };
 
@@ -128,5 +132,17 @@ class ResourceService extends BaseService {
     throw Exception(
       'Hesaplama başarısız (Status code: ${response.statusCode})',
     );
+  }
+  Future<Pin> analyzePin(int pinId) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/pins/$pinId/analyze'),
+      headers: await getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      final data = processResponse(response);
+      return Pin.fromJson(data);
+    }
+    throw Exception('Analiz başarısız (Status code: ${response.statusCode})');
   }
 }

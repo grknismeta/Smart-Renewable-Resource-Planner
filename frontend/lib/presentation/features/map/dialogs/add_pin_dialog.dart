@@ -141,6 +141,22 @@ class _AddPinDialogState extends State<AddPinDialog> {
                     ),
                     const SizedBox(height: 20),
 
+                    // Panel Area Input (Only for Solar)
+                    if (viewModel.selectedType == 'Güneş Paneli') ...[
+                      const SizedBox(height: 20),
+                      ThemedTextField(
+                        label: 'Panel Alanı (m²) - Örn: 10',
+                        isNumber: true,
+                        onChanged: (val) => viewModel.setPanelArea(val),
+                        controller: TextEditingController(text: viewModel.panelArea.toString())
+                          ..selection = TextSelection.fromPosition(
+                             TextPosition(offset: viewModel.panelArea.toString().length),
+                          ),
+                        theme: theme,
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+
                     // Scenario Selector
                     ThemedDropdown<int?>(
                       value: _selectedScenarioId,
@@ -323,6 +339,7 @@ class _AddPinDialogState extends State<AddPinDialog> {
         viewModel.selectedType,
         capacityMw,
         viewModel.selectedEquipmentId,
+        viewModel.panelArea,
       );
 
       // 2. Senaryo seçiliyse ona da ekle

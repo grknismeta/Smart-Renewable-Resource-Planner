@@ -74,6 +74,11 @@ class RegionalSite {
   final double? annualPotentialKwhM2;
   final double? avgWindSpeedMs;
   final double? annualSolarIrradianceKwhM2;
+  
+  // Generic display
+  final double? displayValue;
+  final String? displayUnit;
+  
   final int rank;
 
   RegionalSite({
@@ -86,6 +91,8 @@ class RegionalSite {
     this.annualPotentialKwhM2,
     this.avgWindSpeedMs,
     this.annualSolarIrradianceKwhM2,
+    this.displayValue,
+    this.displayUnit,
     required this.rank,
   });
 
@@ -106,6 +113,10 @@ class RegionalSite {
       annualSolarIrradianceKwhM2: json['annual_solar_irradiance_kwh_m2'] != null
           ? (json['annual_solar_irradiance_kwh_m2'] as num).toDouble()
           : null,
+      displayValue: json['display_value'] != null
+          ? (json['display_value'] as num).toDouble()
+          : null,
+      displayUnit: json['display_unit'],
       rank: json['rank'] ?? 0,
     );
   }

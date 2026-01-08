@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Literal, Any
 from datetime import datetime, date
 
@@ -58,8 +58,20 @@ class PinResponse(PinBase):
     owner_id: int
     avg_solar_irradiance: Optional[float] = None
     avg_wind_speed: Optional[float] = None
-    created_at: Optional[datetime] = None # DB'de varsa
-    equipment_name: Optional[str] = None # Manuel join ile doldurulacak
+    created_at: Optional[datetime] = None
+    equipment_name: Optional[str] = None
+    
+    # Analiz sonuçlarını (varsa) döndürmek için
+    analysis: Optional[Dict[str, Any]] = None 
+    
+    @field_validator('analysis', mode='before')
+    @classmethod
+    def parse_analysis(cls, v: Any) -> Optional[Dict[str, Any]]:
+        # SQLalchemy modeli (PinAnalysis) gelirse içindeki JSON'ı al
+        if hasattr(v, 'result_data'):
+            return v.result_data
+        # Zaten dict veya None ise olduğu gibi dön
+        return v
 
     class Config:
         from_attributes = True
@@ -123,6 +135,11 @@ class RegionalSite(BaseModel):
     annual_potential_kwh_m2: Optional[float] = None
     avg_wind_speed_ms: Optional[float] = None
     annual_solar_irradiance_kwh_m2: Optional[float] = None
+    
+    # Generic display fields for dynamic reports (Yearly/Monthly/Instant)
+    display_value: Optional[float] = None
+    display_unit: Optional[str] = None
+    
     rank: int
 
 

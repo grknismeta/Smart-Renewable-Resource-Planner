@@ -297,6 +297,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     String type,
     double capacityMw,
     int? equipmentId,
+    double? panelArea,
   ) async {
     try {
       final newPin = await _apiService.resource.addPin(
@@ -305,6 +306,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         type,
         capacityMw,
         equipmentId,
+        panelArea,
       );
       await fetchPins();
       return newPin;
@@ -321,6 +323,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     String type,
     double capacityMw,
     int? equipmentId,
+    double? panelArea,
   ) async {
     try {
       final updatedPin = await _apiService.resource.updatePin(
@@ -330,6 +333,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         type,
         capacityMw,
         equipmentId,
+        panelArea,
       );
       await fetchPins(); // Listeyi güncelle
       return updatedPin;

@@ -91,6 +91,7 @@ def _find_nearest_location(lat: float, lon: float) -> str:
 def get_regional_report(
     region: str = Query(..., description="Ege, Marmara vb. veya 'Tümü'"),
     type: str = Query("Wind", description="Solar veya Wind"),
+    interval: str = Query("Yıllık", description="Yıllık, Aylık, Anlık"),
     limit: int = Query(400, ge=1, le=500),
     db: Session = Depends(get_system_db),
     current_user: models.User = Depends(auth.get_current_active_user),
@@ -102,115 +103,203 @@ def get_regional_report(
     if region_key not in REGION_CITIES and not is_all_regions:
         raise HTTPException(status_code=400, detail="Geçersiz bölge adı")
 
-    # 1. Önce Grid Analiz verilerini kontrol ediyoruz (10 Yıllık Projeksiyon)
-    rows: List[models.GridAnalysis] = (
-        db.query(models.GridAnalysis)
-        .filter(
-            models.GridAnalysis.type == type_norm,
-            models.GridAnalysis.overall_score > 0.0,
-        )
-        .order_by(models.GridAnalysis.overall_score.desc())
-        .all()
-    )
-
     items: List[schemas.RegionalSite] = []
     location_best: Dict[str, Dict] = {}
 
-    for row in rows:
-        r_lat = cast(float, row.latitude)
-        r_lon = cast(float, row.longitude)
+    # --- ANLIK VERİ SENARYOSU ---
+    if interval == "Anlık":
+        # Son 24 saatteki en güncel veriyi çekelim
+        cutoff = datetime.utcnow() - timedelta(hours=24)
         
-        # En yakın yerleşimi bul (Örn: "Salihli" veya "Manisa")
-        matched_name = _find_nearest_location(r_lat, r_lon)
-        loc_data = get_location_by_name(matched_name)
-        
-        if not loc_data:
-            continue
-
-        # Bölge Kontrolü: Province (İl) üzerinden
-        city_province = loc_data["province"]
-        city_region = CITY_TO_REGION.get(city_province.casefold())
-
-        if not is_all_regions and city_region != region_key:
-            continue
-
-        current_score = cast(float, row.overall_score)
-        
-        # Lokasyon bazında en iyi skoru güncelle
-        if matched_name not in location_best or current_score > location_best[matched_name]["score"]:
-            location_best[matched_name] = {
-                "city": city_province,
-                "district": loc_data["district"],
-                "latitude": loc_data["lat"],
-                "longitude": loc_data["lon"],
-                "score": current_score,
-                "annual_potential": cast(float | None, row.annual_potential_kwh_m2),
-                "avg_wind": cast(float | None, row.avg_wind_speed_ms)
-            }
-
-    # 2. Eksik şehirleri Hourly verilerden (Son 72 saat) tamamla (Coverage Fill)
-    cutoff = datetime.utcnow() - timedelta(hours=72)
-    hourly_query = db.query(
-        models.HourlyWeatherData.city_name.label("name"),
-        func.avg(models.HourlyWeatherData.wind_speed_100m).label("avg_wind"),
-        func.sum(models.HourlyWeatherData.shortwave_radiation).label("total_rad")
-    ).filter(models.HourlyWeatherData.timestamp >= cutoff).group_by(models.HourlyWeatherData.city_name).all()
-
-    for r in hourly_query:
-        # Şehir zaten GridAnalysis'ten geldiyse atla (Orası daha hassas)
-        # Ancak burada isim eşleştirmesi önemli: Hourly'deki isim turkey_cities'teki "name" ile aynı olmalı.
-        # Genelde aynıdır. Yine de nearest_location ile normalize edelim veya direkt bakalım.
-        loc_data = get_location_by_name(r.name)
-        if not loc_data: continue
-        
-        # GridAnalysis'te zaten bulunduysa atla
-        if loc_data["name"] in location_best:
-            continue
-
-        city_province = loc_data["province"]
-        city_region = CITY_TO_REGION.get(city_province.casefold())
-
-        if not is_all_regions and city_region != region_key:
-            continue
-
-        # Skorlama (GridService ile uyumlu ölçekleme)
-        # Solar: 3 günlük toplam (Wh/m2) -> Yıllık Tahmin (kWh/m2)
-        # Kabaca: (TotalWh / 3) * 365 / 1000 ~= TotalWh * 0.12
-        # Wind: Avg Speed (m/s) -> Direkt hız puanı (Lojistik faktörü varsayılan 1.0)
-        
-        solar_est = (float(r.total_rad) * 0.12) if r.total_rad else 0
-        wind_est = float(r.avg_wind) if r.avg_wind else 0
-        
-        score = wind_est if type_norm == "Wind" else solar_est
-        
-        location_best[loc_data["name"]] = {
-            "city": city_province,
-            "district": loc_data["district"],
-            "latitude": loc_data["lat"],
-            "longitude": loc_data["lon"],
-            "score": score,
-            "annual_potential": solar_est if type_norm == "Solar" else None,
-            "avg_wind": wind_est if type_norm == "Wind" else None
-        }
-
-    # Sözlükteki sonuçları şemaya dönüştür
-    for data in location_best.values():
-        items.append(
-            schemas.RegionalSite(
-                city=data["city"],
-                district=data["district"],
+        # En son timestamp'i bulmak için subquery
+        latest_ts_sub = db.query(func.max(models.HourlyWeatherData.timestamp)).scalar()
+        if not latest_ts_sub:
+             # Hiç veri yoksa boş dön
+             return schemas.RegionalReportResponse(
+                region=region.title(),
                 type=type_norm,
-                latitude=data["latitude"],
-                longitude=data["longitude"],
-                overall_score=data["score"],
-                annual_potential_kwh_m2=data["annual_potential"],
-                avg_wind_speed_ms=data["avg_wind"],
-                annual_solar_irradiance_kwh_m2=data["annual_potential"] if type_norm == "Solar" else None,
-                rank=0,
+                generated_at=datetime.utcnow(),
+                period_days=1,
+                items=[],
+                stats=None
             )
+            
+        target_ts = latest_ts_sub # En güncel saat
+        
+        hourly_query = db.query(
+            models.HourlyWeatherData.city_name,
+            models.HourlyWeatherData.district_name,
+            models.HourlyWeatherData.latitude,
+            models.HourlyWeatherData.longitude,
+            models.HourlyWeatherData.wind_speed_100m, # Wind
+            models.HourlyWeatherData.shortwave_radiation, # solar
+            models.HourlyWeatherData.temperature_2m,
+        ).filter(models.HourlyWeatherData.timestamp == target_ts).all()
+        
+        for r in hourly_query:
+             # İl/Bölge Filtreleme
+             # city_name muhtemelen İl adıdır (SystemDB yapısına göre)
+             loc_data = get_location_by_name(r.city_name)
+             if not loc_data: continue
+
+             city_province = loc_data["province"]
+             city_region = CITY_TO_REGION.get(city_province.casefold())
+
+             if not is_all_regions and city_region != region_key:
+                continue
+             
+             # Değer Belirleme
+             display_val = 0.0
+             display_unit = ""
+             score = 0.0
+             
+             if type_norm == "Wind":
+                 display_val = float(r.wind_speed_100m or 0.0)
+                 display_unit = "m/s"
+                 score = display_val * 10 # Basit skorlama
+             else: # Solar
+                 display_val = float(r.shortwave_radiation or 0.0)
+                 display_unit = "W/m²"
+                 score = display_val / 5.0 # Basit skorlama
+             
+             # Listeye Ekle
+             # Aynı şehir/ilçe tekrar edebilir mi? HourlyWeatherData il bazlıysa unique'dir.
+             items.append(
+                schemas.RegionalSite(
+                    city=city_province,
+                    district=r.district_name or loc_data["district"],
+                    type=type_norm,
+                    latitude=float(r.latitude or loc_data["lat"]),
+                    longitude=float(r.longitude or loc_data["lon"]),
+                    overall_score=score,
+                    annual_potential_kwh_m2=None, # Anlık raporda yıllık yok
+                    display_value=display_val,
+                    display_unit=display_unit,
+                    rank=0
+                )
+             )
+
+    # --- YILLIK / AYLIK VERİ SENARYOSU (GridAnalysis) ---
+    else:
+        # Mevcut mantık (GridAnalysis)
+        rows: List[models.GridAnalysis] = (
+            db.query(models.GridAnalysis)
+            .filter(
+                models.GridAnalysis.type == type_norm,
+                models.GridAnalysis.overall_score > 0.0,
+            )
+            .all()
         )
 
-    # Sıralama ve Limit
+        for row in rows:
+            r_lat = cast(float, row.latitude)
+            r_lon = cast(float, row.longitude)
+            
+            matched_name = _find_nearest_location(r_lat, r_lon)
+            loc_data = get_location_by_name(matched_name)
+            
+            if not loc_data:
+                continue
+
+            city_province = loc_data["province"]
+            city_region = CITY_TO_REGION.get(city_province.casefold())
+
+            if not is_all_regions and city_region != region_key:
+                continue
+
+            current_score = cast(float, row.overall_score)
+            annual_pot = cast(float, row.annual_potential_kwh_m2 or 0.0)
+            avg_wind = cast(float, row.avg_wind_speed_ms or 0.0)
+            
+            # Display Value Hesapla
+            disp_val = 0.0
+            disp_unit = ""
+            
+            # JSON'dan Aylık Veri Çekme
+            # JSON'dan Aylık Veri Çekme
+            monthly_data = row.predicted_monthly_data or {}
+            
+            # --- FIX: Handle List vs Dict ---
+            # Old API data might be: [{"month": "September", "prediction": ...}, ...]
+            # New Aggregation is: {"Ocak": 123.4, ...}
+            
+            val_monthly = None
+            
+            month_map = {
+                1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"
+            }
+            current_month_index = datetime.now().month
+            current_month_name = month_map.get(current_month_index, "Ocak")
+
+            if isinstance(monthly_data, dict):
+                 val_monthly = monthly_data.get(current_month_name)
+            elif isinstance(monthly_data, list):
+                 # Try to find month in list
+                 # Assuming structure: {"month": "MonthName", ...}
+                 # English names might be present.
+                 # Let's just fallback to None if it's a list for now, or match if possible.
+                 pass
+
+            if type_norm == "Wind":
+                 if interval == "Aylık":
+                     if val_monthly is not None:
+                         disp_val = float(val_monthly)
+                     else:
+                         disp_val = avg_wind # Fallback
+                         
+                     disp_unit = f"m/s ({current_month_name})"
+                 else:
+                     disp_val = avg_wind
+                     disp_unit = "m/s (Yıllık Ort.)"
+            else:
+                # Solar
+                if interval == "Aylık":
+                    if val_monthly is not None:
+                         disp_val = float(val_monthly)
+                    else:
+                        # Fallback: Yıllık / 12
+                        disp_val = annual_pot / 12.0
+                        
+                    disp_unit = f"kWh/m² ({current_month_name})"
+                else: # Yıllık
+                    disp_val = annual_pot
+                    disp_unit = "kWh/m² (Yıllık)"
+
+            # Best location logic
+            if matched_name not in location_best or current_score > location_best[matched_name]["score"]:
+                location_best[matched_name] = {
+                    "city": city_province,
+                    "district": loc_data["district"],
+                    "latitude": loc_data["lat"],
+                    "longitude": loc_data["lon"],
+                    "score": current_score,
+                    "annual_potential": annual_pot,
+                    "avg_wind": cast(float | None, row.avg_wind_speed_ms),
+                    "display_val": disp_val,
+                    "display_unit": disp_unit
+                }
+        
+        # GridAnalysis döngüsü bitti, location_best->items çevir
+        for data in location_best.values():
+            items.append(
+                schemas.RegionalSite(
+                    city=data["city"],
+                    district=data["district"],
+                    type=type_norm,
+                    latitude=data["latitude"],
+                    longitude=data["longitude"],
+                    overall_score=data["score"],
+                    annual_potential_kwh_m2=data["annual_potential"],
+                    avg_wind_speed_ms=data["avg_wind"],
+                    annual_solar_irradiance_kwh_m2=data["annual_potential"] if type_norm == "Solar" else None,
+                    display_value=data["display_val"],
+                    display_unit=data["display_unit"],
+                    rank=0,
+                )
+            )
+
+    # Ortak Sıralama ve Limit
     items.sort(key=lambda x: x.overall_score, reverse=True)
     items = items[:limit]
 
@@ -218,11 +307,12 @@ def get_regional_report(
         it.rank = i + 1
 
     if not items:
+        # Boş ise stats None dönebilir
         return schemas.RegionalReportResponse(
             region=region.title(),
             type=type_norm,
             generated_at=datetime.utcnow(),
-            period_days=365,
+            period_days=365 if interval != "Anlık" else 1,
             items=[],
             stats=None,
         )
@@ -240,7 +330,7 @@ def get_regional_report(
         region=region.title(),
         type=type_norm,
         generated_at=datetime.utcnow(),
-        period_days=365,
+        period_days=30 if interval == "Aylık" else (1 if interval == "Anlık" else 365),
         items=items,
         stats=stats,
     )

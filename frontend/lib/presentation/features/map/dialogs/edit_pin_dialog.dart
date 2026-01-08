@@ -26,15 +26,17 @@ class EditPinDialog extends StatefulWidget {
     );
 
     if (result is PinCalculationResponse && context.mounted) {
-       debugPrint("EditPinDialog: Got result, showing AnalysisDialog");
-       final theme = Provider.of<ThemeViewModel>(context, listen: false);
-       try {
-         MapDialogs.showCalculationResultDialog(context, result, theme);
-       } catch (e) {
-         debugPrint("EditPinDialog: Error showing dialog: $e");
-       }
+      debugPrint("EditPinDialog: Got result, showing AnalysisDialog");
+      final theme = Provider.of<ThemeViewModel>(context, listen: false);
+      try {
+        MapDialogs.showCalculationResultDialog(context, result, theme);
+      } catch (e) {
+        debugPrint("EditPinDialog: Error showing dialog: $e");
+      }
     } else {
-       debugPrint("EditPinDialog: No result or context unmounted. Result type: ${result.runtimeType}");
+      debugPrint(
+        "EditPinDialog: No result or context unmounted. Result type: ${result.runtimeType}",
+      );
     }
   }
 
@@ -61,7 +63,7 @@ class _EditPinDialogState extends State<EditPinDialog> {
       widget.pin.type,
       initialEquipmentId: widget.pin.equipmentId,
     );
-    
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _viewModel.loadInitialData();
     });
@@ -157,10 +159,15 @@ class _EditPinDialogState extends State<EditPinDialog> {
                     label: 'Kaynak Tipi',
                     theme: theme,
                     items: ['Güneş Paneli', 'Rüzgar Türbini']
-                        .map((t) => DropdownMenuItem(
-                              value: t,
-                              child: Text(t, style: TextStyle(color: theme.textColor)),
-                            ))
+                        .map(
+                          (t) => DropdownMenuItem(
+                            value: t,
+                            child: Text(
+                              t,
+                              style: TextStyle(color: theme.textColor),
+                            ),
+                          ),
+                        )
                         .toList(),
                     onChanged: (val) {
                       if (val != null) viewModel.changeType(val);
@@ -204,7 +211,7 @@ class _EditPinDialogState extends State<EditPinDialog> {
                         icon: const Icon(Icons.delete, color: Colors.redAccent),
                         onPressed: () => _handleDelete(context),
                       ),
-                      
+
                       Row(
                         children: [
                           // Save Button
@@ -274,7 +281,10 @@ class _EditPinDialogState extends State<EditPinDialog> {
     }
   }
 
-  Future<void> _performUpdate(BuildContext context, PinDialogViewModel viewModel) async {
+  Future<void> _performUpdate(
+    BuildContext context,
+    PinDialogViewModel viewModel,
+  ) async {
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
     final capacityMw = viewModel.getSelectedCapacityMw();
 
@@ -287,17 +297,24 @@ class _EditPinDialogState extends State<EditPinDialog> {
       viewModel.selectedType,
       capacityMw,
       viewModel.selectedEquipmentId,
+      double.tryParse(_panelAreaController.text),
     );
   }
 
-  Future<void> _handleUpdate(BuildContext context, PinDialogViewModel viewModel) async {
+  Future<void> _handleUpdate(
+    BuildContext context,
+    PinDialogViewModel viewModel,
+  ) async {
     try {
       await _performUpdate(context, viewModel);
 
       if (context.mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Kaynak güncellendi'), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text('Kaynak güncellendi'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
@@ -305,34 +322,37 @@ class _EditPinDialogState extends State<EditPinDialog> {
     }
   }
 
-  Future<void> _handleCalculate(BuildContext context, PinDialogViewModel viewModel) async {
+  Future<void> _handleCalculate(
+    BuildContext context,
+    PinDialogViewModel viewModel,
+  ) async {
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
 
     try {
-        // 1. Önce güncellemeyi yap (Pop etmeden)
-        await _performUpdate(context, viewModel);
-        
-        // 2. Kapasite bilgisini tekrar al
-        final capacityMw = viewModel.getSelectedCapacityMw();
-        if (capacityMw == null) return;
+      // 1. Önce güncellemeyi yap (Pop etmeden)
+      await _performUpdate(context, viewModel);
 
-        // 3. Hesaplamayı başlat
-        await mapViewModel.calculatePotential(
-            lat: widget.pin.latitude,
-            lon: widget.pin.longitude,
-            type: viewModel.selectedType,
-            capacityMw: capacityMw,
-            panelArea: double.tryParse(_panelAreaController.text) ?? 0.0,
-        );
+      // 2. Kapasite bilgisini tekrar al
+      final capacityMw = viewModel.getSelectedCapacityMw();
+      if (capacityMw == null) return;
 
-        // 4. Sonuç varsa dialogu kapat ve sonucu dön
-        if (mapViewModel.latestCalculationResult != null && context.mounted) {
-             if (Navigator.canPop(context)) {
-                Navigator.of(context).pop(mapViewModel.latestCalculationResult);
-             }
+      // 3. Hesaplamayı başlat
+      await mapViewModel.calculatePotential(
+        lat: widget.pin.latitude,
+        lon: widget.pin.longitude,
+        type: viewModel.selectedType,
+        capacityMw: capacityMw,
+        panelArea: double.tryParse(_panelAreaController.text) ?? 0.0,
+      );
+
+      // 4. Sonuç varsa dialogu kapat ve sonucu dön
+      if (mapViewModel.latestCalculationResult != null && context.mounted) {
+        if (Navigator.canPop(context)) {
+          Navigator.of(context).pop(mapViewModel.latestCalculationResult);
         }
+      }
     } catch (e) {
-        if (context.mounted) MapDialogs.showErrorDialog(context, e.toString());
+      if (context.mounted) MapDialogs.showErrorDialog(context, e.toString());
     }
   }
 }

@@ -205,8 +205,155 @@ def get_grid_map_data(
 ):
     if type not in ["Solar", "Wind"]:
         raise HTTPException(status_code=400, detail="Geçersiz tip")
-    
+
     return db.query(models.GridAnalysis).filter(
         models.GridAnalysis.type == type,
         models.GridAnalysis.overall_score > 0.0
     ).all()
+
+@router.post("/{pin_id}/analyze", response_model=schemas.PinResponse)
+async def analyze_pin(
+    pin_id: int,
+    db: Session = Depends(get_db),
+    system_db: Session = Depends(get_system_db),
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    Mevcut bir pin için analiz çalıştırır ve sonucu kaydeder.
+    """
+    user_id = cast(int, current_user.id)
+    
+    # 1. Pin'i bul
+    pin_obj = crud.get_pin_by_id(db, pin_id, user_id)
+    if not pin_obj:
+        raise HTTPException(status_code=404, detail="Pin bulunamadı")
+        
+    # 2. Schema'ya çevir (PinBase)
+    pin_data = schemas.PinBase(
+        latitude=pin_obj.latitude, # type: ignore
+        longitude=pin_obj.longitude, # type: ignore
+        title=pin_obj.title, # type: ignore
+        type=pin_obj.type, # type: ignore
+        capacity_mw=pin_obj.capacity_mw, # type: ignore
+        panel_area=pin_obj.panel_area, # type: ignore
+        equipment_id=pin_obj.equipment_id # type: ignore
+    )
+    
+    # 3. Hesaplama yap (calculate_pin_potential mantığı)
+    weather_stats = crud.get_weather_stats(system_db, float(pin_data.latitude), float(pin_data.longitude))
+    if weather_stats is None: weather_stats = {}
+    
+    selected_equipment: Optional[models.Equipment] = None
+    if pin_data.equipment_id is not None:
+        selected_equipment = crud.get_equipment(system_db, pin_data.equipment_id)
+        
+    calculation_result = None
+    
+    if pin_data.type == "Güneş Paneli":
+        panel_area = float(pin_data.panel_area or 10.0)
+        efficiency: float = 0.20
+        model_name: str = "Veri Analizli Standart Panel"
+        
+        if selected_equipment is not None and str(selected_equipment.type) == "Solar":
+            eff_val = selected_equipment.efficiency
+            if eff_val is not None: efficiency = float(cast(float, eff_val))
+            model_name = str(selected_equipment.name)
+
+        results = await run_in_threadpool(
+            solar_calculations.calculate_solar_power_production,
+            latitude=float(pin_data.latitude),
+            longitude=float(pin_data.longitude),
+            panel_area=panel_area,
+            panel_efficiency=efficiency,
+            weather_stats=weather_stats
+        )
+        
+        if "error" in results: raise HTTPException(status_code=500, detail=results["error"])
+        
+        annual_kwh = float(results["predicted_annual_production_kwh"])
+        avg_rad = float(results["daily_avg_potential_kwh_m2"])
+        
+        # Finansal analiz (Basit)
+        financials = calculate_financials(annual_kwh, "Solar")
+        
+        solar_res = schemas.SolarCalculationResponse(
+            solar_irradiance_kw_m2=avg_rad,
+            temperature_celsius=25.0,
+            panel_efficiency=efficiency,
+            power_output_kw=annual_kwh,
+            panel_model=model_name,
+            potential_kwh_annual=annual_kwh,
+            performance_ratio=0.80,
+            monthly_production=results.get("month_by_month_prediction"),
+            financials=financials
+        )
+        
+        calculation_result = schemas.PinCalculationResponse(
+            resource_type="Güneş Paneli", 
+            solar_calculation=solar_res
+        ).model_dump()
+        
+        # Pinin özet alanlarını güncelle
+        crud.update_pin(db, pin_id, schemas.PinCreate(**pin_data.model_dump()), user_id)
+        # Sadece irradiance update etmek istiyoruz ama update_pin full obje alıyor.
+        # Manuel update yapalım:
+        pin_obj.avg_solar_irradiance = avg_rad
+        
+    elif pin_data.type == "Rüzgar Türbini":
+        model_name = "Standart 3.3MW Türbin"
+        if selected_equipment is not None and str(selected_equipment.type) == "Wind":
+             model_name = str(selected_equipment.name)
+
+        results = await run_in_threadpool(
+            wind_calculations.calculate_wind_power_production,
+            latitude=float(pin_data.latitude),
+            longitude=float(pin_data.longitude),
+            weather_stats=weather_stats
+        )
+        
+        if "error" in results: raise HTTPException(status_code=500, detail=results["error"])
+        
+        annual_kwh = float(results["predicted_annual_production_kwh"])
+        avg_speed = float(results["avg_wind_speed_ms"])
+        avg_monthly = annual_kwh / 12.0
+        # Basit bir aylık dağılım (Simülasyon)
+        monthly_sim = { "Ocak": avg_monthly * 1.2, "Haziran": avg_monthly * 0.8 } 
+
+        financials = calculate_financials(annual_kwh, "Wind")
+
+        wind_res = schemas.WindCalculationResponse(
+            wind_speed_m_s=avg_speed,
+            power_output_kw=annual_kwh,
+            turbine_model=model_name,
+            potential_kwh_annual=annual_kwh,
+            capacity_factor=float(results.get("capacity_factor", 0.3)),
+            monthly_production=monthly_sim,
+            financials=financials
+        )
+        
+        calculation_result = schemas.PinCalculationResponse(
+            resource_type="Rüzgar Türbini", 
+            wind_calculation=wind_res
+        ).model_dump()
+        
+        pin_obj.avg_wind_speed = avg_speed
+
+    # 4. Sonucu Kaydedelim (PinAnalysis)
+    if calculation_result:
+        crud.create_or_update_pin_analysis(db, pin_id, calculation_result)
+        db.commit() # Pin update'i de commitler
+        
+    # 5. Güncel pin'i analiziyle beraber dön
+    db.refresh(pin_obj)
+    
+    # Analysis verisini schema'ya maplemek için:
+    # SQLalchemy modelinde 'analysis' ilişkisi var.
+    # PinResponse içinde 'analysis' alanı var (Dict).
+    # result_data JSON olduğu için direkt Dict olarak gelir.
+    
+    # Yanıtı hazırla
+    resp = schemas.PinResponse.model_validate(pin_obj)
+    if pin_obj.analysis:
+        resp.analysis = pin_obj.analysis.result_data
+        
+    return resp

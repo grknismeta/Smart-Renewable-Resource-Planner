@@ -4,12 +4,12 @@ import 'package:latlong2/latlong.dart';
 import '../../../../data/models/pin_model.dart';
 import '../../../viewmodels/theme_view_model.dart';
 
-// Import modular dialogs
 import 'add_pin_dialog.dart';
-import 'edit_pin_dialog.dart';
 import 'analysis_dialog.dart';
+import 'pin_details_dialog.dart';
 export 'add_pin_dialog.dart';
 export 'edit_pin_dialog.dart';
+export 'pin_details_dialog.dart';
 export 'analysis_dialog.dart';
 export 'optimization_dialog.dart';
 
@@ -35,9 +35,9 @@ class MapDialogs {
     );
   }
 
-  /// Pin aksiyonları için bottom sheet gösterir
+  /// Pin aksiyonları için dialog gösterir (New Details Dialog)
   static void showPinActionsDialog(BuildContext context, Pin pin) {
-    EditPinDialog.show(context, pin);
+    PinDetailsDialog.show(context, pin);
   }
 
   /// Yeni pin ekleme dialog'u gösterir

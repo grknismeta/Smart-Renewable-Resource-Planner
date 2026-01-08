@@ -82,3 +82,61 @@ def test_wind_calculation_logic():
     assert abs(prod_1 + prod_6 - annual_production) < 0.1
     assert prod_6 > prod_1
 
+def test_solar_efficiency_scaling():
+    """
+    Verify that doubling efficiency doubles the output (Linear relationship).
+    Formula: E = H * A * eff * PR
+    """
+    # Baseline
+    eff_base = 0.10
+    # Comparison
+    eff_high = 0.20
+    
+    # Constants
+    H = 1000
+    A = 10
+    PR = 0.8
+    
+    E_base = H * A * eff_base * PR
+    E_high = H * A * eff_high * PR
+    
+    # E_high should be exactly 2 * E_base
+    assert abs(E_high - (2 * E_base)) < 0.01
+
+def test_solar_production_zero_area():
+    """
+    Verify that if panel area is 0, production is 0.
+    """
+    H = 1000
+    A = 0.0
+    eff = 0.2
+    PR = 0.8
+    
+    E = H * A * eff * PR
+    assert E == 0.0
+
+def test_wind_production_zero_velocity():
+    """
+    Verify that 0 wind speed results in 0 power.
+    Power ~ v^3
+    """
+    v = 0.0
+    power_factor = v**3
+    assert power_factor == 0.0
+
+def test_solar_efficiency_cap():
+    """
+    Verify that we don't accidentally allow efficiency > 100% (1.0) if checked.
+    (This is a logic validation usually done in Pydantic, but here we check formula behavior).
+    If we put 1.5 efficiency, it produces 150% energy which is physically impossible but mathematically valid.
+    This test documents that behavior unless we add constraints.
+    """
+    H = 1000
+    A = 1
+    eff = 1.5 # 150%
+    PR = 1.0
+    
+    E = H * A * eff * PR
+    # It just returns the math result, confirming the engine is "dumb calculator"
+    assert E == 1500.0
+

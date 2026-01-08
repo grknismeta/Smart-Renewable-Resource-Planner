@@ -14,6 +14,7 @@ class PinDialogViewModel extends ChangeNotifier {
   // State
   String _selectedType;
   int? _selectedEquipmentId;
+  double _panelArea = 10.0; // Default 10 m2
   bool _isSubmitting = false;
   String? _errorMessage;
 
@@ -29,6 +30,7 @@ class PinDialogViewModel extends ChangeNotifier {
   // Getters
   String get selectedType => _selectedType;
   int? get selectedEquipmentId => _selectedEquipmentId;
+  double get panelArea => _panelArea;
   bool get isSubmitting => _isSubmitting;
   String? get errorMessage => _errorMessage;
   bool get hasError => _errorMessage != null;
@@ -43,6 +45,15 @@ class PinDialogViewModel extends ChangeNotifier {
   bool get canSubmit => _selectedEquipmentId != null && !_isSubmitting;
 
   // Actions
+  void setPanelArea(String val) {
+    if (val.isEmpty) return;
+    final parsed = double.tryParse(val);
+    if (parsed != null && parsed > 0) {
+      _panelArea = parsed;
+      notifyListeners();
+    }
+  }
+
   void changeType(String newType) {
     if (_selectedType != newType) {
       _selectedType = newType;

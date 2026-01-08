@@ -36,6 +36,29 @@ async def lifespan(app: FastAPI):
         print("⏱️ Saatlik veri güncelleyici başlatıldı")
     except Exception as e:
         print(f"[HourlyUpdater] Başlatma hatası: {e}")
+
+    # 3. Yıllık/Aylık Ağ Analizini Güncelle (Local DB'den)
+    try:
+        from .services.grid_service import GridService
+        from .db.database import SystemSessionLocal
+        from fastapi.concurrency import run_in_threadpool
+        
+        async def run_grid_aggregation():
+            print("🗺️ Grid Analiz Servisi başlatılıyor...")
+            db = SystemSessionLocal()
+            try:
+                # Bloklamaması için threadpool'da çalıştır
+                service = GridService()
+                await run_in_threadpool(service.calculate_and_update_from_local_db, db)
+            except Exception as e:
+                print(f"[GridAggregator] Hata: {e}")
+            finally:
+                db.close()
+                
+        asyncio.create_task(run_grid_aggregation())
+        
+    except Exception as e:
+         print(f"[GridAggregator] Başlatma hatası: {e}")
     
     yield  # Uygulama çalışıyor
     

@@ -9,10 +9,11 @@ class ReportService extends BaseService {
   Future<RegionalReport> fetchRegionalReport({
     required String region,
     required String type,
+    String interval = 'Yıllık',
     int limit = 400,
   }) async {
     final uri = Uri.parse('$baseUrl/reports/regional').replace(
-      queryParameters: {'region': region, 'type': type, 'limit': '$limit'},
+      queryParameters: {'region': region, 'type': type, 'interval': interval, 'limit': '$limit'},
     );
 
     final response = await http.get(uri, headers: await getHeaders());
