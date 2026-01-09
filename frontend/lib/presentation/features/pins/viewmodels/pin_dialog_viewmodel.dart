@@ -74,17 +74,25 @@ class PinDialogViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _isDisposed = false;
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
   // Business Logic
   Future<void> loadInitialData() async {
     final type = _selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
     await _mapViewModel.loadEquipments(type: type, forceRefresh: true);
-    notifyListeners();
+    if (!_isDisposed) notifyListeners();
   }
 
   Future<void> _loadEquipments() async {
     final type = _selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
     await _mapViewModel.loadEquipments(type: type, forceRefresh: true);
-    notifyListeners();
+    if (!_isDisposed) notifyListeners();
   }
 
   /// Validation - Returns error message or null if valid
@@ -121,13 +129,13 @@ class PinDialogViewModel extends ChangeNotifier {
     final validationError = validate();
     if (validationError != null) {
       _errorMessage = validationError;
-      notifyListeners();
+      if (!_isDisposed) notifyListeners();
       return false;
     }
 
     _isSubmitting = true;
     _errorMessage = null;
-    notifyListeners();
+    if (!_isDisposed) notifyListeners();
 
     try {
       final capacityMw = getSelectedCapacityMw();
@@ -148,8 +156,10 @@ class PinDialogViewModel extends ChangeNotifier {
       _errorMessage = e.toString();
       return false;
     } finally {
-      _isSubmitting = false;
-      notifyListeners();
+      if (!_isDisposed) {
+        _isSubmitting = false;
+        notifyListeners();
+      }
     }
   }
 }

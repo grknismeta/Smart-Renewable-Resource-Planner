@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.services.geo_service import GeoService as GeoAnalyzer
-# GeoAnalyzer = None # Geçici olarak devre dışı
+
 
 # Router'ı oluştur
 router = APIRouter(tags=["Geo Spatial Analysis"])
@@ -27,28 +27,7 @@ async def check_geo_suitability(request: GeoCheckRequest):
     Coğrafi kısıtlamaları (su, yol, bina, eğim) kontrol eder.
     """
     try:
-        if analyzer is None:
-             # Analiz motoru kapalıysa her yeri uygun kabul et
-             return {
-                "suitable": True,
-                "recommendation": "⚠️ Coğrafi analiz devre dışı (Her yer uygun)",
-                "location": {"province": "Bilinmiyor", "district": "Bilinmiyor"},
-                "elevation": 0,
-                "slope": 0,
-                "restricted_area": [],
-                "solar_details": {
-                    "suitable": True,
-                    "message": "✅ Analiz devre dışı (Uygun)",
-                    "reasons": [],
-                    "notes": ["Coğrafi kontrol yapılmadı"]
-                },
-                "wind_details": {
-                    "suitable": True,
-                    "message": "✅ Analiz devre dışı (Uygun)",
-                    "reasons": [],
-                    "notes": ["Coğrafi kontrol yapılmadı"]
-                }
-             }
+
              
         # Analizi çalıştır
         result = analyzer.analyze_location(request.latitude, request.longitude)

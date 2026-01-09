@@ -40,6 +40,11 @@ class _AddPinDialogState extends State<AddPinDialog> {
   late TextEditingController _nameController;
   int? _selectedScenarioId;
 
+  bool _isCheckingSuitability = true;
+  bool _isSuitable = false;
+  String _suitabilityMessage = "Konum analiz ediliyor...";
+  List<String> _suitabilityReasons = [];
+
   @override
   void initState() {
     super.initState();
@@ -55,7 +60,51 @@ class _AddPinDialogState extends State<AddPinDialog> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<ScenarioViewModel>(context, listen: false).loadScenarios();
       _viewModel.loadInitialData();
+      _checkSuitability();
     });
+  }
+
+  Future<void> _checkSuitability() async {
+    setState(() {
+      _isCheckingSuitability = true;
+      _suitabilityMessage = "Konum analiz ediliyor...";
+    });
+
+    final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
+    final result = await mapViewModel.geoCheck(widget.point);
+
+    if (!mounted) return;
+
+    if (result != null) {
+      final bool suitable = result['suitable'] ?? false;
+      String message = result['recommendation'] ?? "";
+      List<String> reasons = [];
+      
+      // Detaylı nedenleri al
+      if (!suitable) {
+        final solar = result['solar_details'];
+        final wind = result['wind_details'];
+        if (solar != null && solar['reasons'] != null) {
+           for(var r in solar['reasons']) reasons.add("Güneş: $r");
+        }
+        if (wind != null && wind['reasons'] != null) {
+           for(var r in wind['reasons']) reasons.add("Rüzgar: $r");
+        }
+      }
+
+      setState(() {
+        _isCheckingSuitability = false;
+        _isSuitable = suitable;
+        _suitabilityMessage = message.isNotEmpty ? message : (suitable ? "Kurulum için uygun." : "Bu konuma kurulum yapılamaz.");
+        _suitabilityReasons = reasons;
+      });
+    } else {
+      setState(() {
+        _isCheckingSuitability = false;
+        _isSuitable = false; // Güvenli taraf: Analiz yapılamazsa izin verme
+        _suitabilityMessage = "Analiz sunucusuna ulaşılamadı.";
+      });
+    }
   }
 
   @override
@@ -126,6 +175,61 @@ class _AddPinDialogState extends State<AddPinDialog> {
                             style: TextStyle(
                               color: theme.secondaryTextColor,
                               fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    const SizedBox(height: 12),
+                    // Suitability Status Widget
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _isCheckingSuitability 
+                            ? theme.cardColor 
+                            : (_isSuitable ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1)),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _isCheckingSuitability
+                              ? theme.secondaryTextColor.withValues(alpha: 0.2)
+                              : (_isSuitable ? Colors.green.withValues(alpha: 0.5) : Colors.red.withValues(alpha: 0.5)),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          if (_isCheckingSuitability)
+                            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: theme.secondaryTextColor))
+                          else
+                            Icon(
+                              _isSuitable ? Icons.check_circle : Icons.error,
+                              color: _isSuitable ? Colors.green : Colors.red,
+                              size: 20,
+                            ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _suitabilityMessage,
+                                  style: TextStyle(
+                                    color: _isCheckingSuitability 
+                                        ? theme.secondaryTextColor 
+                                        : (_isSuitable ? Colors.green : Colors.red),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if (!_isCheckingSuitability && !_isSuitable && _suitabilityReasons.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  ..._suitabilityReasons.map((r) => Text(
+                                    "• $r",
+                                    style: TextStyle(color: theme.textColor, fontSize: 12),
+                                  )),
+                                ]
+                              ],
                             ),
                           ),
                         ],
@@ -218,7 +322,7 @@ class _AddPinDialogState extends State<AddPinDialog> {
                     MapDialogActionButtons(
                       theme: theme,
                       onCancel: () => Navigator.of(context).pop(),
-                      onSave: viewModel.canSubmit ? () => _handleSave(context, viewModel) : null,
+                      onSave: (viewModel.canSubmit && !_isCheckingSuitability && _isSuitable) ? () => _handleSave(context, viewModel) : null,
                       isSaving: viewModel.isSubmitting,
                     ),
                   ],
