@@ -20,8 +20,12 @@ import 'presentation/features/map/map_screen.dart';
 import 'presentation/screens/report_screen.dart';
 import 'presentation/features/scenario/scenario_screen.dart';
 
+import 'package:flutter/services.dart';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Tam ekran modu (Immersive Sticky)
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const MyApp());
 }
 

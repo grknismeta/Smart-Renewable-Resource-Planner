@@ -1,23 +1,9 @@
 import os
 import glob
-# import rasterio # Optional dependency
-# import geopandas as gpd
-# from shapely.geometry import Point, box
+import rasterio
+import geopandas as gpd
+from shapely.geometry import Point, box
 import numpy as np
-
-# Dummy shim if libraries are missing
-try:
-    import rasterio
-except ImportError:
-    rasterio = None
-
-try:
-    import geopandas as gpd
-    from shapely.geometry import Point, box
-except ImportError:
-    gpd = None
-    Point = None
-    box = None
 
 class GeoService:
     def __init__(self):
@@ -26,8 +12,8 @@ class GeoService:
         print("="*50)
         
         # Dosya yollarını belirle (backend/data/...)
-        # services/geo_service.py -> (dirname) services -> (dirname) backend -> (join) data
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # services/geo_service.py -> (dirname) services -> (dirname) app -> (dirname) backend -> (join) data
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         self.data_dir = os.path.join(base_dir, "data")
         
         # --- 1. SINIRLAR ---

@@ -104,94 +104,106 @@ class _ReportScreenState extends State<ReportScreen> {
     final scenarioViewModel = Provider.of<ScenarioViewModel>(context);
     final scenarios = scenarioViewModel.scenarios;
 
-    return CustomAppBar(
-      title: 'Bölgesel Potansiyel Raporu',
-      textColor: theme.textColor,
-      onBack: () => Navigator.of(context).pushReplacementNamed('/map'),
-      actions: [
-        // Yeni: Senaryo seçici
-        if (scenarios.isNotEmpty) ...[
-          _buildDropdown(
-            value: _selectedScenarioId?.toString() ?? 'Bölgesel',
-            items: ['Bölgesel', ...scenarios.map((s) => s.id.toString())],
-            displayBuilder: (val) {
-              if (val == 'Bölgesel') return 'Bölgesel Rapor';
-              // Check if scenario exists
-              try {
-                final sc = scenarios.firstWhere((s) => s.id.toString() == val);
-                return sc.name;
-              } catch (e) {
-                return 'Bilinmeyen Senaryo';
-              }
-            },
-            onChanged: (val) {
-              if (val == null) return;
-              setState(() {
-                if (val == 'Bölgesel') {
-                  _selectedScenarioId = null;
-                  // Bölgesel raporu yükle
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CustomAppBar(
+          title: 'Bölgesel Potansiyel Raporu',
+          textColor: theme.textColor,
+          onBack: () => Navigator.of(context).pushReplacementNamed('/map'),
+          // removed actions to prevent squeezing title
+        ),
+        const SizedBox(height: 12),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              // Yeni: Senaryo seçici
+              if (scenarios.isNotEmpty) ...[
+                _buildDropdown(
+                  value: _selectedScenarioId?.toString() ?? 'Bölgesel',
+                  items: ['Bölgesel', ...scenarios.map((s) => s.id.toString())],
+                  displayBuilder: (val) {
+                    if (val == 'Bölgesel') return 'Bölgesel Rapor';
+                    // Check if scenario exists
+                    try {
+                      final sc = scenarios.firstWhere((s) => s.id.toString() == val);
+                      return sc.name;
+                    } catch (e) {
+                      return 'Bilinmeyen Senaryo';
+                    }
+                  },
+                  onChanged: (val) {
+                    if (val == null) return;
+                    setState(() {
+                      if (val == 'Bölgesel') {
+                        _selectedScenarioId = null;
+                        // Bölgesel raporu yükle
+                        Provider.of<ReportViewModel>(
+                          context,
+                          listen: false,
+                        ).fetchReport(region: _region, type: _type);
+                      } else {
+                        _selectedScenarioId = int.parse(val);
+                        // Senaryo seçildi - rapor ekranı güncellenir
+                      }
+                    });
+                  },
+                ),
+                const SizedBox(width: 12),
+              ],
+              // Yeni: Zaman Aralığı Seçici (Yıllık/Aylık/Anlık)
+              _buildDropdown(
+                value: _timeInterval,
+                items: const ['Yıllık', 'Aylık', 'Anlık'],
+                onChanged: (val) {
+                  if (val == null) return;
+                  setState(() => _timeInterval = val);
+                  
+                  // ViewModel üzerinden veriyi güncelle
                   Provider.of<ReportViewModel>(
                     context,
                     listen: false,
-                  ).fetchReport(region: _region, type: _type);
-                } else {
-                  _selectedScenarioId = int.parse(val);
-                  // Senaryo seçildi - rapor ekranı güncellenir
-                }
-              });
-            },
+                  ).fetchReport(region: _region, type: _type, interval: val);
+                },
+              ),
+              const SizedBox(width: 12),
+              _buildDropdown(
+                value: _region,
+                items: const [
+                  'Tümü',
+                  'Marmara',
+                  'Ege',
+                  'Akdeniz',
+                  'İç Anadolu',
+                  'Karadeniz',
+                  'Doğu Anadolu',
+                  'Güneydoğu Anadolu',
+                ],
+                onChanged: (val) {
+                  if (val == null || _selectedScenarioId != null) return;
+                  setState(() => _region = val);
+                  Provider.of<ReportViewModel>(
+                    context,
+                    listen: false,
+                  ).fetchReport(region: val, type: _type);
+                },
+              ),
+              const SizedBox(width: 12),
+              _buildDropdown(
+                value: _type,
+                items: const ['Wind', 'Solar'],
+                onChanged: (val) {
+                  if (val == null || _selectedScenarioId != null) return;
+                  setState(() => _type = val);
+                  Provider.of<ReportViewModel>(
+                    context,
+                    listen: false,
+                  ).fetchReport(region: _region, type: val);
+                },
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-        ],
-        // Yeni: Zaman Aralığı Seçici (Yıllık/Aylık/Anlık)
-        _buildDropdown(
-          value: _timeInterval,
-          items: const ['Yıllık', 'Aylık', 'Anlık'],
-          onChanged: (val) {
-            if (val == null) return;
-            setState(() => _timeInterval = val);
-            
-            // ViewModel üzerinden veriyi güncelle
-            Provider.of<ReportViewModel>(
-              context,
-              listen: false,
-            ).fetchReport(region: _region, type: _type, interval: val);
-          },
-        ),
-        const SizedBox(width: 12),
-        _buildDropdown(
-          value: _region,
-          items: const [
-            'Tümü',
-            'Marmara',
-            'Ege',
-            'Akdeniz',
-            'İç Anadolu',
-            'Karadeniz',
-            'Doğu Anadolu',
-            'Güneydoğu Anadolu',
-          ],
-          onChanged: (val) {
-            if (val == null || _selectedScenarioId != null) return;
-            setState(() => _region = val);
-            Provider.of<ReportViewModel>(
-              context,
-              listen: false,
-            ).fetchReport(region: val, type: _type);
-          },
-        ),
-        const SizedBox(width: 12),
-        _buildDropdown(
-          value: _type,
-          items: const ['Wind', 'Solar'],
-          onChanged: (val) {
-            if (val == null || _selectedScenarioId != null) return;
-            setState(() => _type = val);
-            Provider.of<ReportViewModel>(
-              context,
-              listen: false,
-            ).fetchReport(region: _region, type: val);
-          },
         ),
       ],
     );

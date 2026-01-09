@@ -1,14 +1,18 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-# from backend.services.geo_service import GeoService as GeoAnalyzer
-GeoAnalyzer = None # Geçici olarak devre dışı
+from app.services.geo_service import GeoService as GeoAnalyzer
+# GeoAnalyzer = None # Geçici olarak devre dışı
 
 # Router'ı oluştur
 router = APIRouter(tags=["Geo Spatial Analysis"])
 
 # GeoAnalyzer'ı global (module-level) olarak başlatıyoruz ki her istekte shapefile yüklemesin.
 # Bu işlem backend başlarken (router import edildiğinde) bir kez yapılır.
-analyzer = None # GeoAnalyzer()
+try:
+    analyzer = GeoAnalyzer()
+except Exception as e:
+    print(f"⚠️ GeoAnaliz başlatılamadı (Shapefile eksik olabilir): {e}")
+    analyzer = None
 
 
 

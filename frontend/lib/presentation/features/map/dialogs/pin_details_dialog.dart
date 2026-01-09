@@ -239,8 +239,8 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                       : const Icon(Icons.refresh, size: 18),
                   label: Text(_isAnalyzing ? "..." : "Güncelle"),
                ),
-               const SizedBox(width: 12),
-               // Düzenle Butonu
+               const SizedBox(width: 8),
+               // Düzenle Butonu (Daha kompakt)
                ElevatedButton.icon(
                   onPressed: _enterEditMode,
                   style: ElevatedButton.styleFrom(
@@ -252,16 +252,18 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                   icon: const Icon(Icons.edit, size: 18),
                   label: const Text("Düzenle"),
                ),
-               const SizedBox(width: 12),
-               // Kapat Butonu
+               const SizedBox(width: 8),
+               // Sil Butonu (Kırmızı) - Kapat yerine
                ElevatedButton.icon(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => _handleDelete(),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2A2D3E), // Dark button
-                    foregroundColor: Colors.white70,
+                    backgroundColor: Colors.red.withValues(alpha: 0.2), 
+                    foregroundColor: Colors.redAccent,
+                    elevation: 0,
+                    side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.3)),
                   ),
-                  icon: const Icon(Icons.close, size: 18),
-                  label: const Text("Kapat"),
+                  icon: const Icon(Icons.delete, size: 18),
+                  label: const Text("Sil"),
                ),
             ],
           ),
@@ -321,38 +323,51 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
          ),
          const SizedBox(height: 24),
 
-        // Actions
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _isAnalyzing ? null : _handleAnalyze,
-                icon: _isAnalyzing 
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
-                    : const Icon(Icons.refresh),
-                label: Text(_isAnalyzing ? "Hesaplanıyor..." : "Analizi Başlat"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+          // Actions
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _isAnalyzing ? null : _handleAnalyze,
+                  icon: _isAnalyzing 
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
+                      : const Icon(Icons.refresh),
+                  label: Text(_isAnalyzing ? "Hesaplanıyor..." : "Analizi Başlat"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _enterEditMode,
-                icon: const Icon(Icons.edit),
-                label: const Text("Düzenle"),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: theme.textColor,
-                  side: BorderSide(color: theme.secondaryTextColor),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _enterEditMode,
+                  icon: const Icon(Icons.edit),
+                  label: const Text("Düzenle"),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.textColor,
+                    side: BorderSide(color: theme.secondaryTextColor),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
+              const SizedBox(width: 8),
+              // Delete Button for No Analysis view
+              IconButton(
+                onPressed: _handleDelete,
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.red.withValues(alpha: 0.1),
+                  foregroundColor: Colors.redAccent,
+                  padding: const EdgeInsets.all(12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.3)),
+                ),
+                icon: const Icon(Icons.delete),
+              ),
+            ],
+          ),
       ],
     );
   }
@@ -457,5 +472,37 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
           ),
         ),
       );
+  }
+
+  Future<void> _handleDelete() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Silinsin mi?"),
+        content: const Text("Bu kaynağı silmek istediğinize emin misiniz?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("İptal"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Sil", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
+      try {
+        await mapViewModel.deletePin(_currentPin.id);
+        if (mounted) Navigator.pop(context); // Close dialog
+      } catch (e) {
+        if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
+        }
+      }
+    }
   }
 }
