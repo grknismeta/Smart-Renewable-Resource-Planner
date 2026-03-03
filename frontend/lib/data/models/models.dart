@@ -1,4 +1,4 @@
 // Data models exports
-export 'pin_model.dart';
-export 'system_data_models.dart';
+export 'package:frontend/data/models/pin_model.dart';
+export 'package:frontend/data/models/system_data_models.dart';
 

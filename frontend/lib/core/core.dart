@@ -1,4 +1,4 @@
 // Core exports
-export 'api_services/api_service.dart';
-export 'constants.dart';
-export 'secure_storage_service.dart';
+export 'package:frontend/core/network/api_service.dart';
+export 'package:frontend/core/constants/app_constants.dart';
+export 'package:frontend/core/storage/secure_storage.dart';

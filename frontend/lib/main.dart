@@ -1,30 +1,28 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 // Servisler
-import 'core/api_services/api_service.dart';
-import 'core/secure_storage_service.dart';
+import 'package:frontend/core/network/api_service.dart';
+import 'package:frontend/core/storage/secure_storage.dart';
 
 // ViewModels
-import 'presentation/viewmodels/auth_view_model.dart';
-import 'presentation/features/map/viewmodels/map_view_model.dart';
-import 'presentation/viewmodels/theme_view_model.dart';
-import 'presentation/viewmodels/report_view_model.dart';
-import 'presentation/features/scenario/viewmodels/scenario_view_model.dart';
+import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
+import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
+import 'package:frontend/core/theme/app_theme.dart';
+import 'package:frontend/features/reports/viewmodels/report_viewmodel.dart';
+import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 
 // Ekranlar
-import 'presentation/screens/splash_screen.dart';
-import 'presentation/screens/auth_screen.dart';
-import 'presentation/features/map/map_screen.dart';
-import 'presentation/screens/report_screen.dart';
-import 'presentation/features/scenario/scenario_screen.dart';
-
-import 'package:flutter/services.dart';
+import 'package:frontend/features/auth/splash_screen.dart';
+import 'package:frontend/features/auth/auth_screen.dart';
+import 'package:frontend/features/map/map_screen.dart';
+import 'package:frontend/features/reports/report_screen.dart';
+import 'package:frontend/features/scenarios/scenario_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Tam ekran modu (Immersive Sticky)
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   runApp(const MyApp());
 }
@@ -55,26 +53,23 @@ class MyApp extends StatelessWidget {
         ),
       ],
       child: Consumer<ThemeViewModel>(
-        // Tema değişince uygulamayı yeniden çizmek için Consumer
         builder: (context, themeViewModel, child) {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
             title: 'Akıllı Kaynak Planlayıcı (SRRP)',
             theme: ThemeData(
               primarySwatch: Colors.blue,
-              // Scaffold rengini themeProvider'dan alıyoruz
               scaffoldBackgroundColor: themeViewModel.backgroundColor,
               brightness: themeViewModel.isDarkMode
                   ? Brightness.dark
                   : Brightness.light,
             ),
             home: Consumer<AuthViewModel>(
-              builder: (ctx, authError, _) {
-                // Consumer rebuilds automatically on notifyListeners
-                if (authError.isLoggedIn == null) {
+              builder: (ctx, authViewModel, _) {
+                if (authViewModel.isLoggedIn == null) {
                   return const SplashScreen();
                 }
-                if (authError.isLoggedIn == true) {
+                if (authViewModel.isLoggedIn == true) {
                   return const MapScreen();
                 } else {
                   return const AuthScreen();
