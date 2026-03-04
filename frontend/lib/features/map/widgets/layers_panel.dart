@@ -85,8 +85,79 @@ class LayersPanel extends StatelessWidget {
               _buildLayerSwitch("Rüzgar Hızı", MapLayerType.wind),
               _buildLayerSwitch("Sıcaklık", MapLayerType.temp),
               _buildLayerSwitch("Güneş Işınımı", MapLayerType.irradiance),
+
+              // Neon toggle (ayraç + switch)
+              const SizedBox(height: 12),
+              Divider(
+                color: theme.secondaryTextColor.withValues(alpha: 0.15),
+                thickness: 1,
+                height: 1,
+              ),
+              const SizedBox(height: 10),
+              _buildNeonToggle(),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNeonToggle() {
+    final bool isActive = mapViewModel.showDataPoints;
+    return GestureDetector(
+      onTap: () => mapViewModel.toggleDataPoints(!isActive),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          color: isActive
+              ? Colors.cyanAccent.withValues(alpha: 0.12)
+              : theme.secondaryTextColor.withValues(alpha: 0.06),
+          border: Border.all(
+            color: isActive
+                ? Colors.cyanAccent.withValues(alpha: 0.5)
+                : Colors.transparent,
+            width: 1,
+          ),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: Colors.cyanAccent.withValues(alpha: 0.15),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : [],
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.grain,
+              size: 16,
+              color: isActive ? Colors.cyanAccent : theme.secondaryTextColor,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                "Neon Veri Noktaları",
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isActive ? Colors.cyanAccent : theme.secondaryTextColor,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+            Switch(
+              value: isActive,
+              onChanged: (val) => mapViewModel.toggleDataPoints(val),
+              activeColor: Colors.cyanAccent,
+              activeTrackColor: Colors.cyan.withValues(alpha: 0.3),
+              inactiveThumbColor: theme.secondaryTextColor,
+              inactiveTrackColor: theme.secondaryTextColor.withValues(alpha: 0.1),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ],
         ),
       ),
     );

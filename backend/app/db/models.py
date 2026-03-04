@@ -31,6 +31,11 @@ class Pin(UserBase):
     avg_solar_irradiance = Column(Float, nullable=True)
     avg_wind_speed = Column(Float, nullable=True)
 
+    # HES (Hidroelektrik) spesifik alanlar
+    flow_rate = Column(Float, nullable=True)        # Debi (m³/s)
+    head_height = Column(Float, nullable=True)      # Düşü yüksekliği (m)
+    basin_area_km2 = Column(Float, nullable=True)   # Havza alanı (km²)
+
     # Equipment (SystemDB) ile ilişki ID üzerinden manuel kurulacak
     equipment_id = Column(Integer, nullable=True)
 

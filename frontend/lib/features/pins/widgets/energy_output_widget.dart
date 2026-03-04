@@ -17,6 +17,11 @@ class EnergyOutputWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // HES sonucu varsa ayrı bir HES görselü göster
+    if (result.hydroCalculation != null) {
+      return _buildHydroOutput(result.hydroCalculation!);
+    }
+
     // Güneş veya Rüzgar verilerini al
     final double annualKwh =
         result.solarCalculation?.potentialKwhAnnual ??
@@ -119,6 +124,111 @@ class EnergyOutputWidget extends StatelessWidget {
             const Divider(),
             const SizedBox(height: 8),
             _buildAdditionalInfo(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // --- HES ÖZEL GÖRSEL ---
+  Widget _buildHydroOutput(HydroCalculationResponse hydro) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [theme.cardColor, theme.cardColor.withValues(alpha: 0.8)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.teal.withValues(alpha: 0.4), width: 1),
+        boxShadow: [
+          BoxShadow(color: Colors.teal.withValues(alpha: 0.1), blurRadius: 12, offset: const Offset(0, 4)),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.water_drop, color: Colors.teal, size: 28),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'HES Üretim Tahmini',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: theme.textColor),
+                    ),
+                    Text(
+                      '${hydro.turbineType} Türbini — ${(hydro.turbineEfficiency * 100).toStringAsFixed(0)}% verim',
+                      style: const TextStyle(fontSize: 12, color: Colors.teal),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildPrimaryOutputCard('Yıllık Üretim', hydro.predictedAnnualProductionKwh, Icons.calendar_today, Colors.teal),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSecondaryOutputCard('Aylık Ortalama', hydro.potentialKwhMonthly, Icons.calendar_month, Colors.cyan),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildSecondaryOutputCard('Kapasite Faktörü', hydro.capacityFactor * 100, Icons.battery_charging_full, Colors.green),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 8),
+          _buildInfoRow('Ortalama Debi', '${hydro.avgFlowRateM3s.toStringAsFixed(2)} m³/s', Icons.water),
+          _buildInfoRow('Düşü Yüksekliği', '${hydro.headHeightM.toStringAsFixed(1)} m', Icons.height),
+          _buildInfoRow('Kapasite Faktörü', '${(hydro.capacityFactor * 100).toStringAsFixed(1)}%', Icons.battery_charging_full),
+          _buildInfoRow('Türbin Açıklaması', hydro.turbineDescription, Icons.info_outline),
+          if (hydro.monthlyProduction != null && hydro.monthlyProduction!.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Aylık Üretim',
+              style: TextStyle(fontWeight: FontWeight.w600, color: theme.textColor, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            ...hydro.monthlyProduction!.entries.map((e) {
+              final maxVal = hydro.monthlyProduction!.values.reduce((a, b) => a > b ? a : b);
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    SizedBox(width: 65, child: Text(e.key, style: TextStyle(fontSize: 11, color: theme.secondaryTextColor))),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: maxVal > 0 ? e.value / maxVal : 0,
+                          backgroundColor: Colors.teal.withValues(alpha: 0.1),
+                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.teal),
+                          minHeight: 8,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(_formatEnergy(e.value), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: theme.textColor)),
+                  ],
+                ),
+              );
+            }),
           ],
         ],
       ),

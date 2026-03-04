@@ -269,7 +269,7 @@ class _MapLayerWidgetState extends State<MapLayerWidget> {
     );
     
     final paint = Paint(); // BlendMode varsayılan
-    canvas.drawVertices(vertices, BlendMode.dst, paint);
+    canvas.drawVertices(vertices, BlendMode.srcOver, paint);
     
     _cachedPicture = recorder.endRecording();
   }

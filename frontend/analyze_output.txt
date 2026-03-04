@@ -1,0 +1,145 @@
+﻿Analyzing frontend...                                           
+
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\help_dialog.dart:66:53 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\help_dialog.dart:94:44 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\tabs\map_help_tab.dart:44:34 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\tabs\map_help_tab.dart:46:53 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\widgets\help_shared_widgets.dart:46:60 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\widgets\help_shared_widgets.dart:119:40 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\widgets\help_shared_widgets.dart:183:66 - deprecated_member_use
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\dialogs\optimization_dialog.dart:241:44 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\dialogs\optimization_dialog.dart:242:38 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\dialogs\optimization_dialog.dart:244:44 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\dialogs\optimization_dialog.dart:258:50 - use_build_context_synchronously
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\data_points_layer.dart:27:32 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\data_points_layer.dart:28:37 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\data_points_layer.dart:32:36 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\data_points_layer.dart:33:41 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:320:49 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:320:100 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:323:69 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:334:49 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:334:94 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:337:63 - deprecated_member_use
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\map_screen.dart:201:43 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\map_screen.dart:211:13 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\map_screen.dart:223:43 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\map_screen.dart:225:32 - use_build_context_synchronously
+   info - The import of 'package:frontend/features/map/layers/map_layers_system.dart' is unnecessary because all of the used elements are also provided by the import of 'package:frontend/features/map/viewmodels/map_viewmodel.dart' - lib\features\map\overlays\map_overlays.dart:8:8 - unnecessary_import
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\overlays\map_overlays.dart:65:30 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\overlays\map_overlays.dart:84:30 - deprecated_member_use
+  error - Undefined name 'activePeriod' - lib\features\map\viewmodels\map_view_model.dart:101:5 - undefined_identifier
+   info - The type of the right operand ('MapLayerType') isn't a subtype or a supertype of the left operand ('MapLayerType') - lib\features\map\viewmodels\map_view_model.dart:104:22 - unrelated_type_equality_checks
+  error - The named parameter 'period' isn't defined - lib\features\map\viewmodels\map_view_model.dart:105:46 - undefined_named_parameter
+  error - The named parameter 'flowRate' isn't defined - lib\features\map\viewmodels\map_view_model.dart:341:9 - undefined_named_parameter
+  error - The named parameter 'headHeight' isn't defined - lib\features\map\viewmodels\map_view_model.dart:342:9 - undefined_named_parameter
+  error - The named parameter 'basinAreaKm2' isn't defined - lib\features\map\viewmodels\map_view_model.dart:343:9 - undefined_named_parameter
+  error - The named parameter 'flowRate' isn't defined - lib\features\map\viewmodels\map_view_model.dart:409:9 - undefined_named_parameter
+  error - The named parameter 'headHeight' isn't defined - lib\features\map\viewmodels\map_view_model.dart:410:9 - undefined_named_parameter
+  error - The named parameter 'basinAreaKm2' isn't defined - lib\features\map\viewmodels\map_view_model.dart:411:9 - undefined_named_parameter
+   info - The type of the right operand ('MapLayerType') isn't a subtype or a supertype of the left operand ('MapLayerType') - lib\features\map\viewmodels\map_view_model.dart:442:24 - unrelated_type_equality_checks
+  error - Target of URI doesn't exist: 'package:frontend/features/scenario/viewmodels/scenario_viewmodel.dart' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:7:8 - uri_does_not_exist
+  error - Target of URI doesn't exist: 'package:frontend/features/map/viewmodels/pin_dialog_viewmodel.dart' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:8:8 - uri_does_not_exist
+  error - Target of URI doesn't exist: 'package:frontend/features/map/widgets/equipment_selector_widget.dart' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:12:8 - uri_does_not_exist
+  error - Undefined class 'PinDialogViewModel' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:39:8 - undefined_class
+  error - The method 'PinDialogViewModel' isn't defined for the type '_AddPinDialogState' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:60:18 - undefined_method
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\map\widgets\dialogs\add_pin_dialog.dart:67:19 - non_type_as_type_argument
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\map\widgets\dialogs\add_pin_dialog.dart:133:36 - non_type_as_type_argument
+  error - The name 'PinDialogViewModel' isn't a type, so it can't be used as a type argument - lib\features\map\widgets\dialogs\add_pin_dialog.dart:140:23 - non_type_as_type_argument
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:157:39 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:159:39 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:162:40 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:164:39 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:266:35 - unchecked_use_of_nullable_value
+  error - The method 'setPanelArea' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:271:55 - unchecked_use_of_nullable_value
+  error - The property 'panelArea' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:272:75 - unchecked_use_of_nullable_value
+  error - The property 'panelArea' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:274:61 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:281:35 - unchecked_use_of_nullable_value
+  error - The method 'setHeadHeight' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:287:55 - unchecked_use_of_nullable_value
+  error - The method 'setFlowRate' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:295:55 - unchecked_use_of_nullable_value
+  error - The method 'setBasinArea' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:303:55 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:354:33 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:356:39 - unchecked_use_of_nullable_value
+  error - The method 'EquipmentSelectorWidget' isn't defined for the type '_AddPinDialogState' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:365:21 - undefined_method
+  error - The property 'availableEquipments' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:366:45 - unchecked_use_of_nullable_value
+  error - The property 'selectedEquipmentId' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:367:54 - unchecked_use_of_nullable_value
+  error - The property 'isLoadingEquipments' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:368:44 - unchecked_use_of_nullable_value
+  error - The method 'selectEquipment' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:371:51 - unchecked_use_of_nullable_value
+  error - The property 'canSubmit' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:381:42 - unchecked_use_of_nullable_value
+  error - The property 'isSubmitting' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:382:43 - unchecked_use_of_nullable_value
+  error - Undefined class 'PinDialogViewModel' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:394:51 - undefined_class
+  error - Undefined class 'PinDialogViewModel' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:486:50 - undefined_class
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\map\widgets\dialogs\add_pin_dialog.dart:523:23 - non_type_as_type_argument
+  error - The argument type 'MapViewModel (where MapViewModel is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\viewmodels\map_view_model.dart)' can't be assigned to the parameter type 'MapViewModel (where MapViewModel is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\viewmodels\map_viewmodel.dart)'.  - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:62:7 - argument_type_not_assignable
+  error - The argument type 'ThemeViewModel (where ThemeViewModel is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\core\theme\theme_view_model.dart)' can't be assigned to the parameter type 'ThemeViewModel (where ThemeViewModel is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\core\theme\app_theme.dart)'.  - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:185:28 - argument_type_not_assignable
+  error - The argument type 'MapViewModel (where MapViewModel is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\viewmodels\map_view_model.dart)' can't be assigned to the parameter type 'MapViewModel (where MapViewModel is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\viewmodels\map_viewmodel.dart)'.  - lib\features\map\widgets\dialogs\pin_details_dialog.dart:60:7 - argument_type_not_assignable
+  error - The argument type 'ThemeViewModel (where ThemeViewModel is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\core\theme\theme_view_model.dart)' can't be assigned to the parameter type 'ThemeViewModel (where ThemeViewModel is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\core\theme\app_theme.dart)'.  - lib\features\map\widgets\dialogs\pin_details_dialog.dart:412:26 - argument_type_not_assignable
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\widgets\layers_panel.dart:39:37 - deprecated_member_use
+   info - The imported package 'intl' isn't a dependency of the importing package - lib\features\map\widgets\panels\financial_output_widget.dart:4:8 - depend_on_referenced_packages
+  error - Undefined class 'FinancialAnalysis' - lib\features\map\widgets\panels\financial_output_widget.dart:18:11 - undefined_class
+  error - The getter 'financials' isn't defined for the type 'SolarCalculationResponse' - lib\features\map\widgets\panels\financial_output_widget.dart:18:68 - undefined_getter
+  error - The getter 'financials' isn't defined for the type 'WindCalculationResponse' - lib\features\map\widgets\panels\financial_output_widget.dart:19:33 - undefined_getter
+  error - The getter 'hydroCalculation' isn't defined for the type 'PinCalculationResponse' - lib\features\map\widgets\panels\financial_output_widget.dart:20:16 - undefined_getter
+   info - The type of the right operand ('MapLayerType') isn't a subtype or a supertype of the left operand ('MapLayerType') - lib\features\map\widgets\panels\layers_panel.dart:90:45 - unrelated_type_equality_checks
+   info - The type of the right operand ('MapLayerType') isn't a subtype or a supertype of the left operand ('MapLayerType') - lib\features\map\widgets\panels\layers_panel.dart:154:53 - unrelated_type_equality_checks
+  error - The argument type 'MapLayerType (where MapLayerType is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\widgets\layers\map_layers_system.dart)' can't be assigned to the parameter type 'MapLayerType (where MapLayerType is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\layers\map_layers_system.dart)'.  - lib\features\map\widgets\panels\layers_panel.dart:158:33 - argument_type_not_assignable
+  error - The argument type 'MapLayerType (where MapLayerType is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\widgets\layers\map_layers_system.dart)' can't be assigned to the parameter type 'MapLayerType (where MapLayerType is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\layers\map_layers_system.dart)'.  - lib\features\map\widgets\panels\layers_panel.dart:160:33 - argument_type_not_assignable
+   info - The type of the right operand ('MapLayerType') isn't a subtype or a supertype of the left operand ('MapLayerType') - lib\features\map\widgets\panels\map_overlays.dart:38:64 - unrelated_type_equality_checks
+   info - The type of the right operand ('MapLayerType') isn't a subtype or a supertype of the left operand ('MapLayerType') - lib\features\map\widgets\panels\map_overlays.dart:54:39 - unrelated_type_equality_checks
+   info - The type of the right operand ('MapLayerType') isn't a subtype or a supertype of the left operand ('MapLayerType') - lib\features\map\widgets\panels\map_overlays.dart:74:44 - unrelated_type_equality_checks
+   info - The type of the right operand ('MapLayerType') isn't a subtype or a supertype of the left operand ('MapLayerType') - lib\features\map\widgets\panels\map_overlays.dart:92:44 - unrelated_type_equality_checks
+   info - The type of the right operand ('MapLayerType') isn't a subtype or a supertype of the left operand ('MapLayerType') - lib\features\map\widgets\panels\map_overlays.dart:119:35 - unrelated_type_equality_checks
+warning - The matched value type 'MapLayerType (where MapLayerType is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\layers\map_layers_system.dart)' can never be equal to this constant of type 'MapLayerType (where MapLayerType is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\widgets\layers\map_layers_system.dart)' - lib\features\map\widgets\panels\map_overlays.dart:132:12 - constant_pattern_never_matches_value_type
+warning - The matched value type 'MapLayerType (where MapLayerType is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\layers\map_layers_system.dart)' can never be equal to this constant of type 'MapLayerType (where MapLayerType is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\widgets\layers\map_layers_system.dart)' - lib\features\map\widgets\panels\map_overlays.dart:138:12 - constant_pattern_never_matches_value_type
+warning - The matched value type 'MapLayerType (where MapLayerType is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\layers\map_layers_system.dart)' can never be equal to this constant of type 'MapLayerType (where MapLayerType is defined in C:\Projelerim\smart_renewable_resource_planner\frontend\lib\features\map\widgets\layers\map_layers_system.dart)' - lib\features\map\widgets\panels\map_overlays.dart:166:12 - constant_pattern_never_matches_value_type
+  error - Target of URI doesn't exist: 'package:frontend/features/scenarios/screens/scenario_screen.dart' - lib\features\map\widgets\panels\sidebar\scenario_button.dart:3:8 - uri_does_not_exist
+  error - The method 'ScenarioScreen' isn't defined for the type 'ScenarioButton' - lib\features\map\widgets\panels\sidebar\scenario_button.dart:69:51 - undefined_method
+  error - Target of URI doesn't exist: '../../../help/help_dialog.dart' - lib\features\map\widgets\panels\sidebar\sidebar_footer.dart:4:8 - uri_does_not_exist
+  error - Target of URI doesn't exist: '../../../settings/settings_dialog.dart' - lib\features\map\widgets\panels\sidebar\sidebar_footer.dart:5:8 - uri_does_not_exist
+  error - Undefined name 'SettingsDialog' - lib\features\map\widgets\panels\sidebar\sidebar_footer.dart:45:26 - undefined_identifier
+  error - Undefined name 'HelpDialog' - lib\features\map\widgets\panels\sidebar\sidebar_footer.dart:53:26 - undefined_identifier
+   info - Statements in a for should be enclosed in a block - lib\features\pins\dialogs\add_pin_dialog.dart:88:43 - curly_braces_in_flow_control_structures
+   info - Statements in a for should be enclosed in a block - lib\features\pins\dialogs\add_pin_dialog.dart:91:42 - curly_braces_in_flow_control_structures
+   info - Don't use 'BuildContext's across async gaps - lib\features\pins\dialogs\add_pin_dialog.dart:455:40 - use_build_context_synchronously
+  error - Target of URI doesn't exist: 'package:frontend/features/pins/viewmodels/pin_viewmodel.dart' - lib\features\pins\dialogs\pin_details_dialog.dart:10:8 - uri_does_not_exist
+  error - Undefined class 'PinDialogViewModel' - lib\features\pins\dialogs\pin_details_dialog.dart:40:3 - undefined_class
+  error - The method 'PinDialogViewModel' isn't defined for the type '_PinDetailsDialogState' - lib\features\pins\dialogs\pin_details_dialog.dart:59:22 - undefined_method
+   info - Don't use 'BuildContext's across async gaps - lib\features\pins\dialogs\pin_details_dialog.dart:117:28 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\pins\dialogs\pin_details_dialog.dart:134:31 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\pins\dialogs\pin_details_dialog.dart:140:30 - use_build_context_synchronously
+  error - The name 'PinDialogViewModel' isn't a type, so it can't be used as a type argument - lib\features\pins\dialogs\pin_details_dialog.dart:382:24 - non_type_as_type_argument
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:402:82 - unchecked_use_of_nullable_value
+  error - The method 'changeType' can't be unconditionally invoked because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:402:123 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:403:86 - unchecked_use_of_nullable_value
+  error - The method 'changeType' can't be unconditionally invoked because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:403:129 - unchecked_use_of_nullable_value
+  error - The property 'availableEquipments' can't be unconditionally accessed because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:410:34 - unchecked_use_of_nullable_value
+  error - The property 'selectedEquipmentId' can't be unconditionally accessed because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:411:43 - unchecked_use_of_nullable_value
+  error - The property 'isLoadingEquipments' can't be unconditionally accessed because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:412:33 - unchecked_use_of_nullable_value
+  error - The method 'selectEquipment' can't be unconditionally invoked because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:414:53 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:417:24 - unchecked_use_of_nullable_value
+  error - The method 'setPanelArea' can't be unconditionally invoked because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:422:46 - unchecked_use_of_nullable_value
+  error - The property 'panelArea' can't be unconditionally accessed because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:423:66 - unchecked_use_of_nullable_value
+  error - The property 'panelArea' can't be unconditionally accessed because the receiver can be 'null' - lib\features\pins\dialogs\pin_details_dialog.dart:425:54 - unchecked_use_of_nullable_value
+   info - Don't use 'BuildContext's across async gaps - lib\features\reports\report_screen.dart:36:47 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\features\reports\report_screen.dart:39:38 - use_build_context_synchronously
+  error - Target of URI doesn't exist: '../features/scenario/viewmodels/scenario_view_model.dart' - lib\features\reports\screens\report_screen.dart:8:8 - uri_does_not_exist
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\reports\screens\report_screen.dart:40:19 - non_type_as_type_argument
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\reports\screens\report_screen.dart:105:43 - non_type_as_type_argument
+   info - Don't use 'BuildContext's across async gaps - lib\features\scenarios\scenario_screen.dart:25:49 - use_build_context_synchronously
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\scenarios\scenario_screen.dart:80:40 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\scenarios\scenario_screen.dart:95:42 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\sidebar\map_bottom_sheet.dart:47:39 - deprecated_member_use
+   info - Don't use 'BuildContext's across async gaps - lib\features\sidebar\map_bottom_sheet.dart:124:44 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\features\sidebar\sidebar_launcher.dart:148:33 - use_build_context_synchronously
+
+flutter : 131 issues found. (ran in 5.4s)
+At line:1 char:1
++ flutter analyze --no-fatal-infos 2>&1 | Ou
+t-File -FilePath "C:\Projel ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: 
+    (131 issues found. (ran in 5.4s):Strin  
+  g) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommand 
+   Error
+ 

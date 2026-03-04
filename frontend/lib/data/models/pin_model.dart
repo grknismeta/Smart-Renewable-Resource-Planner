@@ -90,9 +90,34 @@ class Pin {
   }
 }
 
-// --- 2. HESAPLAMA MODELLERİ (YENİ EKLENDİ) ---
-// Bu sınıflar, backend'deki (schemas.py) PinCalculationResponse vb.
-// şemalarına tam olarak uymalıdır.
+// --- FINANSAL MODEL ---
+class FinancialAnalysis {
+  final double lcoeUsdKwh;
+  final double paybackPeriodYears;
+  final double roiPercentage;
+  final double carbonSavingsTonsAnnual;
+  final double carbonCreditIncomeUsdAnnual;
+
+  FinancialAnalysis({
+    required this.lcoeUsdKwh,
+    required this.paybackPeriodYears,
+    required this.roiPercentage,
+    required this.carbonSavingsTonsAnnual,
+    required this.carbonCreditIncomeUsdAnnual,
+  });
+
+  factory FinancialAnalysis.fromJson(Map<String, dynamic> json) {
+    return FinancialAnalysis(
+      lcoeUsdKwh: (json['lcoe_usd_kwh'] as num?)?.toDouble() ?? 0.0,
+      paybackPeriodYears: (json['payback_period_years'] as num?)?.toDouble() ?? 0.0,
+      roiPercentage: (json['roi_percentage'] as num?)?.toDouble() ?? 0.0,
+      carbonSavingsTonsAnnual: (json['carbon_savings_tons_annual'] as num?)?.toDouble() ?? 0.0,
+      carbonCreditIncomeUsdAnnual: (json['carbon_credit_income_usd_annual'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}
+
+// --- 2. HESAPLAMA MODELLERİ ---
 
 class SolarCalculationResponse {
   final double solarIrradianceKwM2;
@@ -103,6 +128,7 @@ class SolarCalculationResponse {
   final double potentialKwhAnnual;
   final double performanceRatio;
   final Map<String, double>? monthlyProduction;
+  final FinancialAnalysis? financials;
 
   SolarCalculationResponse({
     required this.solarIrradianceKwM2,
@@ -113,6 +139,7 @@ class SolarCalculationResponse {
     required this.potentialKwhAnnual,
     required this.performanceRatio,
     this.monthlyProduction,
+    this.financials,
   });
 
   // Haftalık üretim (yıllık / 52)
@@ -148,6 +175,7 @@ class WindCalculationResponse {
   final double potentialKwhAnnual;
   final double capacityFactor;
   final Map<String, double>? monthlyProduction;
+  final FinancialAnalysis? financials;
 
   WindCalculationResponse({
     required this.windSpeedMS,
@@ -156,6 +184,7 @@ class WindCalculationResponse {
     required this.potentialKwhAnnual,
     required this.capacityFactor,
     this.monthlyProduction,
+    this.financials,
   });
 
   // Haftalık üretim (yıllık / 52)
@@ -182,16 +211,81 @@ class WindCalculationResponse {
   }
 }
 
+// --- 3. HYDRO HESAPLAMA MODİ
+
+class HydroCalculationResponse {
+  final double predictedAnnualProductionKwh;
+  final double ratedPowerKw;
+  final double avgFlowRateM3s;
+  final double headHeightM;
+  final String turbineType;
+  final double turbineEfficiency;
+  final String turbineDescription;
+  final String suggestedTurbine;
+  final double capacityFactor;
+  final Map<String, double>? monthlyProduction;
+  final Map<String, double>? monthlyFlowRates;
+
+  HydroCalculationResponse({
+    required this.predictedAnnualProductionKwh,
+    required this.ratedPowerKw,
+    required this.avgFlowRateM3s,
+    required this.headHeightM,
+    required this.turbineType,
+    required this.turbineEfficiency,
+    required this.turbineDescription,
+    required this.suggestedTurbine,
+    required this.capacityFactor,
+    this.monthlyProduction,
+    this.monthlyFlowRates,
+  });
+
+  // Calculate derived values
+  double get potentialKwhMonthly => predictedAnnualProductionKwh / 12;
+  double get potentialKwhWeekly => predictedAnnualProductionKwh / 52;
+
+  factory HydroCalculationResponse.fromJson(Map<String, dynamic> json) {
+    return HydroCalculationResponse(
+      predictedAnnualProductionKwh:
+          (json['predicted_annual_production_kwh'] as num).toDouble(),
+      ratedPowerKw: (json['rated_power_kw'] as num).toDouble(),
+      avgFlowRateM3s: (json['avg_flow_rate_m3s'] as num).toDouble(),
+      headHeightM: (json['head_height_m'] as num).toDouble(),
+      turbineType: json['turbine_type'] as String,
+      turbineEfficiency: (json['turbine_efficiency'] as num).toDouble(),
+      turbineDescription: json['turbine_description'] as String,
+      suggestedTurbine: json['suggested_turbine'] as String,
+      capacityFactor: (json['capacity_factor'] as num).toDouble(),
+      monthlyProduction: json['monthly_production'] != null
+          ? Map<String, double>.from(
+              (json['monthly_production'] as Map).map(
+                (k, v) => MapEntry(k.toString(), (v as num).toDouble()),
+              ),
+            )
+          : null,
+      monthlyFlowRates: json['monthly_flow_rates'] != null
+          ? Map<String, double>.from(
+              (json['monthly_flow_rates'] as Map).map(
+                (k, v) => MapEntry(k.toString(), (v as num).toDouble()),
+              ),
+            )
+          : null,
+    );
+  }
+}
+
 // Bu sınıf, 'PinResult'ın yerini almalıdır.
 class PinCalculationResponse {
   final String resourceType;
   final WindCalculationResponse? windCalculation;
   final SolarCalculationResponse? solarCalculation;
+  final HydroCalculationResponse? hydroCalculation;
 
   PinCalculationResponse({
     required this.resourceType,
     this.windCalculation,
     this.solarCalculation,
+    this.hydroCalculation,
   });
 
   factory PinCalculationResponse.fromJson(Map<String, dynamic> json) {
@@ -202,6 +296,9 @@ class PinCalculationResponse {
           : null,
       solarCalculation: json['solar_calculation'] != null
           ? SolarCalculationResponse.fromJson(json['solar_calculation'])
+          : null,
+      hydroCalculation: json['hydro_calculation'] != null
+          ? HydroCalculationResponse.fromJson(json['hydro_calculation'])
           : null,
     );
   }

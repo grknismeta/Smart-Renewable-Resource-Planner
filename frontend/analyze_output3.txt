@@ -1,0 +1,58 @@
+﻿Analyzing frontend...                                           
+
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\help_dialog.dart:66:53 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\help_dialog.dart:94:44 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\tabs\map_help_tab.dart:44:34 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\tabs\map_help_tab.dart:46:53 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\widgets\help_shared_widgets.dart:46:60 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\widgets\help_shared_widgets.dart:119:40 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\help\widgets\help_shared_widgets.dart:183:66 - deprecated_member_use
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\dialogs\optimization_dialog.dart:241:44 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\dialogs\optimization_dialog.dart:242:38 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\dialogs\optimization_dialog.dart:244:44 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\dialogs\optimization_dialog.dart:258:50 - use_build_context_synchronously
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\data_points_layer.dart:27:32 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\data_points_layer.dart:28:37 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\data_points_layer.dart:32:36 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\data_points_layer.dart:33:41 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:320:49 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:320:100 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:323:69 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:334:49 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:334:94 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\layers\map_layers_system.dart:337:63 - deprecated_member_use
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\map_screen.dart:201:43 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\map_screen.dart:211:13 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\map_screen.dart:223:43 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\map\map_screen.dart:225:32 - use_build_context_synchronously
+   info - The import of 'package:frontend/features/map/layers/map_layers_system.dart' is unnecessary because all of the used elements are also provided by the import of 'package:frontend/features/map/viewmodels/map_viewmodel.dart' - lib\features\map\overlays\map_overlays.dart:8:8 - unnecessary_import
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\overlays\map_overlays.dart:65:30 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\overlays\map_overlays.dart:84:30 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\map\widgets\layers_panel.dart:39:37 - deprecated_member_use
+   info - The imported package 'intl' isn't a dependency of the importing package - lib\features\map\widgets\panels\financial_output_widget.dart:4:8 - depend_on_referenced_packages
+   info - Statements in a for should be enclosed in a block - lib\features\pins\dialogs\add_pin_dialog.dart:88:43 - curly_braces_in_flow_control_structures
+   info - Statements in a for should be enclosed in a block - lib\features\pins\dialogs\add_pin_dialog.dart:91:42 - curly_braces_in_flow_control_structures
+   info - Don't use 'BuildContext's across async gaps - lib\features\pins\dialogs\add_pin_dialog.dart:455:40 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\features\pins\dialogs\pin_details_dialog.dart:117:28 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\pins\dialogs\pin_details_dialog.dart:134:31 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\features\pins\dialogs\pin_details_dialog.dart:140:30 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\features\reports\report_screen.dart:36:47 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\features\reports\report_screen.dart:39:38 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\features\scenarios\scenario_screen.dart:25:49 - use_build_context_synchronously
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\scenarios\scenario_screen.dart:80:40 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\scenarios\scenario_screen.dart:95:42 - deprecated_member_use
+   info - 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss - lib\features\sidebar\map_bottom_sheet.dart:47:39 - deprecated_member_use
+   info - Don't use 'BuildContext's across async gaps - lib\features\sidebar\map_bottom_sheet.dart:124:44 - use_build_context_synchronously
+   info - Don't use 'BuildContext's across async gaps - lib\features\sidebar\sidebar_launcher.dart:148:33 - use_build_context_synchronously
+
+flutter : 44 issues found. (ran in 7.8s)
+At line:1 char:1
++ flutter analyze --no-fatal-infos 2>&1 | Ou
+t-File -FilePath "C:\Projel ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: 
+    (44 issues found. (ran in 7.8s):String  
+  ) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommand 
+   Error
+ 

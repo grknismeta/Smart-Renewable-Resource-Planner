@@ -15,6 +15,9 @@ class PinDialogViewModel extends ChangeNotifier {
   String _selectedType;
   int? _selectedEquipmentId;
   double _panelArea = 10.0; // Default 10 m2
+  double _flowRate = 0.0;
+  double _headHeight = 0.0;
+  double _basinAreaKm2 = 0.0;
   bool _isSubmitting = false;
   String? _errorMessage;
 
@@ -31,18 +34,34 @@ class PinDialogViewModel extends ChangeNotifier {
   String get selectedType => _selectedType;
   int? get selectedEquipmentId => _selectedEquipmentId;
   double get panelArea => _panelArea;
+  double get flowRate => _flowRate;
+  double get headHeight => _headHeight;
+  double get basinAreaKm2 => _basinAreaKm2;
   bool get isSubmitting => _isSubmitting;
   String? get errorMessage => _errorMessage;
   bool get hasError => _errorMessage != null;
 
   List<Equipment> get availableEquipments {
-    final type = _selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
+    String type;
+    if (_selectedType == 'Güneş Paneli') {
+      type = 'Solar';
+    } else if (_selectedType == 'Rüzgar Türbini') {
+      type = 'Wind';
+    } else {
+      type = 'Hydro'; // Hidroelektrik
+    }
     return _mapViewModel.equipments.where((e) => e.type == type).toList();
   }
 
   bool get isLoadingEquipments => _mapViewModel.equipmentsLoading;
   bool get hasEquipments => availableEquipments.isNotEmpty;
-  bool get canSubmit => _selectedEquipmentId != null && !_isSubmitting;
+  // HES için ekipman seçimi opsiyonel (debi/havza alanı yeterli)
+  bool get canSubmit {
+    if (_selectedType == 'Hidroelektrik') {
+      return !_isSubmitting; // HES için ekipman zorunlu değil
+    }
+    return _selectedEquipmentId != null && !_isSubmitting;
+  }
 
   // Actions
   void setPanelArea(String val) {
@@ -50,6 +69,33 @@ class PinDialogViewModel extends ChangeNotifier {
     final parsed = double.tryParse(val);
     if (parsed != null && parsed > 0) {
       _panelArea = parsed;
+      notifyListeners();
+    }
+  }
+
+  void setFlowRate(String val) {
+    if (val.isEmpty) return;
+    final parsed = double.tryParse(val);
+    if (parsed != null && parsed >= 0) {
+      _flowRate = parsed;
+      notifyListeners();
+    }
+  }
+
+  void setHeadHeight(String val) {
+    if (val.isEmpty) return;
+    final parsed = double.tryParse(val);
+    if (parsed != null && parsed >= 0) {
+      _headHeight = parsed;
+      notifyListeners();
+    }
+  }
+
+  void setBasinArea(String val) {
+    if (val.isEmpty) return;
+    final parsed = double.tryParse(val);
+    if (parsed != null && parsed >= 0) {
+      _basinAreaKm2 = parsed;
       notifyListeners();
     }
   }
@@ -84,19 +130,37 @@ class PinDialogViewModel extends ChangeNotifier {
 
   // Business Logic
   Future<void> loadInitialData() async {
-    final type = _selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
+    String type;
+    if (_selectedType == 'Güneş Paneli') {
+      type = 'Solar';
+    } else if (_selectedType == 'Rüzgar Türbini') {
+      type = 'Wind';
+    } else {
+      type = 'Hydro';
+    }
     await _mapViewModel.loadEquipments(type: type, forceRefresh: true);
     if (!_isDisposed) notifyListeners();
   }
 
   Future<void> _loadEquipments() async {
-    final type = _selectedType == 'Güneş Paneli' ? 'Solar' : 'Wind';
+    String type;
+    if (_selectedType == 'Güneş Paneli') {
+      type = 'Solar';
+    } else if (_selectedType == 'Rüzgar Türbini') {
+      type = 'Wind';
+    } else {
+      type = 'Hydro';
+    }
     await _mapViewModel.loadEquipments(type: type, forceRefresh: true);
     if (!_isDisposed) notifyListeners();
   }
 
   /// Validation - Returns error message or null if valid
   String? validate() {
+    if (_selectedType == 'Hidroelektrik') {
+      // HES için ekipman seçimi zorunlu değil; debi veya havza alanı yeterli
+      return null;
+    }
     if (_selectedEquipmentId == null) {
       return 'Lütfen bir model seçin';
     }

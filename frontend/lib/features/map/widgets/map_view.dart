@@ -12,6 +12,8 @@ import 'package:frontend/features/map/layers/map_layers_system.dart';
 import 'package:frontend/features/map/layers/data_points_layer.dart';
 import 'package:frontend/features/map/dialogs/map_dialogs.dart';
 import 'package:frontend/features/map/widgets/map_markers.dart';
+import 'package:frontend/features/map/layers/vector_style.dart';
+import 'package:vector_map_tiles/vector_map_tiles.dart';
 
 /// The core map engine widget using FlutterMap
 class MapView extends StatefulWidget {
@@ -39,6 +41,11 @@ class _MapViewState extends State<MapView> {
 
   void _constrainToTurkey(LatLng center) {
     MapUtils.constrainMapCamera(widget.mapController);
+  }
+
+  @override
+  void initState() {
+    super.initState();
   }
 
   @override
@@ -127,6 +134,18 @@ class _MapViewState extends State<MapView> {
             panBuffer: 1,
           ),
 
+          // 1.5 Vector Tile Layer (MVT) for backend data
+          VectorTileLayer(
+            theme: SrrpVectorStyle.style.theme,
+            backgroundTheme: null,
+            tileProviders: TileProviders(
+               {'srrp_mvt': NetworkVectorTileProvider(
+                  urlTemplate: "http://localhost:8000/api/v1/tiles/{z}/{x}/{y}.pbf",
+                  maximumZoom: 14,
+               )}
+            ),
+          ),
+
           // 2. Heatmap Layer
           if (mapViewModel.currentLayer != MapLayerType.none)
             Stack(
@@ -154,8 +173,8 @@ class _MapViewState extends State<MapView> {
               ],
             ),
 
-          // 2.1. Data Points Layer (Above Heatmap, Below Markers)
-          if (mapViewModel.currentLayer != MapLayerType.none)
+          // 2.1. Data Points Layer (Neon - herhangi bir katmanda veya katmansız gösterilir)
+          if (mapViewModel.showDataPoints)
              DataPointsLayer(mapViewModel: mapViewModel),
 
           // 3. User Selection & Restricted Areas
@@ -173,8 +192,9 @@ class _MapViewState extends State<MapView> {
                ],
              ),
 
-          // 4. Markers
-          MarkerLayer(markers: markers),
+          // 4. Markers (pin görünürlüğü ayarına göre)
+          if (mapViewModel.showPins)
+            MarkerLayer(markers: markers),
 
           // 5. Selection Drag Handles
           if (mapViewModel.selectionPoints.isNotEmpty)

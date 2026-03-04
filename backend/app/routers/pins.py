@@ -8,8 +8,9 @@ from app.crud import crud
 from app.schemas import schemas
 from app.db import models
 from app.services import solar_service as solar_calculations, wind_service as wind_calculations
+from app.services.hydro_service import calculate_annual_hydro_production, suggest_turbine_type
 from app.db.database import get_db, get_system_db, get_user_pins_db
-from app.schemas.schemas import PinCalculationResponse, SolarCalculationResponse, WindCalculationResponse, PinBase, FinancialAnalysis
+from app.schemas.schemas import PinCalculationResponse, SolarCalculationResponse, WindCalculationResponse, HydroCalculationResponse, PinBase, FinancialAnalysis
 
 router = APIRouter()
 
@@ -193,6 +194,40 @@ async def calculate_pin_potential(
             financials=None
         )
         return PinCalculationResponse(resource_type="Rüzgar Türbini", wind_calculation=wind_res)
+
+    elif pin_data.type == "Hidroelektrik":
+        # HES hesaplama
+        flow_rate = pin_data.flow_rate
+        head_height = pin_data.head_height
+        basin_area_km2 = pin_data.basin_area_km2
+
+        if head_height is None or head_height <= 0:
+            raise HTTPException(status_code=400, detail="HES için düşü yüksekliği (head_height) zorunludur.")
+
+        if (flow_rate is None or flow_rate <= 0) and (basin_area_km2 is None or basin_area_km2 <= 0):
+            raise HTTPException(status_code=400, detail="Debi (flow_rate) veya Havza Alanı (basin_area_km2) girilmelidir.")
+
+        turbine_type = suggest_turbine_type(head_height)
+        # Ekipman varsa türünü al
+        if selected_equipment is not None and str(selected_equipment.type) == "Hydro":
+            specs = selected_equipment.specs or {}
+            turbine_type = specs.get("turbine_type", turbine_type)
+
+        hydro_results = await run_in_threadpool(
+            calculate_annual_hydro_production,
+            latitude=float(pin_data.latitude),
+            longitude=float(pin_data.longitude),
+            head_height=head_height,
+            turbine_type=turbine_type,
+            flow_rate=flow_rate if (flow_rate and flow_rate > 0) else None,
+            basin_area_km2=basin_area_km2 if (basin_area_km2 and basin_area_km2 > 0) else None,
+        )
+
+        if "error" in hydro_results:
+            raise HTTPException(status_code=500, detail=hydro_results["error"])
+
+        hydro_res = HydroCalculationResponse(**hydro_results)
+        return PinCalculationResponse(resource_type="Hidroelektrik", hydro_calculation=hydro_res)
 
     else:
         raise HTTPException(status_code=400, detail="Geçersiz tip")

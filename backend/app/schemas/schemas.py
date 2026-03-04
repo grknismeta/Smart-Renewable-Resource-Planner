@@ -45,10 +45,14 @@ class PinBase(BaseModel):
     latitude: float
     longitude: float
     title: Optional[str] = "Yeni Kaynak"
-    type: Literal["Güneş Paneli", "Rüzgar Türbini"] = "Güneş Paneli"
+    type: Literal["Güneş Paneli", "Rüzgar Türbini", "Hidroelektrik"] = "Güneş Paneli"
     capacity_mw: float = 1.0
     panel_area: Optional[float] = None
     equipment_id: Optional[int] = None
+    # HES spesifik alanlar
+    flow_rate: Optional[float] = None          # Debi (m³/s)
+    head_height: Optional[float] = None        # Düşü yüksekliği (m)
+    basin_area_km2: Optional[float] = None     # Havza alanı (km²)
 
 class PinCreate(PinBase):
     pass
@@ -107,10 +111,25 @@ class SolarCalculationResponse(BaseModel):
     monthly_production: Optional[Dict[str, float]] = None
     financials: Optional[FinancialAnalysis] = None
 
+class HydroCalculationResponse(BaseModel):
+    """Hidroelektrik (HES) hesaplama sonuçları"""
+    predicted_annual_production_kwh: float
+    rated_power_kw: float
+    avg_flow_rate_m3s: float
+    head_height_m: float
+    turbine_type: str
+    turbine_efficiency: float
+    turbine_description: str
+    suggested_turbine: str
+    capacity_factor: float
+    monthly_production: Optional[Dict[str, float]] = None
+    monthly_flow_rates: Optional[Dict[str, float]] = None
+
 class PinCalculationResponse(BaseModel):
-    resource_type: Literal["Rüzgar Türbini", "Güneş Paneli"]
+    resource_type: Literal["Rüzgar Türbini", "Güneş Paneli", "Hidroelektrik"]
     wind_calculation: Optional[WindCalculationResponse] = None
     solar_calculation: Optional[SolarCalculationResponse] = None
+    hydro_calculation: Optional[HydroCalculationResponse] = None
 
 # --- GRID HARİTASI ---
 class GridResponse(BaseModel):

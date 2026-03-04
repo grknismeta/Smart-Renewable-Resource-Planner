@@ -4,15 +4,16 @@ from sqlalchemy.orm import sessionmaker,Session
 from typing import Generator
 import os
 
-# --- 1. SİSTEM VERİTABANI (Grid Analizi, Ekipmanlar) ---
-# Grid Taraması gibi büyük ve sabit veriler burada saklanır.
+# --- 1. SİSTEM VERİTABANI (Grid Analizi, Ekipmanlar, GEO veriler) ---
+# PostGIS kullanacak ana veritabanı
 
-# Path fix for nested directory
-base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # go up from app/db/ to backend/
-SYSTEM_DB_URL = f"sqlite:///{os.path.join(base_dir, 'system_data.db')}"
+base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Docker Compose'dan gelen DATABASE_URL'yi al, yoksa varsayılanı kullan (Docker-Compose postgres settings)
+SYSTEM_DB_URL = os.getenv("DATABASE_URL", "postgresql://srrp_admin:srrp_secure_2026@localhost:5432/srrp_db")
 
 SystemEngine = create_engine(
-    SYSTEM_DB_URL, connect_args={"check_same_thread": False}
+    SYSTEM_DB_URL
 )
 SystemSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=SystemEngine)
 SystemBase = declarative_base()

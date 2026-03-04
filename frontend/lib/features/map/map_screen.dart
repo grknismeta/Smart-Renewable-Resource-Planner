@@ -5,7 +5,8 @@ import 'package:flutter_map/flutter_map.dart';
 
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/core/theme/app_theme.dart';
-
+import 'package:frontend/core/network/api_service.dart';
+import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 // Map components
 import 'package:frontend/features/map/widgets/map_view.dart';
 import 'package:frontend/features/map/widgets/map_controls.dart';
@@ -82,22 +83,22 @@ class _MapScreenState extends State<MapScreen> {
                      ),
                      
                      // 3. Floating Controls (Buttons)
-                     MapControls(
-                       theme: theme,
-                       onAddPin: () => mapViewModel.startPlacingMarker('Güneş Paneli'),
-                       onSelectRegion: () {
-                          if (mapViewModel.isSelectingRegion) {
-                            mapViewModel.clearRegionSelection();
-                          } else {
-                            mapViewModel.startSelectingRegion();
-                          }
-                       },
-                       onToggleLayers: () => setState(() => _showLayersPanel = !_showLayersPanel),
-                       onZoomIn: _zoomIn,
-                       onZoomOut: _zoomOut,
-                       isSelectingRegion: mapViewModel.isSelectingRegion,
-                       isLayersPanelVisible: _showLayersPanel,
-                     ),
+                      MapControls(
+                        theme: theme,
+                        onAddPin: () => _showPinTypePicker(mapViewModel),
+                        onSelectRegion: () {
+                           if (mapViewModel.isSelectingRegion) {
+                             mapViewModel.clearRegionSelection();
+                           } else {
+                             mapViewModel.startSelectingRegion();
+                           }
+                        },
+                        onToggleLayers: () => setState(() => _showLayersPanel = !_showLayersPanel),
+                        onZoomIn: _zoomIn,
+                        onZoomOut: _zoomOut,
+                        isSelectingRegion: mapViewModel.isSelectingRegion,
+                        isLayersPanelVisible: _showLayersPanel,
+                      ),
 
                      // 4. Map Bottom Sheet (Persistent Sidebar Replacement)
                      const MapBottomSheet(),
@@ -176,55 +177,91 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
 
-    try {
-       // Using the new API Service structure via VM or directly
-       // Ideally VM should expose this.
-       // For this refactor, I'll access the service via Provider.of<ApiService> as before, 
-       // but cleaner would be viewModel.checkGeoSuitability(point)
-       
-       // Access ApiService
-       // apiService is not in VM yet? Let's use context read.
-       // Wait, ApiService was passed to VM or accessible via Provider.
-       // Let's use the one in context.
-       
-       // import 'core/api_services/api_service.dart'; // Need to import this
-       // final apiService = Provider.of<ApiService>(context, listen: false);
-       // final result = await apiService.geo.checkGeoSuitability(point.latitude, point.longitude);
-       
-       // BUT I want to move this logic effectively.
-       // Let's call the VM method. I'll need to add it to MapViewModel if not present.
-       // Looking at MapViewModel, it has `checkGeoSuitability` method from previous turn fixes?
-       // The user said "Login Transfer: UI içindeki tüm setState gerektiren fonksiyonları... MapViewModel'e taşı."
-       
-       final result = await viewModel.geoCheck(point);
+     try {
+       await viewModel.geoCheck(point); // Geo kapalıysa hata vermez, devam eder
        
        if (context.mounted) Navigator.pop(context); // Close loading
 
-       if (result != null && context.mounted) {
-          // Eğer yasaklı alan ise uyarı verebiliriz (Opsiyonel)
-          if (result['suitable'] == false) {
-             // Show warning but still allow adding? Or block?
-             // For now just show AddPinDialog as before
-          }
+       // Geo kapalı veya serbest - her durumda devam et
+       if (context.mounted) {
+          final apiService = Provider.of<ApiService>(context, listen: false);
+          final themeVM = Provider.of<ThemeViewModel>(context, listen: false);
+          final scenarioVM = Provider.of<ScenarioViewModel>(context, listen: false);
 
           showDialog(
             context: context,
-            builder: (ctx) => AddPinDialog(
-               point: point,
-               initialPinType: viewModel.placingPinType ?? 'Güneş Paneli',
+            builder: (ctx) => MultiProvider(
+              providers: [
+                ChangeNotifierProvider<MapViewModel>.value(value: viewModel),
+                ChangeNotifierProvider<ThemeViewModel>.value(value: themeVM),
+                ChangeNotifierProvider<ScenarioViewModel>.value(value: scenarioVM),
+                Provider<ApiService>.value(value: apiService),
+              ],
+              child: AddPinDialog(
+                 point: point,
+                 initialPinType: viewModel.placingPinType ?? 'Güneş Paneli',
+              ),
             ),
           ).then((_) {
-             // Dialog kapanınca ekleme modunu bitir
              viewModel.stopPlacingMarker();
           });
        }
-    } catch (e) {
-       debugPrint("Geo Check Exception: $e");
-       if (context.mounted) Navigator.pop(context);
-       if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Hata: $e')));
-       }
-    }
+     } catch (e) {
+        debugPrint("Geo Check Exception: $e");
+        if (context.mounted) Navigator.pop(context);
+        // Hata durumunda da dialog'u aç
+        if (context.mounted) {
+           final apiService = Provider.of<ApiService>(context, listen: false);
+           final themeVM = Provider.of<ThemeViewModel>(context, listen: false);
+           final scenarioVM = Provider.of<ScenarioViewModel>(context, listen: false);
+
+           showDialog(
+             context: context,
+             builder: (ctx) => MultiProvider(
+               providers: [
+                 ChangeNotifierProvider<MapViewModel>.value(value: viewModel),
+                 ChangeNotifierProvider<ThemeViewModel>.value(value: themeVM),
+                 ChangeNotifierProvider<ScenarioViewModel>.value(value: scenarioVM),
+                 Provider<ApiService>.value(value: apiService),
+               ],
+               child: AddPinDialog(
+                  point: point,
+                  initialPinType: viewModel.placingPinType ?? 'Güneş Paneli',
+               ),
+             ),
+           ).then((_) => viewModel.stopPlacingMarker());
+        }
+     }
+  }
+
+  void _showPinTypePicker(MapViewModel viewModel) {
+    final theme = Provider.of<ThemeViewModel>(context, listen: false);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.cardColor,
+        title: Text('Pin Türü Seç', style: TextStyle(color: theme.textColor)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _pinTypeOption(theme, 'Güneş Paneli', Icons.wb_sunny, Colors.orange, viewModel),
+            _pinTypeOption(theme, 'Rüzgar Türbini', Icons.air, Colors.lightBlue, viewModel),
+            _pinTypeOption(theme, 'HES', Icons.water, Colors.cyan, viewModel),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pinTypeOption(ThemeViewModel theme, String type, IconData icon, Color color, MapViewModel vm) {
+    return ListTile(
+      leading: Icon(icon, color: color),
+      title: Text(type, style: TextStyle(color: theme.textColor)),
+      onTap: () {
+        Navigator.pop(context);
+        vm.startPlacingMarker(type);
+      },
+    );
   }
 
   void _zoomIn() {

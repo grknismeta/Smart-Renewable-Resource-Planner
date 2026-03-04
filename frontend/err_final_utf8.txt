@@ -1,0 +1,89 @@
+﻿Analyzing frontend...                                           
+
+  error - Target of URI doesn't exist: '../../scenario/viewmodels/scenario_view_model.dart' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:7:8 - uri_does_not_exist
+  error - Target of URI doesn't exist: '../../pins/viewmodels/pin_dialog_viewmodel.dart' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:8:8 - uri_does_not_exist
+  error - Target of URI doesn't exist: '../../pins/widgets/equipment_selector_widget.dart' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:12:8 - uri_does_not_exist
+  error - Undefined class 'PinDialogViewModel' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:39:8 - undefined_class
+  error - The method 'PinDialogViewModel' isn't defined for the type '_AddPinDialogState' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:60:18 - undefined_method
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\map\widgets\dialogs\add_pin_dialog.dart:67:19 - non_type_as_type_argument
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\map\widgets\dialogs\add_pin_dialog.dart:133:36 - non_type_as_type_argument
+  error - The name 'PinDialogViewModel' isn't a type, so it can't be used as a type argument - lib\features\map\widgets\dialogs\add_pin_dialog.dart:140:23 - non_type_as_type_argument
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:157:39 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:159:39 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:162:40 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:164:39 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:266:35 - unchecked_use_of_nullable_value
+  error - The method 'setPanelArea' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:271:55 - unchecked_use_of_nullable_value
+  error - The property 'panelArea' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:272:75 - unchecked_use_of_nullable_value
+  error - The property 'panelArea' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:274:61 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:281:35 - unchecked_use_of_nullable_value
+  error - The method 'setHeadHeight' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:287:55 - unchecked_use_of_nullable_value
+  error - The method 'setFlowRate' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:295:55 - unchecked_use_of_nullable_value
+  error - The method 'setBasinArea' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:303:55 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:354:33 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:356:39 - unchecked_use_of_nullable_value
+  error - The method 'EquipmentSelectorWidget' isn't defined for the type '_AddPinDialogState' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:365:21 - undefined_method
+  error - The property 'availableEquipments' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:366:45 - unchecked_use_of_nullable_value
+  error - The property 'selectedEquipmentId' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:367:54 - unchecked_use_of_nullable_value
+  error - The property 'isLoadingEquipments' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:368:44 - unchecked_use_of_nullable_value
+  error - The method 'selectEquipment' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:371:51 - unchecked_use_of_nullable_value
+  error - The property 'canSubmit' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:381:42 - unchecked_use_of_nullable_value
+  error - The property 'isSubmitting' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:382:43 - unchecked_use_of_nullable_value
+  error - Undefined class 'PinDialogViewModel' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:394:51 - undefined_class
+  error - Undefined class 'PinDialogViewModel' - lib\features\map\widgets\dialogs\add_pin_dialog.dart:486:50 - undefined_class
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\map\widgets\dialogs\add_pin_dialog.dart:523:23 - non_type_as_type_argument
+  error - Target of URI doesn't exist: '../../pins/viewmodels/pin_dialog_viewmodel.dart' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:9:8 - uri_does_not_exist
+  error - Target of URI doesn't exist: '../../pins/widgets/equipment_selector_widget.dart' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:12:8 - uri_does_not_exist
+  error - Undefined class 'PinDialogViewModel' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:48:8 - undefined_class
+  error - The method 'PinDialogViewModel' isn't defined for the type '_EditPinDialogState' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:61:18 - undefined_method
+  error - The name 'PinDialogViewModel' isn't a type, so it can't be used as a type argument - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:89:23 - non_type_as_type_argument
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:158:38 - unchecked_use_of_nullable_value
+  error - The method 'changeType' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:173:50 - unchecked_use_of_nullable_value
+  error - The method 'EquipmentSelectorWidget' isn't defined for the type '_EditPinDialogState' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:178:19 - undefined_method
+  error - The property 'availableEquipments' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:179:43 - unchecked_use_of_nullable_value
+  error - The property 'selectedEquipmentId' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:180:52 - unchecked_use_of_nullable_value
+  error - The property 'isLoadingEquipments' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:181:42 - unchecked_use_of_nullable_value
+  error - The method 'selectEquipment' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:183:49 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:188:33 - unchecked_use_of_nullable_value
+  error - The property 'isSubmitting' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:198:33 - unchecked_use_of_nullable_value
+  error - The property 'canSubmit' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:224:50 - unchecked_use_of_nullable_value
+  error - The property 'canSubmit' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:237:50 - unchecked_use_of_nullable_value
+  error - Undefined class 'PinDialogViewModel' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:286:5 - undefined_class
+  error - Undefined class 'PinDialogViewModel' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:306:5 - undefined_class
+  error - Undefined class 'PinDialogViewModel' - lib\features\map\widgets\dialogs\edit_pin_dialog.dart:327:5 - undefined_class
+  error - Target of URI doesn't exist: '../../pins/viewmodels/pin_dialog_viewmodel.dart' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:10:8 - uri_does_not_exist
+  error - Target of URI doesn't exist: '../../pins/widgets/equipment_selector_widget.dart' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:13:8 - uri_does_not_exist
+  error - Undefined class 'PinDialogViewModel' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:40:3 - undefined_class
+  error - The method 'PinDialogViewModel' isn't defined for the type '_PinDetailsDialogState' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:59:22 - undefined_method
+  error - The name 'PinDialogViewModel' isn't a type, so it can't be used as a type argument - lib\features\map\widgets\dialogs\pin_details_dialog.dart:381:24 - non_type_as_type_argument
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:401:82 - unchecked_use_of_nullable_value
+  error - The method 'changeType' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:401:123 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:402:86 - unchecked_use_of_nullable_value
+  error - The method 'changeType' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:402:129 - unchecked_use_of_nullable_value
+  error - The method 'EquipmentSelectorWidget' isn't defined for the type '_PinDetailsDialogState' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:408:17 - undefined_method
+  error - The property 'availableEquipments' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:409:34 - unchecked_use_of_nullable_value
+  error - The property 'selectedEquipmentId' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:410:43 - unchecked_use_of_nullable_value
+  error - The property 'isLoadingEquipments' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:411:33 - unchecked_use_of_nullable_value
+  error - The method 'selectEquipment' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:413:53 - unchecked_use_of_nullable_value
+  error - The property 'selectedType' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:416:24 - unchecked_use_of_nullable_value
+  error - The method 'setPanelArea' can't be unconditionally invoked because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:421:46 - unchecked_use_of_nullable_value
+  error - The property 'panelArea' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:422:66 - unchecked_use_of_nullable_value
+  error - The property 'panelArea' can't be unconditionally accessed because the receiver can be 'null' - lib\features\map\widgets\dialogs\pin_details_dialog.dart:424:54 - unchecked_use_of_nullable_value
+  error - Target of URI doesn't exist: '../../../../features/scenario/scenario_screen.dart' - lib\features\map\widgets\panels\sidebar\scenario_button.dart:3:8 - uri_does_not_exist
+  error - The method 'ScenarioScreen' isn't defined for the type 'ScenarioButton' - lib\features\map\widgets\panels\sidebar\scenario_button.dart:69:51 - undefined_method
+  error - Target of URI doesn't exist: '../../../help/help_dialog.dart' - lib\features\map\widgets\panels\sidebar\sidebar_footer.dart:4:8 - uri_does_not_exist
+  error - Target of URI doesn't exist: '../../../settings/settings_dialog.dart' - lib\features\map\widgets\panels\sidebar\sidebar_footer.dart:5:8 - uri_does_not_exist
+  error - Undefined name 'SettingsDialog' - lib\features\map\widgets\panels\sidebar\sidebar_footer.dart:45:26 - undefined_identifier
+  error - Undefined name 'HelpDialog' - lib\features\map\widgets\panels\sidebar\sidebar_footer.dart:53:26 - undefined_identifier
+  error - Target of URI doesn't exist: '../features/scenario/viewmodels/scenario_view_model.dart' - lib\features\reports\screens\report_screen.dart:8:8 - uri_does_not_exist
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\reports\screens\report_screen.dart:40:19 - non_type_as_type_argument
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\reports\screens\report_screen.dart:105:43 - non_type_as_type_argument
+  error - Target of URI doesn't exist: '../../features/scenario/viewmodels/scenario_view_model.dart' - lib\features\reports\widgets\scenario_map_in_report.dart:8:8 - uri_does_not_exist
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\reports\widgets\scenario_map_in_report.dart:23:43 - non_type_as_type_argument
+  error - Target of URI doesn't exist: '../../features/scenario/viewmodels/scenario_view_model.dart' - lib\features\reports\widgets\scenario_result_panel.dart:6:8 - uri_does_not_exist
+  error - The name 'ScenarioViewModel' isn't a type, so it can't be used as a type argument - lib\features\reports\widgets\scenario_result_panel.dart:15:43 - non_type_as_type_argument
+  error - Target of URI doesn't exist: 'presentation/features/scenario/viewmodels/scenario_view_model.dart' - lib\main.dart:14:8 - uri_does_not_exist
+  error - Target of URI doesn't exist: 'presentation/features/scenario/scenario_screen.dart' - lib\main.dart:21:8 - uri_does_not_exist
+  error - The method 'ScenarioViewModel' isn't defined for the type 'MyApp' - lib\main.dart:48:47 - undefined_method
+  error - The name 'ScenarioScreen' isn't a class - lib\main.dart:88:48 - creation_with_non_type
+

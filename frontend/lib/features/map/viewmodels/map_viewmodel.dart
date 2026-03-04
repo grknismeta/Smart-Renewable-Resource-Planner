@@ -16,6 +16,8 @@ export 'package:frontend/features/map/layers/map_layers_system.dart' show MapLay
 // Pin ekleme modunu String olarak tanımla
 typedef PinType = String;
 
+enum MapTimePeriod { current, monthly, annual }
+
 class MapViewModel extends BaseViewModel with MapLayerMixin {
   final ApiService _apiService;
   final AuthViewModel _authViewModel;
@@ -50,11 +52,19 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   List<Equipment> _equipments = [];
   bool _equipmentsLoading = false;
 
+  // --- Harita katman zaman dönemi ve neon toggle ---
+  bool _showDataPoints = false;
+  bool _showPins = true;
+  MapTimePeriod _selectedPeriod = MapTimePeriod.current;
+
   List<Pin> get pins => _pins;
   PinType? get placingPinType => _placingPinType;
-  // MapLayer get currentLayer => _currentLayer; <- Moved to mixin
   PinCalculationResponse? get latestCalculationResult =>
       _latestCalculationResult;
+
+  bool get showDataPoints => _showDataPoints;
+  bool get showPins => _showPins;
+  MapTimePeriod get selectedPeriod => _selectedPeriod;
 
 
   List<CityWeatherData> get weatherData => _weatherData;
@@ -78,6 +88,25 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   List<Equipment> get equipments => _equipments;
   bool get isEquipmentLoading => _equipmentsLoading;
   bool get equipmentsLoading => _equipmentsLoading;
+
+  void toggleDataPoints(bool value) {
+    _showDataPoints = value;
+    notifyListeners();
+  }
+
+  void togglePinsVisibility(bool value) {
+    _showPins = value;
+    notifyListeners();
+  }
+
+  void setPeriod(MapTimePeriod period) {
+    if (_selectedPeriod == period) return;
+    _selectedPeriod = period;
+    if (currentLayer != MapLayerType.none) {
+      fetchHeatmapDataForLayer(currentLayer);
+    }
+    notifyListeners();
+  }
 
   MapViewModel(this._apiService, this._authViewModel) {
     _authViewModel.addListener(_handleAuthChange);
@@ -297,8 +326,11 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     String type,
     double capacityMw,
     int? equipmentId,
-    double? panelArea,
-  ) async {
+    double? panelArea, {
+    double? flowRate,
+    double? headHeight,
+    double? basinAreaKm2,
+  }) async {
     try {
       final newPin = await _apiService.resource.addPin(
         point,
@@ -307,6 +339,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         capacityMw,
         equipmentId,
         panelArea,
+        flowRate: flowRate,
+        headHeight: headHeight,
+        basinAreaKm2: basinAreaKm2,
       );
       await fetchPins();
       return newPin;
@@ -589,8 +624,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       }
       return result;
     } catch (e) {
-      debugPrint('Geo analiz hatası: $e');
-      return null;
+      // Geo servisi kapalı veya ulaşılamaz (404, network error) - engelleme
+      debugPrint('Geo analiz devre dışı veya hata (devam ediliyor): $e');
+      return {'suitable': true, 'geo_disabled': true};
     } finally {
       _isAnalyzingGeo = false;
       notifyListeners();

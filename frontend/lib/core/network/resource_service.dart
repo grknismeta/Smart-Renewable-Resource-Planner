@@ -36,16 +36,22 @@ class ResourceService extends BaseService {
     String type,
     double capacityMw,
     int? equipmentId,
-    double? panelArea,
-  ) async {
+    double? panelArea, {
+    double? flowRate,
+    double? headHeight,
+    double? basinAreaKm2,
+  }) async {
     final Map<String, dynamic> pinData = {
       'latitude': point.latitude,
       'longitude': point.longitude,
-      'name': name,
+      'title': name,   // backend schema: PinBase.title
       'type': type,
       'capacity_mw': capacityMw,
       'panel_area': panelArea,
       if (equipmentId != null) 'equipment_id': equipmentId,
+      if (flowRate != null) 'flow_rate': flowRate,
+      if (headHeight != null) 'head_height': headHeight,
+      if (basinAreaKm2 != null) 'basin_area_km2': basinAreaKm2,
     };
 
     final response = await http.post(

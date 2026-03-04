@@ -46,6 +46,9 @@ class _PinsPanelState extends State<PinsPanel> {
     final windPins = widget.mapViewModel.pins
         .where((p) => p.type == 'Rüzgar Türbini')
         .toList();
+    final hesPins = widget.mapViewModel.pins
+        .where((p) => p.type == 'HES')
+        .toList();
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
@@ -93,6 +96,19 @@ class _PinsPanelState extends State<PinsPanel> {
                   ),
                 ),
                 const Spacer(),
+                // Görünürlük toggle switch
+                Transform.scale(
+                  scale: 0.75,
+                  child: Switch(
+                    value: widget.mapViewModel.showPins,
+                    onChanged: (val) => widget.mapViewModel.togglePinsVisibility(val),
+                    activeColor: Colors.cyanAccent,
+                    activeTrackColor: Colors.cyan.withValues(alpha: 0.3),
+                    inactiveThumbColor: widget.theme.secondaryTextColor,
+                    inactiveTrackColor: widget.theme.secondaryTextColor.withValues(alpha: 0.1),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
                 if (widget.mapViewModel.pins.isNotEmpty)
                   Icon(
                     _isExpanded ? Icons.expand_less : Icons.expand_more,
@@ -129,6 +145,18 @@ class _PinsPanelState extends State<PinsPanel> {
               ),
               const SizedBox(height: 6),
               ...windPins.map((pin) => _buildPinItem(context, pin, Colors.blue)),
+              const SizedBox(height: 8),
+            ],
+
+            // HES Kurulumları
+            if (hesPins.isNotEmpty) ...[
+              _buildCategoryHeader(
+                'HES Kurulumları',
+                hesPins.length,
+                Colors.cyan,
+              ),
+              const SizedBox(height: 6),
+              ...hesPins.map((pin) => _buildPinItem(context, pin, Colors.cyan)),
             ],
             
             if (widget.mapViewModel.pins.isEmpty)
@@ -205,7 +233,9 @@ class _PinsPanelState extends State<PinsPanel> {
                 Icon(
                   pin.type == 'Güneş Paneli'
                       ? Icons.wb_sunny
-                      : Icons.wind_power,
+                      : pin.type == 'HES'
+                          ? Icons.water
+                          : Icons.wind_power,
                   color: accentColor,
                   size: 16,
                 ),

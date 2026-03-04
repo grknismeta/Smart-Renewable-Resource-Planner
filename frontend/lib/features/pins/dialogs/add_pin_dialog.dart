@@ -3,9 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'package:frontend/core/network/api_service.dart';
-import 'package:frontend/core/theme/app_theme.dart';
+import 'package:frontend/core/theme/theme_view_model.dart';
 import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
-import 'package:frontend/features/pins/viewmodels/pin_viewmodel.dart';
+import 'package:frontend/features/pins/viewmodels/pin_dialog_viewmodel.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 
 import 'package:frontend/shared/widgets/themed_inputs.dart';

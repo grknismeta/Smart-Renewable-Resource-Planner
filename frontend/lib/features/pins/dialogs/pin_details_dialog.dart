@@ -5,9 +5,9 @@ import 'dart:ui'; // For window.physicalSize and ImageFilter
 
 import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/core/network/api_service.dart';
-import 'package:frontend/core/theme/app_theme.dart';
-import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
-import 'package:frontend/features/pins/viewmodels/pin_viewmodel.dart';
+import 'package:frontend/core/theme/theme_view_model.dart';
+import 'package:frontend/features/map/viewmodels/map_view_model.dart';
+import 'package:frontend/features/pins/viewmodels/pin_dialog_viewmodel.dart';
 
 import 'package:frontend/shared/widgets/themed_inputs.dart';
 import 'package:frontend/features/pins/widgets/equipment_selector.dart';

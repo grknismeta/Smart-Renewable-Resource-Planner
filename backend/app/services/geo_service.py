@@ -71,32 +71,29 @@ class GeoService:
         elevation, slope = self._get_terrain_data(lat, lon)
         
         # --- 1. GÜNEŞ ANALİZİ (Solar) ---
-        # Kural: Binalar, çatılar ve yerleşim yerleri UYGUNDUR.
         solar_result = self._analyze_solar(point, slope)
 
         # --- 2. RÜZGAR ANALİZİ (Wind) ---
-        # Kural: Binalardan ve yerleşimden UZAK olmalıdır.
         wind_result = self._analyze_wind(point, slope)
 
-        # Ülke/İlçe Sınırı Kontrolü (Her ikisi için de geçerli)
-        # Sınır verisi yoksa bu kontrolü atla (geliştirme ortamı için)
-        
-        # Öncelik: İlçe Sınırları (Daha hassas, Denizi dışlar)
+        # --- 3. HİDROELEKTRİK ANALİZİ (Hydro) ---
+        hydro_result = self._analyze_hydro(point, elevation)
+
+        # Ülke/İlçe Sınırı Kontrolü
         if self.districts_gdf is not None:
              if not self.districts_gdf.contains(point).any():
                 error_msg = "Arazi sınırları dışında (Deniz/Göl veya Sınır Dışı)."
-                return self._create_final_response(False, False, [error_msg], [error_msg], [], [], loc_info, 0, 0, lat, lon)
+                return self._create_final_response(False, False, False, [error_msg], [error_msg], [error_msg], [], [], [], loc_info, 0, 0, lat, lon)
         
-        # Fallback: Ülke Sınırları
         elif self.country_border is not None:
              if not self.country_border.contains(point).any():
                 error_msg = "Türkiye sınırları dışında."
-                return self._create_final_response(False, False, [error_msg], [error_msg], [], [], loc_info, 0, 0, lat, lon)
+                return self._create_final_response(False, False, False, [error_msg], [error_msg], [error_msg], [], [], [], loc_info, 0, 0, lat, lon)
 
         return self._create_final_response(
-            solar_result['suitable'], wind_result['suitable'],
-            solar_result['reasons'], wind_result['reasons'],
-            solar_result['notes'], wind_result['notes'],
+            solar_result['suitable'], wind_result['suitable'], hydro_result['suitable'],
+            solar_result['reasons'], wind_result['reasons'], hydro_result['reasons'],
+            solar_result['notes'], wind_result['notes'], hydro_result['notes'],
             loc_info, elevation, slope, lat, lon
         )
 
@@ -180,13 +177,63 @@ class GeoService:
         return {"suitable": is_suitable, "reasons": reasons, "notes": notes}
 
     # ---------------------------------------------------------
+    # 💧 HİDROELEKTRİK ENERJİ ANALİZ MANTIĞI
+    # ---------------------------------------------------------
+    def _analyze_hydro(self, point, elevation):
+        """
+        HES kural seti:
+        - Su kütlesine yakın veya üzerine kurulamaz (bent/santral için ayrı alan)
+        - Su kütlesine 2 km içinde → ideal (akarsuyun yakınında)
+        - Su kütlesine 2-10 km → havza hesabı ile uygun olabilir
+        - Suyun hiç yakınında değil → uygun değil (GEO aktifken)
+        - Su kütlesi shapefile yoksa → uygun (belirsizlik durumu)
+        """
+        reasons = []
+        notes = []
+        is_suitable = True
+
+        if self.water_gdf is None:
+            notes.append("💧 Su kaynağı verisi yüklenemedi, kör onay verildi.")
+            return {"suitable": True, "reasons": [], "notes": notes}
+
+        try:
+            # Su kütlesinin üzerinde mi? (Direkt su = HES için ideal baraj yeri)
+            on_water = self._check_contains(self.water_gdf, point)
+            # 500m içinde su var mı? (Çok yakın = ideal)
+            near_water_500m = self._check_distance(self.water_gdf, point, 0.005)   # ~500m
+            # 2 km içinde su var mı?
+            near_water_2km = self._check_distance(self.water_gdf, point, 0.018)    # ~2km
+            # 10 km içinde su var mı?
+            near_water_10km = self._check_distance(self.water_gdf, point, 0.09)   # ~10km
+
+            if on_water:
+                notes.append("💧 Su kütlesi üzerine: Baraj/Bent kurulumu için ideal konum.")
+                notes.append(f"⛰️  Yükseklik: {elevation:.0f} m")
+            elif near_water_500m:
+                notes.append("✅ Su kaynağına 500m içinde: Nehir tipi HES için mükemmel.")
+            elif near_water_2km:
+                notes.append("✅ Su kaynağına 2km içinde: Kanal/boru hattı ile uygulanabilir.")
+            elif near_water_10km:
+                notes.append("⚠️ Su kaynağına 10km içinde: Havza alanı büyükse uygulanabilir.")
+                is_suitable = True  # Havza verisi girilerek hesaplanabilir
+            else:
+                is_suitable = False
+                reasons.append("Su kaynağı bulunamadı (10km yarıçapında): HES için yetersiz")
+
+        except Exception as e:
+            notes.append(f"Su kaynak analizi sırasında hata: {e}")
+            is_suitable = True  # Hata durumunda izin ver
+
+        return {"suitable": is_suitable, "reasons": reasons, "notes": notes}
+
+    # ---------------------------------------------------------
     # 🛠️ YARDIMCI VE ÇIKTI FONKSİYONLARI
     # ---------------------------------------------------------
-    def _create_final_response(self, solar_ok, wind_ok, s_reasons, w_reasons, s_notes, w_notes, loc, elev, slope, lat, lon):
+    def _create_final_response(self, solar_ok, wind_ok, hydro_ok, s_reasons, w_reasons, h_reasons, s_notes, w_notes, h_notes, loc, elev, slope, lat, lon):
         
-        # Yasaklı Alan Kutusu (Sadece ikisi de yasaksa kırmızı çizelim)
+        # Yasaklı Alan Kutusu (Her üçü de yasaksa kırmızı çizelim)
         restricted_area = []
-        if (not solar_ok and not wind_ok) and lat != 0:
+        if (not solar_ok and not wind_ok and not hydro_ok) and lat != 0:
             d = 0.001
             restricted_area = [
                 {"lat": lat+d, "lng": lon-d}, {"lat": lat+d, "lng": lon+d},
@@ -194,34 +241,44 @@ class GeoService:
             ]
 
         # Genel Tavsiye Mesajı
-        rec = ""
-        if solar_ok and wind_ok: rec = "✅ Arazi hem Güneş hem Rüzgar için uygun."
-        elif solar_ok: rec = "🌞 Sadece Güneş Enerjisi için uygun (Şehir/Çatı)."
-        elif wind_ok: rec = "🌬️ Sadece Rüzgar Enerjisi için uygun (Kırsal)."
-        else: rec = "⛔ Bu bölgeye kurulum yapılamaz."
+        if solar_ok and wind_ok and hydro_ok:
+            rec = "✅ Arazi Güneş, Rüzgar ve HES için uygun."
+        elif solar_ok and wind_ok:
+            rec = "✅ Arazi hem Güneş hem Rüzgar için uygun."
+        elif solar_ok:
+            rec = "🌞 Sadece Güneş Enerjisi için uygun."
+        elif wind_ok:
+            rec = "🌬️ Sadece Rüzgar Enerjisi için uygun."
+        elif hydro_ok:
+            rec = "💧 Sadece HES için uygun."
+        else:
+            rec = "⛔ Bu bölgeye kurulum yapılamaz."
 
         return {
-            "suitable": solar_ok or wind_ok, # En az biri uygunsa true
+            "suitable": solar_ok or wind_ok or hydro_ok,
             "recommendation": rec,
             "location": loc,
             "elevation": elev,
             "slope": slope,
-            "restricted_area": restricted_area, # Haritada çizim için
+            "restricted_area": restricted_area,
             
-            # Solar Sonuçları
             "solar_details": {
                 "suitable": solar_ok,
                 "message": "✅ Uygun" if solar_ok else "⛔ Uygun Değil",
                 "reasons": s_reasons,
                 "notes": s_notes
             },
-            
-            # Wind Sonuçları
             "wind_details": {
                 "suitable": wind_ok,
                 "message": "✅ Uygun" if wind_ok else "⛔ Uygun Değil",
                 "reasons": w_reasons,
                 "notes": w_notes
+            },
+            "hydro_details": {
+                "suitable": hydro_ok,
+                "message": "✅ Su Kaynağı Mevcut" if hydro_ok else "⛔ Su Kaynağı Bulunamadı",
+                "reasons": h_reasons,
+                "notes": h_notes
             }
         }
 
