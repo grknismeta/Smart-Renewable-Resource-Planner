@@ -1,24 +1,29 @@
-import 'package:flutter/material.dart';
-import 'package:vector_map_tiles/vector_map_tiles.dart';
+import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 
 class SrrpVectorStyle {
-  static Style get style {
+  static vtr.Theme get theme {
     final styleMap = {
       "version": 8,
       "name": "SRRP Energy Style",
       "sources": {
-        "srrp_mvt": {
+        "srrp_hydro": {
           "type": "vector",
-          "url": "http://localhost:8000/api/v1/tiles/{z}/{x}/{y}.pbf" 
-          // Note: URL doesn't load from here in vector_map_tiles normally, 
-          // we use NetworkVectorTileProvider. This is just for schema conformity.
+          "url": "http://localhost:8000/api/v1/tiles/hydro/{z}/{x}/{y}.pbf" 
+        },
+        "srrp_restricted": {
+          "type": "vector",
+          "url": "http://localhost:8000/api/v1/tiles/restricted/{z}/{x}/{y}.pbf" 
+        },
+        "srrp_energy": {
+          "type": "vector",
+          "url": "http://localhost:8000/api/v1/tiles/energy/{z}/{x}/{y}.pbf" 
         }
       },
       "layers": [
         {
           "id": "hydro-water",
           "type": "fill",
-          "source": "srrp_mvt",
+          "source": "srrp_hydro",
           "source-layer": "hydro",
           "filter": ["==", "feature_type", "Doğal Göl"],
           "paint": {
@@ -29,7 +34,7 @@ class SrrpVectorStyle {
         {
           "id": "hydro-dam",
           "type": "fill",
-          "source": "srrp_mvt",
+          "source": "srrp_hydro",
           "source-layer": "hydro",
           "filter": ["==", "feature_type", "Baraj"],
           "paint": {
@@ -41,7 +46,7 @@ class SrrpVectorStyle {
         {
           "id": "restricted-zone",
           "type": "fill",
-          "source": "srrp_mvt",
+          "source": "srrp_restricted",
           "source-layer": "restricted",
           "paint": {
             "fill-color": "#ff0000",
@@ -51,7 +56,7 @@ class SrrpVectorStyle {
         {
           "id": "energy-corridor",
           "type": "fill",
-          "source": "srrp_mvt",
+          "source": "srrp_energy",
           "source-layer": "energy",
           "paint": {
             "fill-color": "#ffeb3b",
@@ -61,6 +66,6 @@ class SrrpVectorStyle {
       ]
     };
     
-    return StyleReader(uri: '', logger: const Logger.console()).read(styleMap);
+    return vtr.ThemeReader(logger: const vtr.Logger.console()).read(styleMap);
   }
 }

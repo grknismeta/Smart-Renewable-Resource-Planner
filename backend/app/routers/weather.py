@@ -299,7 +299,7 @@ def get_weather_at_time(
                 .filter(HourlyWeatherData.timestamp >= target_time - tolerance)\
                 .filter(HourlyWeatherData.timestamp <= target_time + tolerance)\
                 .order_by(func.abs(
-                    func.julianday(HourlyWeatherData.timestamp) - func.julianday(target_time)
+                    func.extract('epoch', HourlyWeatherData.timestamp - target_time)
                 ))\
                 .first()
             

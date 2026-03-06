@@ -217,6 +217,8 @@ class HydroCalculationResponse {
   final double predictedAnnualProductionKwh;
   final double ratedPowerKw;
   final double avgFlowRateM3s;
+  final double? grossFlowRateM3s;       // Brüt debi (can suyu kesintisi öncesi)
+  final bool environmentalFlowDeducted; // Can suyu kesintisi uygulandı mı?
   final double headHeightM;
   final String turbineType;
   final double turbineEfficiency;
@@ -230,6 +232,8 @@ class HydroCalculationResponse {
     required this.predictedAnnualProductionKwh,
     required this.ratedPowerKw,
     required this.avgFlowRateM3s,
+    this.grossFlowRateM3s,
+    this.environmentalFlowDeducted = false,
     required this.headHeightM,
     required this.turbineType,
     required this.turbineEfficiency,
@@ -250,6 +254,8 @@ class HydroCalculationResponse {
           (json['predicted_annual_production_kwh'] as num).toDouble(),
       ratedPowerKw: (json['rated_power_kw'] as num).toDouble(),
       avgFlowRateM3s: (json['avg_flow_rate_m3s'] as num).toDouble(),
+      grossFlowRateM3s: (json['gross_flow_rate_m3s'] as num?)?.toDouble(),
+      environmentalFlowDeducted: json['environmental_flow_deducted'] as bool? ?? false,
       headHeightM: (json['head_height_m'] as num).toDouble(),
       turbineType: json['turbine_type'] as String,
       turbineEfficiency: (json['turbine_efficiency'] as num).toDouble(),

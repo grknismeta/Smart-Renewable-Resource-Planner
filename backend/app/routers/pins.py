@@ -8,7 +8,7 @@ from app.crud import crud
 from app.schemas import schemas
 from app.db import models
 from app.services import solar_service as solar_calculations, wind_service as wind_calculations
-from app.services.hydro_service import calculate_annual_hydro_production, suggest_turbine_type
+from app.services.hydro_service import calculate_annual_hydro_production, suggest_turbine_type, analyze_two_points
 from app.db.database import get_db, get_system_db, get_user_pins_db
 from app.schemas.schemas import PinCalculationResponse, SolarCalculationResponse, WindCalculationResponse, HydroCalculationResponse, PinBase, FinancialAnalysis
 
@@ -271,7 +271,10 @@ async def analyze_pin(
         type=pin_obj.type, # type: ignore
         capacity_mw=pin_obj.capacity_mw, # type: ignore
         panel_area=pin_obj.panel_area, # type: ignore
-        equipment_id=pin_obj.equipment_id # type: ignore
+        equipment_id=pin_obj.equipment_id, # type: ignore
+        flow_rate=pin_obj.flow_rate, # type: ignore
+        head_height=pin_obj.head_height, # type: ignore
+        basin_area_km2=pin_obj.basin_area_km2, # type: ignore
     )
     
     # 3. Hesaplama yap (calculate_pin_potential mantığı)
@@ -373,6 +376,42 @@ async def analyze_pin(
         
         pin_obj.avg_wind_speed = avg_speed
 
+    elif pin_data.type == "Hidroelektrik":
+        # HES hesaplama
+        flow_rate = pin_data.flow_rate
+        head_height = pin_data.head_height
+        basin_area_km2 = pin_data.basin_area_km2
+
+        if head_height is None or head_height <= 0:
+            raise HTTPException(status_code=400, detail="HES için düşü yüksekliği (head_height) zorunludur.")
+
+        if (flow_rate is None or flow_rate <= 0) and (basin_area_km2 is None or basin_area_km2 <= 0):
+            raise HTTPException(status_code=400, detail="Debi (flow_rate) veya Havza Alanı (basin_area_km2) girilmelidir.")
+
+        turbine_type = suggest_turbine_type(head_height)
+        if selected_equipment is not None and str(selected_equipment.type) == "Hydro":
+            specs_data = selected_equipment.specs or {}
+            turbine_type = specs_data.get("turbine_type", turbine_type)
+
+        hydro_results = await run_in_threadpool(
+            calculate_annual_hydro_production,
+            latitude=float(pin_data.latitude),
+            longitude=float(pin_data.longitude),
+            head_height=head_height,
+            turbine_type=turbine_type,
+            flow_rate=flow_rate if (flow_rate and flow_rate > 0) else None,
+            basin_area_km2=basin_area_km2 if (basin_area_km2 and basin_area_km2 > 0) else None,
+        )
+
+        if "error" in hydro_results:
+            raise HTTPException(status_code=500, detail=hydro_results["error"])
+
+        hydro_res = schemas.HydroCalculationResponse(**hydro_results)
+        calculation_result = schemas.PinCalculationResponse(
+            resource_type="Hidroelektrik",
+            hydro_calculation=hydro_res
+        ).model_dump()
+
     # 4. Sonucu Kaydedelim (PinAnalysis)
     if calculation_result:
         crud.create_or_update_pin_analysis(db, pin_id, calculation_result)
@@ -392,3 +431,43 @@ async def analyze_pin(
         resp.analysis = pin_obj.analysis.result_data
         
     return resp
+
+
+# --- HES: İKİ NOKTA ELEVATION ANALİZİ ---
+
+from pydantic import BaseModel as PydanticBaseModel
+
+class TwoPointRequest(PydanticBaseModel):
+    """İki noktalı HES düşü analizi isteği"""
+    intake_lat: float
+    intake_lon: float
+    turbine_lat: float
+    turbine_lon: float
+    flow_rate: Optional[float] = None
+
+@router.post("/hydro/elevation")
+async def hydro_elevation_analysis(
+    req: TwoPointRequest,
+    current_user: models.User = Depends(auth.get_current_active_user)
+):
+    """
+    İki nokta (Su Alma Yapısı ve Türbin) arasında:
+    - Rakım farkı (Brüt Düşü)
+    - Mesafe (Kuş uçuşu + arazi düzeltmeli)
+    - Cebri Boru (Penstock) maliyet tahmini
+    - Önerilen türbin tipi
+    hesaplar.
+    """
+    result = await run_in_threadpool(
+        analyze_two_points,
+        intake_lat=req.intake_lat,
+        intake_lon=req.intake_lon,
+        turbine_lat=req.turbine_lat,
+        turbine_lon=req.turbine_lon,
+        flow_rate=req.flow_rate,
+    )
+    
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    return result

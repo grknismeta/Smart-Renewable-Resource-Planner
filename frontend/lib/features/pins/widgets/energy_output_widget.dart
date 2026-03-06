@@ -1,6 +1,7 @@
 // lib/presentation/widgets/map/energy_output_widget.dart
 
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/core/theme/app_theme.dart';
 
@@ -178,6 +179,46 @@ class EnergyOutputWidget extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
+
+          // Can Suyu (Environmental Flow) bilgi rozeti
+          if (hydro.environmentalFlowDeducted)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.teal.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.eco, color: Colors.teal, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          const TextSpan(
+                            text: 'Can Suyu (Çevresel Akış) kesintisi: ',
+                            style: TextStyle(fontSize: 11, color: Colors.teal),
+                          ),
+                          TextSpan(
+                            text: '%15 düşüldü',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.teal),
+                          ),
+                          if (hydro.grossFlowRateM3s != null)
+                            TextSpan(
+                              text: '  (Brüt: ${hydro.grossFlowRateM3s!.toStringAsFixed(2)} → Net: ${hydro.avgFlowRateM3s.toStringAsFixed(2)} m³/s)',
+                              style: TextStyle(fontSize: 10, color: theme.secondaryTextColor),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           _buildPrimaryOutputCard('Yıllık Üretim', hydro.predictedAnnualProductionKwh, Icons.calendar_today, Colors.teal),
           const SizedBox(height: 12),
           Row(
@@ -200,36 +241,148 @@ class EnergyOutputWidget extends StatelessWidget {
           _buildInfoRow('Türbin Açıklaması', hydro.turbineDescription, Icons.info_outline),
           if (hydro.monthlyProduction != null && hydro.monthlyProduction!.isNotEmpty) ...[
             const SizedBox(height: 16),
-            Text(
-              'Aylık Üretim',
-              style: TextStyle(fontWeight: FontWeight.w600, color: theme.textColor, fontSize: 14),
+            _buildMonthlyBarChart(
+              title: 'Aylık Üretim (kWh)',
+              data: hydro.monthlyProduction!,
+              barColor: Colors.teal,
+              icon: Icons.bolt,
             ),
-            const SizedBox(height: 8),
-            ...hydro.monthlyProduction!.entries.map((e) {
-              final maxVal = hydro.monthlyProduction!.values.reduce((a, b) => a > b ? a : b);
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    SizedBox(width: 65, child: Text(e.key, style: TextStyle(fontSize: 11, color: theme.secondaryTextColor))),
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: maxVal > 0 ? e.value / maxVal : 0,
-                          backgroundColor: Colors.teal.withValues(alpha: 0.1),
-                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.teal),
-                          minHeight: 8,
+          ],
+          if (hydro.monthlyFlowRates != null && hydro.monthlyFlowRates!.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _buildMonthlyBarChart(
+              title: 'Aylık Net Debi (m³/s)',
+              data: hydro.monthlyFlowRates!,
+              barColor: Colors.cyan,
+              icon: Icons.water,
+              valueFormat: 'm³/s',
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // --- AYLIK BAR CHART (fl_chart) ---
+  Widget _buildMonthlyBarChart({
+    required String title,
+    required Map<String, double> data,
+    required Color barColor,
+    required IconData icon,
+    String valueFormat = 'kWh',
+  }) {
+    final entries = data.entries.toList();
+    final maxVal = entries.map((e) => e.value).reduce((a, b) => a > b ? a : b);
+    // Kısa ay isimleri
+    final shortNames = entries.map((e) {
+      final name = e.key;
+      return name.length > 3 ? name.substring(0, 3) : name;
+    }).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.backgroundColor.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: barColor.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: barColor, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(fontWeight: FontWeight.w600, color: theme.textColor, fontSize: 14),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 180,
+            child: BarChart(
+              BarChartData(
+                alignment: BarChartAlignment.spaceAround,
+                maxY: maxVal * 1.15,
+                barTouchData: BarTouchData(
+                  enabled: true,
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      final monthName = entries[group.x.toInt()].key;
+                      final value = rod.toY;
+                      String formattedValue;
+                      if (valueFormat == 'kWh') {
+                        formattedValue = _formatEnergy(value);
+                      } else {
+                        formattedValue = '${value.toStringAsFixed(3)} $valueFormat';
+                      }
+                      return BarTooltipItem(
+                        '$monthName\n$formattedValue',
+                        const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      );
+                    },
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  show: true,
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 28,
+                      getTitlesWidget: (value, meta) {
+                        final idx = value.toInt();
+                        if (idx < 0 || idx >= shortNames.length) return const SizedBox();
+                        return SideTitleWidget(
+                          axisSide: meta.axisSide,
+                          space: 4,
+                          child: Text(
+                            shortNames[idx],
+                            style: TextStyle(fontSize: 9, color: theme.secondaryTextColor),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                ),
+                borderData: FlBorderData(show: false),
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: maxVal > 0 ? maxVal / 4 : 1,
+                  getDrawingHorizontalLine: (value) => FlLine(
+                    color: theme.secondaryTextColor.withValues(alpha: 0.1),
+                    strokeWidth: 1,
+                  ),
+                ),
+                barGroups: List.generate(entries.length, (i) {
+                  return BarChartGroupData(
+                    x: i,
+                    barRods: [
+                      BarChartRodData(
+                        toY: entries[i].value,
+                        color: barColor,
+                        width: 14,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(4),
+                          topRight: Radius.circular(4),
+                        ),
+                        backDrawRodData: BackgroundBarChartRodData(
+                          show: true,
+                          toY: maxVal * 1.15,
+                          color: barColor.withValues(alpha: 0.05),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(_formatEnergy(e.value), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: theme.textColor)),
-                  ],
-                ),
-              );
-            }),
-          ],
+                    ],
+                  );
+                }),
+              ),
+            ),
+          ),
         ],
       ),
     );

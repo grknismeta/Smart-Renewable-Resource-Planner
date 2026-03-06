@@ -42,7 +42,7 @@ dependencies:
   flutter_secure_storage: ^9.2.4
   provider: ^6.1.5+1
   flutter_map_cancellable_tile_provider: ^3.1.1
-  fl_chart: ^1.1.0
+  fl_chart: ^0.69.0
   vector_map_tiles: ^9.0.0-beta.8
   vector_tile_renderer: ^6.0.0
 

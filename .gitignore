@@ -4,28 +4,28 @@ __pycache__/
 
 # Virtual Environment
 venv/
+.venv/
 .env
 
 # IDE files
 .idea/
 .vscode/
 
-# Database files - ÖNEMLİ: Bu dosyalar hassas veri veya büyük veri içerdiği için yüklenmez
-backend/system_data.db
-backend/user_data.db
+# Claude Code
+.claude/
+
+# Database files
 *.db
+*.sqlite
 *.sqlite3
 
 # Cache files
 .cache.sqlite
 .cache_daily.sqlite
-*.sqlite
 
 # OS generated files
 .DS_Store
 Thumbs.db
-backend/system_data.db 
-backend/user_data.db
 
 # Large Data Directories
 backend/Data/

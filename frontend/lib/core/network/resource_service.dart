@@ -151,4 +151,32 @@ class ResourceService extends BaseService {
     }
     throw Exception('Analiz başarısız (Status code: ${response.statusCode})');
   }
+
+  /// İki nokta (Su Alma + Türbin) arasında rakım farkı, mesafe ve cebri boru maliyeti hesaplar
+  Future<Map<String, dynamic>> hydroElevationAnalysis({
+    required double intakeLat,
+    required double intakeLon,
+    required double turbineLat,
+    required double turbineLon,
+    double? flowRate,
+  }) async {
+    final Map<String, dynamic> body = {
+      'intake_lat': intakeLat,
+      'intake_lon': intakeLon,
+      'turbine_lat': turbineLat,
+      'turbine_lon': turbineLon,
+      if (flowRate != null) 'flow_rate': flowRate,
+    };
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/pins/hydro/elevation'),
+      headers: await getHeaders(),
+      body: json.encode(body),
+    );
+
+    if (response.statusCode == 200) {
+      return processResponse(response) as Map<String, dynamic>;
+    }
+    throw Exception('Rakım analizi başarısız (Status code: ${response.statusCode})');
+  }
 }

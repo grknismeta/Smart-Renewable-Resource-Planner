@@ -284,13 +284,17 @@ def calculate_annual_hydro_production(
 
     if flow_rate is not None and flow_rate > 0:
         # SABİT DEBİ MODU: kullanıcı debiyi biliyor
-        power_kw = (rho * g * flow_rate * head_height * eta) / 1000.0
+        # Can suyu kesintisi (%15)
+        environmental_flow = flow_rate * 0.15
+        net_flow_rate = flow_rate - environmental_flow
+        
+        power_kw = (rho * g * net_flow_rate * head_height * eta) / 1000.0
 
         for i in range(12):
             hours = DAYS_IN_MONTH[i] * 24
             month_kwh = power_kw * hours
             monthly_production[MONTH_NAMES_TR[i]] = round(month_kwh, 2)
-            monthly_flow_rates[MONTH_NAMES_TR[i]] = flow_rate
+            monthly_flow_rates[MONTH_NAMES_TR[i]] = net_flow_rate
             total_annual_kwh += month_kwh
 
     elif basin_area_km2 is not None and basin_area_km2 > 0:
@@ -313,15 +317,20 @@ def calculate_annual_hydro_production(
         flow_values = []
         for i in range(12):
             month_num = i + 1
-            q = monthly_flows.get(month_num, 0.0)
-            flow_values.append(q)
+            gross_q = monthly_flows.get(month_num, 0.0)
+            
+            # Can suyu kesintisi (%15)
+            environmental_flow = gross_q * 0.15
+            net_q = gross_q - environmental_flow
+            
+            flow_values.append(net_q)
 
-            power_kw = (rho * g * q * head_height * eta) / 1000.0
+            power_kw = (rho * g * net_q * head_height * eta) / 1000.0
             hours = DAYS_IN_MONTH[i] * 24
             month_kwh = power_kw * hours
 
             monthly_production[MONTH_NAMES_TR[i]] = round(month_kwh, 2)
-            monthly_flow_rates[MONTH_NAMES_TR[i]] = q
+            monthly_flow_rates[MONTH_NAMES_TR[i]] = round(net_q, 3)
             total_annual_kwh += month_kwh
 
         avg_flow_rate = sum(flow_values) / len(flow_values) if flow_values else 0.0
@@ -347,6 +356,8 @@ def calculate_annual_hydro_production(
         "predicted_annual_production_kwh": round(total_annual_kwh, 2),
         "rated_power_kw": round(rated_power_kw, 2),
         "avg_flow_rate_m3s": round(avg_flow_rate, 3),
+        "gross_flow_rate_m3s": flow_rate if (flow_rate is not None and flow_rate > 0) else None, # Ek bilgi olarak brüt debi (varsa)
+        "environmental_flow_deducted": True,
         "head_height_m": head_height,
         "turbine_type": turbine_type,
         "turbine_efficiency": eta,
@@ -356,3 +367,173 @@ def calculate_annual_hydro_production(
         "monthly_production": monthly_production,
         "monthly_flow_rates": monthly_flow_rates,
     }
+
+
+# ============================================================
+# İKİ NOKTA İLE DÜŞÜ HESAPLAMA (ELEVATION API + MESAFE)
+# ============================================================
+
+# Cebri Boru (Penstock) Maliyet Tablosu (USD/metre)
+# Çelik boru çapı debiye göre değişir; basitleştirilmiş tablo:
+PENSTOCK_COST_PER_METER: Dict[str, float] = {
+    "small":  120.0,   # < 1 m³/s debi (küçük HES)
+    "medium": 250.0,   # 1 - 10 m³/s debi
+    "large":  500.0,   # > 10 m³/s debi (büyük HES)
+}
+
+
+def get_elevation(latitude: float, longitude: float) -> Optional[float]:
+    """
+    Open-Meteo ücretsiz Elevation API ile rakım bilgisi çeker.
+    Sonuç metre (m) cinsinden.
+    """
+    url = "https://api.open-meteo.com/v1/elevation"
+    params = {"latitude": latitude, "longitude": longitude}
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        elevations = data.get("elevation", [])
+        if elevations:
+            return float(elevations[0])
+        return None
+    except requests.RequestException:
+        return None
+
+
+def get_elevations_batch(points: list) -> list:
+    """
+    Birden fazla nokta için tek API çağrısıyla rakım bilgisi çeker.
+    points: [{"lat": ..., "lon": ...}, ...]
+    """
+    lats = ",".join(str(p["lat"]) for p in points)
+    lons = ",".join(str(p["lon"]) for p in points)
+    url = "https://api.open-meteo.com/v1/elevation"
+    params = {"latitude": lats, "longitude": lons}
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        return [float(e) for e in data.get("elevation", [])]
+    except requests.RequestException:
+        return []
+
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    İki GPS koordinatı arasındaki kuş uçuşu mesafe (metre).
+    Haversine formülü kullanılır.
+    """
+    R = 6371000  # Dünya yarıçapı (metre)
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return R * c
+
+
+def estimate_penstock_cost(distance_m: float, flow_rate: float = 1.0) -> Dict[str, Any]:
+    """
+    Cebri boru (penstock) maliyet tahmini.
+    
+    Args:
+        distance_m: Boru uzunluğu (metre) — iki nokta arasındaki mesafe
+        flow_rate: Debi (m³/s) — boru çapı belirleme için
+    
+    Returns:
+        {"penstock_length_m", "cost_per_meter_usd", "total_cost_usd", "pipe_class"}
+    """
+    # Boru sınıfı belirle
+    if flow_rate < 1.0:
+        pipe_class = "small"
+    elif flow_rate < 10.0:
+        pipe_class = "medium"
+    else:
+        pipe_class = "large"
+
+    cost_per_m = PENSTOCK_COST_PER_METER[pipe_class]
+    
+    # Arazi düzeltme faktörü: gerçek boru hattı kuş uçuşundan %20-30 daha uzun
+    terrain_factor = 1.25
+    adjusted_length = distance_m * terrain_factor
+
+    total_cost = adjusted_length * cost_per_m
+
+    return {
+        "penstock_length_m": round(adjusted_length, 1),
+        "bird_fly_distance_m": round(distance_m, 1),
+        "terrain_factor": terrain_factor,
+        "cost_per_meter_usd": cost_per_m,
+        "total_cost_usd": round(total_cost, 2),
+        "pipe_class": pipe_class,
+    }
+
+
+def analyze_two_points(
+    intake_lat: float, intake_lon: float,
+    turbine_lat: float, turbine_lon: float,
+    flow_rate: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    İki nokta (Su Alma Yapısı + Türbin) arasında:
+    1. Rakım farkını (brüt düşü) hesaplar
+    2. Mesafeyi hesaplar
+    3. Cebri boru maliyetini tahmin eder
+    4. Uygun türbin tipini önerir
+    
+    Returns:
+        {
+            intake_elevation_m, turbine_elevation_m,
+            gross_head_m, distance_m,
+            penstock: {...},
+            suggested_turbine, warnings
+        }
+    """
+    warnings = []
+
+    # Rakımları batch olarak çek (tek API çağrısı)
+    elevations = get_elevations_batch([
+        {"lat": intake_lat, "lon": intake_lon},
+        {"lat": turbine_lat, "lon": turbine_lon},
+    ])
+
+    if len(elevations) < 2:
+        return {"error": "Rakım verisi alınamadı. Lütfen koordinatları kontrol edin."}
+
+    intake_elev = elevations[0]
+    turbine_elev = elevations[1]
+    gross_head = intake_elev - turbine_elev
+
+    if gross_head <= 0:
+        warnings.append(
+            f"⚠️ Su alma noktası ({intake_elev:.0f} m) türbin noktasından ({turbine_elev:.0f} m) "
+            f"yüksek değil! Düşü negatif: {gross_head:.1f} m. Noktaları ters seçmiş olabilirsiniz."
+        )
+        # Negatif düşüyü yine de göster ama kesin değer al
+        abs_head = abs(gross_head) if gross_head != 0 else 1.0
+    else:
+        abs_head = gross_head
+
+    # Mesafe hesapla
+    distance = haversine_distance(intake_lat, intake_lon, turbine_lat, turbine_lon)
+
+    # Cebri boru maliyet tahmini
+    penstock = estimate_penstock_cost(distance, flow_rate or 1.0)
+
+    # Uygun türbin
+    suggested = suggest_turbine_type(abs_head)
+
+    return {
+        "intake_elevation_m": round(intake_elev, 1),
+        "turbine_elevation_m": round(turbine_elev, 1),
+        "gross_head_m": round(gross_head, 1),
+        "distance_m": round(distance, 1),
+        "penstock": penstock,
+        "suggested_turbine": suggested,
+        "warnings": warnings,
+    }
+

@@ -136,13 +136,23 @@ class _MapViewState extends State<MapView> {
 
           // 1.5 Vector Tile Layer (MVT) for backend data
           VectorTileLayer(
-            theme: SrrpVectorStyle.style.theme,
+            theme: SrrpVectorStyle.theme,
             backgroundTheme: null,
             tileProviders: TileProviders(
-               {'srrp_mvt': NetworkVectorTileProvider(
-                  urlTemplate: "http://localhost:8000/api/v1/tiles/{z}/{x}/{y}.pbf",
-                  maximumZoom: 14,
-               )}
+               {
+                 'srrp_hydro': NetworkVectorTileProvider(
+                    urlTemplate: "http://localhost:8000/api/v1/tiles/hydro/{z}/{x}/{y}.pbf",
+                    maximumZoom: 14,
+                 ),
+                 'srrp_restricted': NetworkVectorTileProvider(
+                    urlTemplate: "http://localhost:8000/api/v1/tiles/restricted/{z}/{x}/{y}.pbf",
+                    maximumZoom: 14,
+                 ),
+                 'srrp_energy': NetworkVectorTileProvider(
+                    urlTemplate: "http://localhost:8000/api/v1/tiles/energy/{z}/{x}/{y}.pbf",
+                    maximumZoom: 14,
+                 )
+               }
             ),
           ),
 

@@ -61,18 +61,11 @@ async def get_vector_tile(
     # PostGIS ST_TileEnvelope fonksiyonunu kullanıyoruz (4326 yerine 3857 dönmesini bekler)
     # Çoğu tile sistemi Web Mercator (3857) kullanır. Bu nedenle veriyi de uçakta 3857'ye dönüştürüp ST_AsMVTGeom'a vermeliyiz.
     
-    # 2. Geometry Simplification: Zoom'a göre dinamik tolerans (çok yakında detaylı, uzakta basit)
-    # Z düşük (uzak) -> Tolerans yüksek (çok basit)
-    # Z yüksek (yakın) -> Tolerans düşük (çok detaylı)
-    tolerance = 0
-    if z < 6:
-        tolerance = 0.05
-    elif z < 9:
-        tolerance = 0.01
-    elif z < 11:
-        tolerance = 0.001
-    else:
-        tolerance = 0.0001
+    # 3. TABLOYA GÖRE DİNAMİK SÜTUN (PROPERTY) SEÇİMİ
+    # Hata düzeltildi: is_restricted ve energy_capacity_mw şimdilik çıkarıldı.
+    # Haritayı çizmek için sadece feature_type ve min_zoom yeterlidir.
+    # DÜZELTME: Veritabanında min_zoom NULL ise görünmez olmasını engellemek için COALESCE ile varsayılan 0 atıyoruz.
+    properties = "t.feature_type, COALESCE(t.min_zoom, 0) as min_zoom"
         
     query = text(f"""
         WITH bounds AS (
@@ -80,21 +73,16 @@ async def get_vector_tile(
         ),
         mvtgeom AS (
             SELECT ST_AsMVTGeom(
-                ST_Transform(
-                    ST_SimplifyPreserveTopology(t.geom, :tolerance), 
-                    3857
-                ), 
+                ST_Transform(t.geom, 3857), 
                 bounds.geom, 
                 4096, 
                 256, 
                 true
             ) AS geom,
-            t.feature_type,
-            t.energy_capacity_mw,
-            t.min_zoom
+            {properties}
             FROM {table_name} t, bounds
             WHERE ST_Intersects(t.geom, ST_Transform(bounds.geom, 4326))
-              AND t.min_zoom <= :z
+              AND COALESCE(t.min_zoom, 0) <= :z
         )
         SELECT ST_AsMVT(mvtgeom.*, :layer_name) AS tile
         FROM mvtgeom;
@@ -104,8 +92,7 @@ async def get_vector_tile(
         "z": z, 
         "x": x, 
         "y": y, 
-        "layer_name": layer_name,
-        "tolerance": tolerance
+        "layer_name": layer_name
     }).fetchone()
 
     tile = result[0] if result else None

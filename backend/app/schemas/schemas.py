@@ -116,6 +116,8 @@ class HydroCalculationResponse(BaseModel):
     predicted_annual_production_kwh: float
     rated_power_kw: float
     avg_flow_rate_m3s: float
+    gross_flow_rate_m3s: Optional[float] = None        # Brüt debi (can suyu kesintisi öncesi)
+    environmental_flow_deducted: bool = True            # Can suyu kesintisi uygulandı mı?
     head_height_m: float
     turbine_type: str
     turbine_efficiency: float

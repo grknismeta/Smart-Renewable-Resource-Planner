@@ -41,6 +41,11 @@ class _AddPinDialogState extends State<AddPinDialog> {
   late TextEditingController _headHeightController;
   late TextEditingController _flowRateController;
   late TextEditingController _basinAreaController;
+  // İki Nokta Elevation Analizi
+  late TextEditingController _intakeLatController;
+  late TextEditingController _intakeLonController;
+  Map<String, dynamic>? _elevationResult;
+  bool _isCalculatingElevation = false;
   int? _selectedScenarioId;
 
   bool _isCheckingSuitability = true;
@@ -55,6 +60,8 @@ class _AddPinDialogState extends State<AddPinDialog> {
     _headHeightController = TextEditingController();
     _flowRateController = TextEditingController();
     _basinAreaController = TextEditingController();
+    _intakeLatController = TextEditingController();
+    _intakeLonController = TextEditingController();
     
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
     _viewModel = PinDialogViewModel(
@@ -157,6 +164,8 @@ class _AddPinDialogState extends State<AddPinDialog> {
     _headHeightController.dispose();
     _flowRateController.dispose();
     _basinAreaController.dispose();
+    _intakeLatController.dispose();
+    _intakeLonController.dispose();
     _viewModel.dispose();
     super.dispose();
   }
@@ -346,6 +355,111 @@ class _AddPinDialogState extends State<AddPinDialog> {
                           fontStyle: FontStyle.italic,
                         ),
                       ),
+                      const SizedBox(height: 16),
+                      // --- İKİ NOKTA RAKIM ANALİZİ ---
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.teal.withValues(alpha: 0.2)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.terrain, color: Colors.teal, size: 18),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Otomatik Düşü Hesaplama',
+                                  style: TextStyle(
+                                    color: Colors.teal,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Su alma noktasının koordinatlarını girin. Mevcut pin konumu türbin noktası olarak kullanılacaktır.',
+                              style: TextStyle(color: theme.secondaryTextColor, fontSize: 10),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ThemedTextField(
+                                    controller: _intakeLatController,
+                                    label: 'Su Alma Enlem',
+                                    isNumber: true,
+                                    theme: theme,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: ThemedTextField(
+                                    controller: _intakeLonController,
+                                    label: 'Su Alma Boylam',
+                                    isNumber: true,
+                                    theme: theme,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _isCalculatingElevation ? null : () => _calculateElevation(theme),
+                                icon: _isCalculatingElevation
+                                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                    : const Icon(Icons.calculate, size: 18),
+                                label: Text(_isCalculatingElevation ? 'Hesaplanıyor...' : 'Rakım ve Düşü Hesapla'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.teal,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  textStyle: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ),
+                            // Elevation Sonucu
+                            if (_elevationResult != null) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: theme.cardColor,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
+                                ),
+                                child: Column(
+                                  children: [
+                                    _buildElevationRow('Su Alma Rakımı', '${_elevationResult!['intake_elevation_m']} m', theme),
+                                    _buildElevationRow('Türbin Rakımı', '${_elevationResult!['turbine_elevation_m']} m', theme),
+                                    _buildElevationRow('Brüt Düşü', '${_elevationResult!['gross_head_m']} m', theme, highlight: true),
+                                    _buildElevationRow('Mesafe', '${_elevationResult!['distance_m']} m', theme),
+                                    if (_elevationResult!['penstock'] != null) ...[
+                                      const Divider(),
+                                      _buildElevationRow('Boru Uzunluğu', '${_elevationResult!['penstock']['penstock_length_m']} m', theme),
+                                      _buildElevationRow('Boru Maliyeti', '\$${_elevationResult!['penstock']['total_cost_usd']}', theme, highlight: true),
+                                    ],
+                                    if (_elevationResult!['suggested_turbine'] != null)
+                                      _buildElevationRow('Önerilen Türbin', '${_elevationResult!['suggested_turbine']}', theme),
+                                    if (_elevationResult!['warnings'] != null && (_elevationResult!['warnings'] as List).isNotEmpty)
+                                      ...(_elevationResult!['warnings'] as List).map((w) => Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(w.toString(), style: const TextStyle(fontSize: 10, color: Colors.orange)),
+                                      )),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
                     ],
                     const SizedBox(height: 20),
 
@@ -517,7 +631,93 @@ class _AddPinDialogState extends State<AddPinDialog> {
     );
   }
 
+  // --- İKİ NOKTA RAKIM HESAPLAMA ---
+  Future<void> _calculateElevation(ThemeViewModel theme) async {
+    final intakeLatText = _intakeLatController.text.trim();
+    final intakeLonText = _intakeLonController.text.trim();
+
+    final intakeLat = double.tryParse(intakeLatText);
+    final intakeLon = double.tryParse(intakeLonText);
+
+    if (intakeLat == null || intakeLon == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lütfen geçerli enlem ve boylam değerleri giriniz.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isCalculatingElevation = true);
+
+    try {
+      final apiService = Provider.of<ApiService>(context, listen: false);
+      final result = await apiService.resource.hydroElevationAnalysis(
+        intakeLat: intakeLat,
+        intakeLon: intakeLon,
+        turbineLat: widget.point.latitude,
+        turbineLon: widget.point.longitude,
+        flowRate: _viewModel.flowRate > 0 ? _viewModel.flowRate : null,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _elevationResult = result;
+        _isCalculatingElevation = false;
+      });
+
+      // Brüt düşüyü head_height alanına otomatik doldur
+      final grossHead = result['gross_head_m'];
+      if (grossHead != null && grossHead > 0) {
+        _headHeightController.text = grossHead.toString();
+        _viewModel.setHeadHeight(grossHead.toString());
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Düşü yüksekliği otomatik dolduruldu: $grossHead m'),
+            backgroundColor: Colors.teal,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isCalculatingElevation = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Rakım hesaplanamadı: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Widget _buildElevationRow(String label, String value, ThemeViewModel theme, {bool highlight = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 11, color: theme.secondaryTextColor),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: highlight ? FontWeight.bold : FontWeight.w500,
+              color: highlight ? Colors.teal : theme.textColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _handleSave(BuildContext context, PinDialogViewModel viewModel) async {
+
     final validationError = viewModel.validate();
     if (validationError != null) {
       MapDialogs.showErrorDialog(context, validationError);

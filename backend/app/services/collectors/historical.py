@@ -28,7 +28,7 @@ def generate_grid_points() -> List[Tuple[float, float]]:
     points = []
     for lat in lats:
         for lon in lons:
-            points.append((round(lat, 2), round(lon, 2)))
+            points.append((round(float(lat), 2), round(float(lon), 2)))
     return points
 
 def save_response_to_db(db: Session, response, lat, lon):
