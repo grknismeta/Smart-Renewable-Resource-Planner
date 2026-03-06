@@ -63,7 +63,7 @@ class _HelpDialogState extends State<HelpDialog> with SingleTickerProviderStateM
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color: theme.secondaryTextColor.withOpacity(0.1),
+                    color: theme.secondaryTextColor.withValues(alpha: 0.1),
                   ),
                 ),
               ),
@@ -91,7 +91,7 @@ class _HelpDialogState extends State<HelpDialog> with SingleTickerProviderStateM
 
             // Tabs
             Container(
-              color: theme.backgroundColor.withOpacity(0.5),
+              color: theme.backgroundColor.withValues(alpha: 0.5),
               child: TabBar(
                 controller: _tabController,
                 tabs: _tabs,

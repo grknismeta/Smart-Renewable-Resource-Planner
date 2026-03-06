@@ -188,8 +188,8 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
       child: Row(
         children: [
           Icon(
-            _currentPin.type == 'Güneş Paneli' ? Icons.wb_sunny : Icons.wind_power,
-            color: _currentPin.type == 'Güneş Paneli' ? Colors.orange : Colors.blue,
+            _currentPin.type == 'Güneş Paneli' ? Icons.wb_sunny : _currentPin.type == 'Hidroelektrik' ? Icons.water_drop : Icons.wind_power,
+            color: _currentPin.type == 'Güneş Paneli' ? Colors.orange : _currentPin.type == 'Hidroelektrik' ? Colors.teal : Colors.blue,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -400,6 +400,7 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                     children: [
                       _buildTypeOption(theme, "Güneş Paneli", Icons.wb_sunny, vm.selectedType == "Güneş Paneli", () => vm.changeType("Güneş Paneli")),
                       _buildTypeOption(theme, "Rüzgar Türbini", Icons.wind_power, vm.selectedType == "Rüzgar Türbini", () => vm.changeType("Rüzgar Türbini")),
+                      _buildTypeOption(theme, "Hidroelektrik", Icons.water_drop, vm.selectedType == "Hidroelektrik", () => vm.changeType("Hidroelektrik")),
                     ],
                   ),
                 ),
@@ -467,7 +468,7 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                borderRadius: BorderRadius.circular(12),
                boxShadow: isSelected ? [BoxShadow(color: Colors.black12, blurRadius: 4)] : null,
              ),
-             child: Icon(icon, color: isSelected ? (label.contains("Güneş") ? Colors.orange : Colors.blue) : theme.secondaryTextColor),
+             child: Icon(icon, color: isSelected ? (label.contains("Güneş") ? Colors.orange : label.contains("Hidro") ? Colors.teal : Colors.blue) : theme.secondaryTextColor),
           ),
         ),
       );

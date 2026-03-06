@@ -14,30 +14,178 @@ from app.schemas.schemas import PinCalculationResponse, SolarCalculationResponse
 
 router = APIRouter()
 
+# ---------------------------------------------------------------------------
+# Kaynak başı finansal parametreler — Türkiye 2024-2025
+#   capex_per_kw   : Kurulum maliyeti ($/kW kurulu güç)
+#   om_per_kw_yr   : Yıllık işletme-bakım maliyeti ($/kW/yıl)
+#   lifetime       : Sistem ömrü (yıl)
+#   yekdem_price   : YEKDEM garantili alım fiyatı ($/kWh, ilk 10 yıl)
+#   market_price   : Serbest piyasa fiyatı ($/kWh, YEKDEM sonrası)
+#   yekdem_years   : YEKDEM garanti süresi (yıl)
+#   degradation    : Yıllık verim düşüşü (0.0 = yok, 0.005 = %0.5)
+# ---------------------------------------------------------------------------
+_FINANCIAL_PARAMS: dict = {
+    "Solar": dict(
+        capex_per_kw=700.0, om_per_kw_yr=10.0, lifetime=25,
+        yekdem_price=0.133, market_price=0.070, yekdem_years=10,
+        degradation=0.005,   # Güneş paneli: %0.5/yıl degredason
+    ),
+    "Wind": dict(
+        capex_per_kw=1200.0, om_per_kw_yr=15.0, lifetime=20,
+        yekdem_price=0.073, market_price=0.070, yekdem_years=10,
+        degradation=0.0,
+    ),
+    "Hydro": dict(
+        capex_per_kw=2500.0, om_per_kw_yr=12.0, lifetime=40,
+        yekdem_price=0.073, market_price=0.070, yekdem_years=10,
+        degradation=0.0,
+    ),
+}
+
+
+def _npv_at_rate(
+    r: float, capex: float, annual_kwh: float, om_annual: float,
+    lifetime: int, degradation: float,
+    yekdem_yrs: int, price_yekdem: float, price_market: float,
+) -> float:
+    total = -capex
+    for t in range(1, lifetime + 1):
+        production = annual_kwh * ((1.0 - degradation) ** (t - 1))
+        price     = price_yekdem if t <= yekdem_yrs else price_market
+        net_cf    = production * price - om_annual
+        total    += net_cf / ((1.0 + r) ** t)
+    return total
+
+
+def _calculate_irr(
+    capex: float, annual_kwh: float, om_annual: float,
+    lifetime: int, degradation: float,
+    yekdem_yrs: int, price_yekdem: float, price_market: float,
+) -> float:
+    """Bisection yöntemiyle İç Verim Oranı (IRR) hesaplar."""
+    if capex <= 0:
+        return 0.0
+
+    def f(r: float) -> float:
+        return _npv_at_rate(r, capex, annual_kwh, om_annual, lifetime,
+                            degradation, yekdem_yrs, price_yekdem, price_market)
+
+    if f(0.0) <= 0:
+        return -0.50          # Proje hiç geri dönmüyor
+
+    high = 5.0               # %500 üst sınır
+    if f(high) > 0:
+        return 5.0           # IRR > %500 → gerçekçi değil, kapat
+
+    low = 0.0
+    for _ in range(80):
+        mid = (low + high) / 2.0
+        if abs(high - low) < 1e-6:
+            break
+        if f(mid) > 0:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2.0
+
+
+def _calculate_payback(
+    capex: float, annual_kwh: float, om_annual: float,
+    lifetime: int, degradation: float,
+    yekdem_yrs: int, price_yekdem: float, price_market: float,
+) -> float:
+    """Kümülatif nakit akışlarına göre geri ödeme süresini hesaplar."""
+    cumulative = 0.0
+    for t in range(1, lifetime + 1):
+        production = annual_kwh * ((1.0 - degradation) ** (t - 1))
+        price      = price_yekdem if t <= yekdem_yrs else price_market
+        net_cf     = production * price - om_annual
+        cumulative += net_cf
+        if cumulative >= capex:
+            prev     = cumulative - net_cf
+            fraction = (capex - prev) / net_cf if net_cf > 0 else 0.0
+            return float(t - 1) + fraction
+    return float(lifetime)   # Ömür içinde geri dönmüyor
+
+
 # --- YARDIMCI FONKSİYON: FİNANSAL HESAPLAMA ---
-def calculate_financials(annual_kwh: float, type: str) -> FinancialAnalysis:
+def calculate_financials(
+    annual_kwh: float,
+    resource_type: str,     # "Solar" | "Wind" | "Hydro"
+    capacity_kw: float,
+    pricing_mode: str = "yekdem",
+) -> FinancialAnalysis:
     """
-    Basit yatırım geri dönüş hesabı (Yatırımcı Sunumu İçin)
+    Gerçekçi yatırım geri dönüş analizi — Türkiye 2024-2025 değerleriyle.
+
+    NPV  : %8 iskonto oranıyla Net Bugünkü Değer
+    LCOE : Normalleştirilmiş Enerji Maliyeti ($/kWh)
+    IRR  : İç Verim Oranı (bisection ile)
+    YEKDEM: İlk 10 yıl garantili tarife, ardından serbest piyasa
     """
-    electricity_price_usd = 0.12 # kWh başına gelir (Dolar)
-    
-    initial_cost = 0.0
-    if type == "Solar":
-        # 10m2, 1.5-2 kW sistem ~ 2000-3000 USD kurulum maliyeti
-        initial_cost = 2500.0 
-    else:
-        # Küçük türbin maliyeti
-        initial_cost = 4000.0
-        
-    annual_earning = annual_kwh * electricity_price_usd
-    payback_years = initial_cost / annual_earning if annual_earning > 0 else 99.0
-    roi = (annual_earning / initial_cost) * 100 if initial_cost > 0 else 0.0
-    
+    p = _FINANCIAL_PARAMS.get(resource_type, _FINANCIAL_PARAMS["Solar"])
+
+    capacity_kw = max(capacity_kw, 0.001)
+    capex       = p["capex_per_kw"]   * capacity_kw
+    om_annual   = p["om_per_kw_yr"]   * capacity_kw
+    lifetime    = p["lifetime"]
+    degradation = p["degradation"]
+    r           = 0.08  # %8 iskonto oranı
+
+    if pricing_mode == "yekdem":
+        price_yekdem = p["yekdem_price"]
+        price_market = p["market_price"]
+        yekdem_yrs   = p["yekdem_years"]
+    else:                              # "market"
+        price_yekdem = p["market_price"]
+        price_market = p["market_price"]
+        yekdem_yrs   = 0
+
+    # ── Nakit akışı simülasyonu ───────────────────────────────────────────────
+    pv_cashflows     = 0.0
+    pv_energy        = 0.0
+    pv_costs         = capex      # CAPEX bugünkü değeri maliyet toplamına eklendi
+    lifetime_revenue = 0.0
+
+    for t in range(1, lifetime + 1):
+        production = annual_kwh * ((1.0 - degradation) ** (t - 1))
+        price      = price_yekdem if t <= yekdem_yrs else price_market
+        revenue    = production * price
+        net_cf     = revenue - om_annual
+        discount   = (1.0 + r) ** t
+        pv_cashflows  += net_cf    / discount
+        pv_energy     += production / discount
+        pv_costs      += om_annual  / discount   # O&M'in bugünkü değeri
+        lifetime_revenue += revenue
+
+    npv  = pv_cashflows - capex
+    lcoe = pv_costs / pv_energy if pv_energy > 0 else 0.0
+
+    irr_val = _calculate_irr(
+        capex, annual_kwh, om_annual, lifetime, degradation,
+        yekdem_yrs, price_yekdem, price_market,
+    )
+    payback = _calculate_payback(
+        capex, annual_kwh, om_annual, lifetime, degradation,
+        yekdem_yrs, price_yekdem, price_market,
+    )
+
+    first_price    = price_yekdem if yekdem_yrs >= 1 else price_market
+    annual_earning = annual_kwh * first_price - om_annual
+    roi            = (annual_earning / capex) * 100 if capex > 0 else 0.0
+
     return FinancialAnalysis(
-        initial_investment_usd=initial_cost,
-        annual_earnings_usd=round(annual_earning, 2),
-        payback_period_years=round(payback_years, 1),
-        roi_percentage=round(roi, 1)
+        initial_investment_usd = round(capex, 0),
+        annual_earnings_usd    = round(annual_earning, 2),
+        payback_period_years   = round(payback, 1),
+        roi_percentage         = round(roi, 1),
+        lcoe_usd_kwh           = round(lcoe, 4),
+        npv_usd                = round(npv, 0),
+        irr_percentage         = round(irr_val * 100, 1),
+        lifetime_revenue_usd   = round(lifetime_revenue, 0),
+        pricing_mode           = pricing_mode,
+        price_per_kwh_usd      = first_price,
+        lifetime_years         = lifetime,
     )
 
 # --- ENDPOINTLER ---
@@ -311,9 +459,10 @@ async def analyze_pin(
         annual_kwh = float(results["predicted_annual_production_kwh"])
         avg_rad = float(results["daily_avg_potential_kwh_m2"])
         
-        # Finansal analiz (Basit)
-        financials = calculate_financials(annual_kwh, "Solar")
-        
+        # Panel kapasitesi fizikten türetilir: kWp = alan(m²) × verim × 1kW/m²
+        capacity_kw_solar = panel_area * efficiency
+        financials = calculate_financials(annual_kwh, "Solar", capacity_kw_solar)
+
         solar_res = schemas.SolarCalculationResponse(
             solar_irradiance_kw_m2=avg_rad,
             temperature_celsius=25.0,
@@ -331,10 +480,7 @@ async def analyze_pin(
             solar_calculation=solar_res
         ).model_dump()
         
-        # Pinin özet alanlarını güncelle
-        crud.update_pin(db, pin_id, schemas.PinCreate(**pin_data.model_dump()), user_id)
-        # Sadece irradiance update etmek istiyoruz ama update_pin full obje alıyor.
-        # Manuel update yapalım:
+        # Pinin avg_solar_irradiance alanını güncelle (commit sonraki blokta yapılıyor)
         pin_obj.avg_solar_irradiance = avg_rad
         
     elif pin_data.type == "Rüzgar Türbini":
@@ -357,7 +503,9 @@ async def analyze_pin(
         # Basit bir aylık dağılım (Simülasyon)
         monthly_sim = { "Ocak": avg_monthly * 1.2, "Haziran": avg_monthly * 0.8 } 
 
-        financials = calculate_financials(annual_kwh, "Wind")
+        # Kapasite: kullanıcının girdiği MW → kW
+        capacity_kw_wind = float(pin_data.capacity_mw) * 1000.0
+        financials = calculate_financials(annual_kwh, "Wind", capacity_kw_wind)
 
         wind_res = schemas.WindCalculationResponse(
             wind_speed_m_s=avg_speed,
@@ -406,7 +554,12 @@ async def analyze_pin(
         if "error" in hydro_results:
             raise HTTPException(status_code=500, detail=hydro_results["error"])
 
-        hydro_res = schemas.HydroCalculationResponse(**hydro_results)
+        # HES finansal analizi — servisten gelen rated_power_kw kullanılır
+        hes_annual_kwh = float(hydro_results.get("predicted_annual_production_kwh", 0.0))
+        hes_rated_kw   = float(hydro_results.get("rated_power_kw", 0.0))
+        hes_financials = calculate_financials(hes_annual_kwh, "Hydro", hes_rated_kw)
+
+        hydro_res = schemas.HydroCalculationResponse(**hydro_results, financials=hes_financials)
         calculation_result = schemas.PinCalculationResponse(
             resource_type="Hidroelektrik",
             hydro_calculation=hydro_res

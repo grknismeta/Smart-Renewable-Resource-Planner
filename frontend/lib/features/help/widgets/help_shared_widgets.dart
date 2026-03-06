@@ -43,7 +43,7 @@ class HelpInfoCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.backgroundColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.secondaryTextColor.withOpacity(0.1)),
+        border: Border.all(color: theme.secondaryTextColor.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,7 +116,7 @@ class HelpStepItem extends StatelessWidget {
             height: 40,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: Colors.blueAccent.withOpacity(0.2),
+              color: Colors.blueAccent.withValues(alpha: 0.2),
               shape: BoxShape.circle,
             ),
             child: Text(
@@ -180,7 +180,7 @@ class HelpFeatureRow extends StatelessWidget {
             decoration: BoxDecoration(
               color: theme.cardColor,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.secondaryTextColor.withOpacity(0.2)),
+              border: Border.all(color: theme.secondaryTextColor.withValues(alpha: 0.2)),
             ),
             child: Icon(icon, color: theme.secondaryTextColor),
           ),

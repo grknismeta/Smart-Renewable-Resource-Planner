@@ -4,6 +4,15 @@ from contextlib import asynccontextmanager
 from .db.database import UserEngine, SystemEngine, UserPinsEngine
 from .db import models
 
+# models_geo (GeoAlchemy2 bağımlılığı): tablolar oluşturulabilmesi için import edilmeli.
+# geoalchemy2 kurulu değilse sessizce atla — uygulama tile/geo olmadan çalışmaya devam eder.
+_POSTGIS_AVAILABLE = False
+try:
+    from .db import models_geo  # type: ignore
+    _POSTGIS_AVAILABLE = True
+except (ImportError, Exception):
+    pass
+
 import os
 import sys
 from datetime import datetime
@@ -70,7 +79,7 @@ def print_banner():
     print(f"  {_c('gray', '🕐 Başlangıç:')}  {_c('white', now)}")
 
 # ─── ROUTERLARI IMPORT ET ─────────────────────────────────────────────────────
-from .routers import pins, users, equipments, optimization, weather, reports, scenario, tiles
+from .routers import pins, users, equipments, optimization, weather, reports, scenario, tiles, recommendations
 
 # Coğrafya analiz motoru
 _GEO_ENABLED = os.getenv("GEO_ANALYSIS_ENABLED", "false").lower() == "true"
@@ -78,6 +87,8 @@ if _GEO_ENABLED:
     from .routers import geo
 
 # Veritabanı tablolarını oluştur
+# models_geo import edildiyse SystemBase.metadata'ya otomatik kaydolur,
+# create_all() zaten onları da oluşturur — ayrıca çağırmaya gerek yok.
 models.SystemBase.metadata.create_all(bind=SystemEngine)
 models.UserBase.metadata.create_all(bind=UserEngine)
 models.UserPinsBase.metadata.create_all(bind=UserPinsEngine)
@@ -130,6 +141,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         _warn(f"Grid Agregator başlatılamadı: {e}")
 
+    # 4. PostGIS GIST Mekansal İndeksleri — yoksa oluştur
+    if _POSTGIS_AVAILABLE:
+        try:
+            from .routers.tiles import ensure_spatial_indexes
+            asyncio.create_task(ensure_spatial_indexes())
+            _ok("PostGIS GIST indeks kontrolü başlatıldı")
+        except Exception as e:
+            _warn(f"GIST indeks oluşturulamadı: {e}")
+
     _section("Sunucu Hazır", "🚀")
     _row("Ana URL",      "http://localhost:8000")
     _row("Swagger UI",   "http://localhost:8000/docs")
@@ -151,11 +171,45 @@ async def lifespan(app: FastAPI):
     print()
 
 
+# ─── OPENAPI TAG AÇIKLAMALARI ──────────────────────────────────────────────────
+_tags_metadata = [
+    {"name": "🏠 Root",             "description": "API sağlık kontrolü"},
+    {"name": "👤 Users",            "description": "Kullanıcı kayıt, giriş ve profil yönetimi"},
+    {"name": "📍 Pins",             "description": "Enerji kaynağı pinleri — oluşturma, listeleme, analiz"},
+    {"name": "⚙️ Equipments",      "description": "Güneş paneli / rüzgar türbini / HES ekipman kataloğu"},
+    {"name": "🗂️ Scenarios",       "description": "Senaryo oluşturma, düzenleme ve enerji simülasyonu"},
+    {"name": "📊 Reports",          "description": "Bölgesel enerji potansiyeli raporları"},
+    {"name": "🌤️ Weather",         "description": "Şehir bazlı hava durumu ve güneş/rüzgar verileri"},
+    {"name": "🗺️ Map Tiles (MVT)", "description": "Mapbox Vector Tile (MVT/PBF) — harita katmanları"},
+    {"name": "🗺️ Geo Analysis",    "description": "PostGIS tabanlı coğrafya uygunluk analizi (opsiyonel)"},
+    {"name": "🗺️ Geo (Stub)",      "description": "Geo analiz devre dışıyken stub endpoint'ler"},
+    {"name": "🛠️ Optimization",    "description": "Türbin/panel konumlandırma optimizasyon algoritmaları"},
+    {"name": "🧭 Recommendations", "description": "Weibull analizine dayalı akıllı bölge önerileri"},
+]
+
 # ─── FASTAPI UYGULAMASI ────────────────────────────────────────────────────────
 app = FastAPI(
     title="Smart Renewable Resource Planner (SRRP) API",
-    description="Güneş, Rüzgar ve Hidroelektrik enerji potansiyeli hesaplama ve planlama API'si",
+    description="""
+## ⚡ Akıllı Yenilenebilir Kaynak Planlayıcısı
+
+Güneş, rüzgar ve hidroelektrik enerji potansiyelini analiz eden REST API.
+
+### Özellikler
+- **Pin Yönetimi** — Harita üzerinde enerji kaynaklarını işaretle ve analiz et
+- **Senaryo Simülasyonu** — 7 günlük güneş/rüzgar/HES enerji üretim hesabı
+- **Bölgesel Raporlar** — Türkiye geneli potansiyel analizi ve sıralama
+- **Harita Tile'ları** — PostGIS vector tile (MVT/PBF) servisi
+- **Coğrafya Analizi** — GIS tabanlı uygunluk ve yasak alan kontrolü
+
+### Kimlik Doğrulama
+Korumalı endpoint'ler `Authorization: Bearer <token>` header'ı gerektirir.
+Token almak için → `POST /users/login`
+""",
     version="2.1.0",
+    contact={"name": "SRRP Geliştirici", "url": "http://localhost:8000"},
+    license_info={"name": "MIT"},
+    openapi_tags=_tags_metadata,
     lifespan=lifespan,
 )
 
@@ -176,7 +230,8 @@ app.include_router(optimization.router)                                         
 app.include_router(weather.router)                                                # Şehir bazlı hava
 app.include_router(reports.router,      tags=["📊 Reports"])
 app.include_router(scenario.router,     prefix="/scenarios",  tags=["🗂️ Scenarios"])
-app.include_router(tiles.router,        prefix="/api/v1/tiles", tags=["🗺️ Map Tiles (MVT)"])
+app.include_router(tiles.router,        prefix="/api/v1/tiles",    tags=["🗺️ Map Tiles (MVT)"])
+app.include_router(recommendations.router)                                        # Prefix router içinde
 
 if _GEO_ENABLED:
     app.include_router(geo.router, prefix="/geo", tags=["🗺️ Geo Analysis"])
@@ -193,6 +248,10 @@ else:
             "geo_disabled": True,
             "message": "Coğrafya analizi devre dışı. Tüm alanlar kurulabilir sayılıyor.",
         })
+
+    @_stub_geo.get("/city")
+    async def geo_stub_city(lat: float, lon: float):
+        return {"province": "Bilinmiyor", "district": "Bilinmiyor"}
 
     app.include_router(_stub_geo, prefix="/geo", tags=["🗺️ Geo (Stub)"])
 

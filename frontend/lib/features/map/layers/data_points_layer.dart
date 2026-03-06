@@ -23,14 +23,14 @@ class DataPointsLayer extends StatelessWidget {
           child: Container(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: isDistrict 
-                ? Colors.white.withOpacity(0.8) 
-                : Colors.cyanAccent.withOpacity(0.9),
+              color: isDistrict
+                ? Colors.white.withValues(alpha: 0.8)
+                : Colors.cyanAccent.withValues(alpha: 0.9),
               boxShadow: [
                 BoxShadow(
-                  color: isDistrict 
-                    ? Colors.white.withOpacity(0.5) 
-                    : Colors.cyanAccent.withOpacity(0.6),
+                  color: isDistrict
+                    ? Colors.white.withValues(alpha: 0.5)
+                    : Colors.cyanAccent.withValues(alpha: 0.6),
                   blurRadius: 8,
                   spreadRadius: 2,
                 )

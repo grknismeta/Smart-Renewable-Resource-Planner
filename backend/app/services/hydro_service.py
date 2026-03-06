@@ -352,11 +352,40 @@ def calculate_annual_hydro_production(
     # Önerilen türbin tipi
     suggested = suggest_turbine_type(head_height)
 
+    # ── Santral Tipi Sınıflandırması ─────────────────────────────────────────
+    # Barajlı (Storage): yüksek düşü (≥100m) VEYA büyük havza (≥100km²)
+    # Kanal Tipi: orta düşü (30-100m), nehir akışından beslenme
+    # Nehir Tipi (Run-of-River): düşük düşü (<30m), akış tipi
+    has_reservoir = (head_height >= 100) or (
+        basin_area_km2 is not None and basin_area_km2 >= 100
+    )
+    if has_reservoir:
+        plant_type = "Barajlı (Depolama HES)"
+    elif head_height >= 30:
+        plant_type = "Kanal Tipi HES"
+    else:
+        plant_type = "Nehir Tipi HES (Run-of-River)"
+
+    # ── Ekonomik Yaşayabilirlik Eşiği ────────────────────────────────────────
+    # Türkiye'de ekonomik minimum: küçük HES için ≥ 0.1 m³/s, ticari ≥ 1.0 m³/s
+    economic_viability_warning: Optional[str] = None
+    min_eco_flow = 0.1 if rated_power_kw < 50 else 1.0
+    if avg_flow_rate < min_eco_flow:
+        economic_viability_warning = (
+            f"Ortalama debi ({avg_flow_rate:.3f} m³/s) ekonomik eşiğin "
+            f"({min_eco_flow} m³/s) altında — santral karlılığı düşük olabilir."
+        )
+    elif rated_power_kw < 10:
+        economic_viability_warning = (
+            f"Kurulu güç ({rated_power_kw:.1f} kW) mikro-HES sınırında — "
+            "şebeke bağlantısı için lisans muafiyetini kontrol edin (≤ 10 kW)."
+        )
+
     return {
         "predicted_annual_production_kwh": round(total_annual_kwh, 2),
         "rated_power_kw": round(rated_power_kw, 2),
         "avg_flow_rate_m3s": round(avg_flow_rate, 3),
-        "gross_flow_rate_m3s": flow_rate if (flow_rate is not None and flow_rate > 0) else None, # Ek bilgi olarak brüt debi (varsa)
+        "gross_flow_rate_m3s": flow_rate if (flow_rate is not None and flow_rate > 0) else None,
         "environmental_flow_deducted": True,
         "head_height_m": head_height,
         "turbine_type": turbine_type,
@@ -366,6 +395,9 @@ def calculate_annual_hydro_production(
         "capacity_factor": round(capacity_factor, 3),
         "monthly_production": monthly_production,
         "monthly_flow_rates": monthly_flow_rates,
+        # Yeni alanlar
+        "plant_type": plant_type,
+        "economic_viability_warning": economic_viability_warning,
     }
 
 

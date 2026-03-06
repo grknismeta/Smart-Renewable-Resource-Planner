@@ -19,6 +19,9 @@ class MapDashboard extends StatelessWidget {
         final solarPins = mapViewModel.pins
             .where((p) => p.type == 'Güneş Paneli')
             .length;
+        final hesPins = mapViewModel.pins
+            .where((p) => p.type == 'Hidroelektrik')
+            .length;
         final totalCapacity = mapViewModel.pins.fold<double>(
           0,
           (sum, pin) => sum + pin.capacityMw,
@@ -51,6 +54,18 @@ class MapDashboard extends StatelessWidget {
                 'Güneş',
                 '$solarPins',
                 solarPins > 0 ? Colors.orangeAccent : theme.secondaryTextColor,
+              ),
+              const SizedBox(width: 20),
+              Container(
+                width: 1,
+                height: 30,
+                color: theme.secondaryTextColor.withValues(alpha: 0.2),
+              ),
+              const SizedBox(width: 20),
+              _buildStatItem(
+                'HES',
+                '$hesPins',
+                hesPins > 0 ? Colors.cyanAccent : theme.secondaryTextColor,
               ),
               const SizedBox(width: 20),
               Container(

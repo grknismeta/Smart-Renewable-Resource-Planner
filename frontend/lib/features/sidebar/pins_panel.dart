@@ -234,7 +234,7 @@ class _PinsPanelState extends State<PinsPanel> {
                   pin.type == 'Güneş Paneli'
                       ? Icons.wb_sunny
                       : pin.type == 'HES'
-                          ? Icons.water
+                          ? Icons.water_drop
                           : Icons.wind_power,
                   color: accentColor,
                   size: 16,

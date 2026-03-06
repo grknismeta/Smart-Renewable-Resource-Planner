@@ -237,7 +237,7 @@ class _OptimizationDialogContentState
                     await widget.mapViewModel.calculateOptimization(
                       equipmentId: selectedEquipmentId!,
                     );
-                    if (mounted) {
+                    if (context.mounted) {
                       if (Navigator.canPop(context)) {
                         Navigator.of(context).pop();
                       }
@@ -251,7 +251,7 @@ class _OptimizationDialogContentState
                       );
                     }
                   } catch (e) {
-                    if (mounted) {
+                    if (context.mounted) {
                       setState(() {
                         _isLoading = false;
                       });

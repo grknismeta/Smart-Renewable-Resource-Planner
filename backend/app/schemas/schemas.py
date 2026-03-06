@@ -83,11 +83,19 @@ class PinResponse(PinBase):
 # --- HESAPLAMA SONUÇLARI (GRAFİK & FİNANS İÇİN) ---
 
 class FinancialAnalysis(BaseModel):
-    """Yatırım Geri Dönüş Analizi"""
+    """Yatırım Geri Dönüş Analizi — Türkiye 2024-2025 YEKDEM/Piyasa değerleriyle"""
     initial_investment_usd: float
     annual_earnings_usd: float
     payback_period_years: float
     roi_percentage: float
+    # ── Gelişmiş metrikler ─────────────────────────────────────────────────────
+    lcoe_usd_kwh: float = 0.0           # Normalleştirilmiş Enerji Maliyeti ($/kWh)
+    npv_usd: float = 0.0                # Net Bugünkü Değer — %8 iskonto oranıyla
+    irr_percentage: float = 0.0         # İç Verim Oranı (%)
+    lifetime_revenue_usd: float = 0.0   # Ömür boyu brüt gelir ($)
+    pricing_mode: str = "yekdem"        # "yekdem" | "market"
+    price_per_kwh_usd: float = 0.07     # İlk yıl birim fiyat ($/kWh)
+    lifetime_years: int = 25            # Sistem ömrü (yıl)
 
 class WindCalculationResponse(BaseModel):
     wind_speed_m_s: float
@@ -126,6 +134,9 @@ class HydroCalculationResponse(BaseModel):
     capacity_factor: float
     monthly_production: Optional[Dict[str, float]] = None
     monthly_flow_rates: Optional[Dict[str, float]] = None
+    financials: Optional[FinancialAnalysis] = None         # HES finansal analizi
+    plant_type: Optional[str] = None                       # "Nehir Tipi HES" | "Barajlı" vb.
+    economic_viability_warning: Optional[str] = None       # Min debi eşiği uyarısı
 
 class PinCalculationResponse(BaseModel):
     resource_type: Literal["Rüzgar Türbini", "Güneş Paneli", "Hidroelektrik"]

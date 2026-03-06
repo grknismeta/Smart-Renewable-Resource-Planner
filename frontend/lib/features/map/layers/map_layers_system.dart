@@ -317,10 +317,10 @@ class _MapLayerWidgetState extends State<MapLayerWidget> {
   
   Color _getSolarGradient(double t) {
     // 0.0 - 0.2: Transparent Black -> Deep Neon Orange (Cyber Base)
-    if (t < 0.2) return Color.lerp(Colors.black.withOpacity(0.0), Colors.deepOrangeAccent.shade400.withOpacity(0.8), t/0.2)!;
-    
+    if (t < 0.2) return Color.lerp(Colors.black.withValues(alpha: 0.0), Colors.deepOrangeAccent.shade400.withValues(alpha: 0.8), t/0.2)!;
+
     // 0.2 - 0.5: Neon Orange -> Intense Red (Mid Range)
-    if (t < 0.5) return Color.lerp(Colors.deepOrangeAccent.shade400.withOpacity(0.8), Colors.redAccent.shade700, (t-0.2)/0.3)!;
+    if (t < 0.5) return Color.lerp(Colors.deepOrangeAccent.shade400.withValues(alpha: 0.8), Colors.redAccent.shade700, (t-0.2)/0.3)!;
     
     // 0.5 - 0.8: Red -> Bright Neon Yellow (High Energy)
     if (t < 0.8) return Color.lerp(Colors.redAccent.shade700, Colors.orangeAccent, (t-0.5)/0.3)!;
@@ -331,10 +331,10 @@ class _MapLayerWidgetState extends State<MapLayerWidget> {
 
   Color _getWindGradient(double t) {
     // 0.0 - 0.2: Transparent -> Neon Blue (Start)
-    if (t < 0.2) return Color.lerp(Colors.black.withOpacity(0.0), Colors.blueAccent.shade700.withOpacity(0.8), t/0.2)!;
-    
+    if (t < 0.2) return Color.lerp(Colors.black.withValues(alpha: 0.0), Colors.blueAccent.shade700.withValues(alpha: 0.8), t/0.2)!;
+
     // 0.2 - 0.6: Neon Blue -> Cyan (Mid Range)
-    if (t < 0.6) return Color.lerp(Colors.blueAccent.shade700.withOpacity(0.8), Colors.cyanAccent, (t-0.2)/0.4)!;
+    if (t < 0.6) return Color.lerp(Colors.blueAccent.shade700.withValues(alpha: 0.8), Colors.cyanAccent, (t-0.2)/0.4)!;
     
     // 0.6 - 1.0: Cyan -> White (High Velocity)
     return Color.lerp(Colors.cyanAccent, Colors.white, (t-0.6)/0.4)!;

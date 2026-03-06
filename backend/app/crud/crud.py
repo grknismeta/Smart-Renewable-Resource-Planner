@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func
+from sqlalchemy import func, extract
 from typing import Optional, List, Union
 
 # Updated imports
@@ -182,9 +182,9 @@ def get_weather_stats(system_db: Session, latitude: float, longitude: float):
         return None # Veri yoksa None dön
         
     # 2. Aylık Dağılım (Mevsimsellik Analizi için)
-    # SQLite'da strftime('%m', date) ayı verir.
+    # PostgreSQL uyumluluğu için strftime('%m') yerine SQLAlchemy 'extract' metodu kullanılıyor.
     monthly_data = system_db.query(
-        func.strftime('%m', models.WeatherData.date).label("month"),
+        extract('month', models.WeatherData.date).label("month"),
         func.avg(models.WeatherData.shortwave_radiation_sum).label("avg_rad"),
         func.avg(models.WeatherData.wind_speed_mean).label("avg_wind")
     ).filter(
@@ -195,7 +195,9 @@ def get_weather_stats(system_db: Session, latitude: float, longitude: float):
     # Aylık veriyi sözlüğe çevir { "01": {...}, "02": {...} }
     monthly_dict = {}
     for m in monthly_data:
-        monthly_dict[m.month] = {
+        # extract('month') integer döner (örn: 1). Frontend'in bozulmaması için string'e çevirip başına 0 ekliyoruz ("01").
+        month_str = f"{int(m.month):02d}" if m.month else "00"
+        monthly_dict[month_str] = {
             "solar": m.avg_rad, # MJ/m2 veya kWh/m2 (birimi kontrol etmeli)
             "wind": m.avg_wind  # m/s
         }

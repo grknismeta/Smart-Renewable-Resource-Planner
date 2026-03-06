@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services.geo_service import GeoService as GeoAnalyzer
-
+from app.core.logger import logger
 
 # Router'ı oluştur
 router = APIRouter(tags=["Geo Spatial Analysis"])
@@ -11,27 +11,42 @@ router = APIRouter(tags=["Geo Spatial Analysis"])
 try:
     analyzer = GeoAnalyzer()
 except Exception as e:
-    print(f"⚠️ GeoAnaliz başlatılamadı (Shapefile eksik olabilir): {e}")
+    logger.warning("GeoAnaliz başlatılamadı (Shapefile eksik olabilir): {}", e)
     analyzer = None
-
 
 
 class GeoCheckRequest(BaseModel):
     latitude: float
     longitude: float
 
+
+@router.get("/city")
+def get_city_for_coords(lat: float, lon: float):
+    """
+    Koordinata göre il ve ilçe adını döndürür (reverse geocoding).
+    Örnek: GET /geo/city?lat=39.92&lon=32.85
+    """
+    if analyzer is None:
+        return {"province": "Bilinmiyor", "district": "Bilinmiyor"}
+    try:
+        from shapely.geometry import Point
+        point = Point(lon, lat)
+        info = analyzer._get_location_info(point, lat, lon)
+        return info
+    except Exception as e:
+        logger.debug("Reverse geocoding hatası ({}, {}): {}", lat, lon, e)
+        return {"province": "Bilinmiyor", "district": "Bilinmiyor"}
+
+
 @router.post("/check-suitability")
-async def check_geo_suitability(request: GeoCheckRequest):
+def check_geo_suitability(request: GeoCheckRequest):
     """
     Verilen koordinatın Rüzgar ve Güneş enerjisi için uygunluğunu analiz eder.
     Coğrafi kısıtlamaları (su, yol, bina, eğim) kontrol eder.
     """
     try:
-
-             
-        # Analizi çalıştır
         result = analyzer.analyze_location(request.latitude, request.longitude)
         return result
     except Exception as e:
-        print(f"Geo Check Error: {e}")
+        logger.error("Geo suitability hatası ({}, {}): {}", request.latitude, request.longitude, e)
         raise HTTPException(status_code=500, detail=str(e))

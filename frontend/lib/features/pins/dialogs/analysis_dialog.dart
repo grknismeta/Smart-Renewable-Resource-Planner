@@ -5,6 +5,8 @@ import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/core/theme/app_theme.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/features/pins/widgets/energy_output_widget.dart';
+import 'package:frontend/features/map/widgets/panels/financial_output_widget.dart';
+import 'package:frontend/features/map/widgets/panels/energy_info_card.dart';
 
 class AnalysisDialog extends StatelessWidget {
   final PinCalculationResponse result;
@@ -29,11 +31,18 @@ class AnalysisDialog extends StatelessWidget {
       backgroundColor: Colors.transparent,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 500),
-        child: Column(
+        child: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Modern Enerji Çıktı Widget'ı
             EnergyOutputWidget(result: result, theme: theme),
+            const SizedBox(height: 16),
+            // Finansal Analiz
+            FinancialOutputWidget(result: result, theme: theme),
+            const SizedBox(height: 16),
+            // Bakım & Ömür Bilgi Kartı
+            EnergyInfoCard(result: result, theme: theme),
             const SizedBox(height: 16),
             // Kapat butonu
             Container(
@@ -59,6 +68,7 @@ class AnalysisDialog extends StatelessWidget {
             ),
           ],
         ),
+       ),
       ),
     );
   }

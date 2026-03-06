@@ -12,13 +12,17 @@ class MapConstants {
   static const String arcGisStreetUrl =
       'https://services.arcgisonline.com/arcgis/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
 
-  // --- RÜZGAR TEMA RENKLERİ (Mavi) ---
-  static const Color windBgColor = Color(0xFF1F3A58);
-  static const Color windFgColor = Color(0xFF2196F3);
+  // --- RÜZGAR TEMA RENKLERİ (Florasan Turkuaz) ---
+  static const Color windBgColor = Color(0xFF006064); // Koyu Gece Turkuazı
+  static const Color windFgColor = Color(0xFF18FFFF); // Neon Cam Göbeği
 
-  // --- GÜNEŞ TEMA RENKLERİ (Sarı) ---
-  static const Color solarBgColor = Color(0xFF413819);
-  static const Color solarFgColor = Color(0xFFFFCA28);
+  // --- GÜNEŞ TEMA RENKLERİ (Sıcak Kehribar) ---
+  static const Color solarBgColor = Color.fromARGB(255, 0, 0, 0); // Koyu Kor Turuncu
+  static const Color solarFgColor = Color.fromARGB(197, 255, 188, 30); // Parlak Kehribar (Amber)
+
+  // --- HES TEMA RENKLERİ (Elektrik Yeşili) ---
+  static const Color hesBgColor = Color(0xFF1B5E20); // Yosun/Orman Yeşili
+  static const Color hesFgColor = Color(0xFF00E676); // Parlak Neon Zümrüt Yeşili
 
   // --- HARİTA SINIRLARI (TÜRKİYE) ---
   static const double turkeyMinLat = 34.0;
@@ -36,17 +40,23 @@ class MapConstants {
 
   /// Verilen tip için arka plan rengini döndürür
   static Color getBackgroundColor(String type) {
-    return type == 'Güneş Paneli' ? solarBgColor : windBgColor;
+    if (type == 'Güneş Paneli') return solarBgColor;
+    if (type == 'HES' || type == 'Hidroelektrik') return hesBgColor;
+    return windBgColor;
   }
 
   /// Verilen tip için ön plan rengini döndürür
   static Color getForegroundColor(String type) {
-    return type == 'Güneş Paneli' ? solarFgColor : windFgColor;
+    if (type == 'Güneş Paneli') return solarFgColor;
+    if (type == 'HES' || type == 'Hidroelektrik') return hesFgColor;
+    return windFgColor;
   }
 
   /// Verilen tip için ikonu döndürür
   static IconData getIcon(String type) {
-    return type == 'Güneş Paneli' ? Icons.wb_sunny : Icons.wind_power;
+    if (type == 'Güneş Paneli') return Icons.wb_sunny;
+    if (type == 'HES' || type == 'Hidroelektrik') return Icons.water_drop;
+    return Icons.wind_power;
   }
 
   /// Harita stili için URL döndürür

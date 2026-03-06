@@ -25,11 +25,10 @@ class ScenarioResultPanel extends StatelessWidget {
 
     // Sonuç verisini parse et
     final resultData = scenario.resultData;
-    // resultData is Map<String, dynamic>?
-    // Use clear safe access
-    final totalSolarKwh = resultData?['total_solar_kwh'] ?? 0.0;
-    final totalWindKwh = resultData?['total_wind_kwh'] ?? 0.0;
-    final totalKwh = resultData?['total_kwh'] ?? 0.0;
+    final totalSolarKwh = (resultData?['total_solar_kwh'] as num?)?.toDouble() ?? 0.0;
+    final totalWindKwh  = (resultData?['total_wind_kwh']  as num?)?.toDouble() ?? 0.0;
+    final totalHydroKwh = (resultData?['total_hydro_kwh'] as num?)?.toDouble() ?? 0.0;
+    final totalKwh      = (resultData?['total_kwh']       as num?)?.toDouble() ?? 0.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -59,7 +58,7 @@ class ScenarioResultPanel extends StatelessWidget {
                   children: [
                     ResultCard(
                       label: 'Toplam Üretim',
-                      value: FormatUtils.formatEnergy((totalKwh as num).toDouble()),
+                      value: FormatUtils.formatEnergy(totalKwh),
                       icon: Icons.flash_on,
                       color: Colors.greenAccent,
                     ),
@@ -69,7 +68,7 @@ class ScenarioResultPanel extends StatelessWidget {
                         Expanded(
                           child: ResultCard(
                             label: 'Güneş',
-                            value: FormatUtils.formatEnergy((totalSolarKwh as num).toDouble()),
+                            value: FormatUtils.formatEnergy(totalSolarKwh),
                             icon: Icons.wb_sunny,
                             color: Colors.orangeAccent,
                           ),
@@ -78,13 +77,22 @@ class ScenarioResultPanel extends StatelessWidget {
                         Expanded(
                           child: ResultCard(
                             label: 'Rüzgar',
-                            value: FormatUtils.formatEnergy((totalWindKwh as num).toDouble()),
+                            value: FormatUtils.formatEnergy(totalWindKwh),
                             icon: Icons.wind_power,
                             color: Colors.lightBlueAccent,
                           ),
                         ),
                       ],
                     ),
+                    if (totalHydroKwh > 0) ...[
+                      const SizedBox(height: 8),
+                      ResultCard(
+                        label: 'Hidroelektrik',
+                        value: FormatUtils.formatEnergy(totalHydroKwh),
+                        icon: Icons.water_drop,
+                        color: Colors.cyanAccent,
+                      ),
+                    ],
                   ],
                 )
               else
@@ -111,8 +119,18 @@ class ScenarioResultPanel extends StatelessWidget {
             itemCount: scenarioPins.length,
             itemBuilder: (context, index) {
               final pin = scenarioPins[index];
+              final isHes = pin.type == 'Hidroelektrik';
               final isSolar = pin.type == 'Güneş Paneli';
-              final color = isSolar ? Colors.orangeAccent : Colors.blueAccent;
+              final color = isHes
+                  ? Colors.cyanAccent
+                  : isSolar
+                      ? Colors.orangeAccent
+                      : Colors.blueAccent;
+              final icon = isHes
+                  ? Icons.water_drop
+                  : isSolar
+                      ? Icons.wb_sunny
+                      : Icons.wind_power;
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
@@ -127,11 +145,7 @@ class ScenarioResultPanel extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      isSolar ? Icons.wb_sunny : Icons.wind_power,
-                      color: color,
-                      size: 20,
-                    ),
+                    Icon(icon, color: color, size: 20),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -145,12 +159,17 @@ class ScenarioResultPanel extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            '${pin.capacityMw} MW',
-                            style: TextStyle(
+                            '${pin.capacityMw.toStringAsFixed(2)} MW · ${pin.type}',
+                            style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 12,
                             ),
                           ),
+                          if (isHes && pin.headHeight != null)
+                            Text(
+                              'Düşü: ${pin.headHeight!.toStringAsFixed(0)} m  ·  Debi: ${pin.flowRate?.toStringAsFixed(2) ?? '?'} m³/s',
+                              style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
+                            ),
                         ],
                       ),
                     ),

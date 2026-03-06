@@ -20,6 +20,10 @@ class MapConstants {
   static const Color solarBgColor = Color(0xFF413819);
   static const Color solarFgColor = Color(0xFFFFCA28);
 
+  // --- HES TEMA RENKLERİ (Cyan) ---
+  static const Color hesBgColor = Color(0xFF0D3347);
+  static const Color hesFgColor = Color(0xFF00BCD4);
+
   // --- HARİTA SINIRLARI (TÜRKİYE) ---
   static const double turkeyMinLat = 34.0;
   static const double turkeyMaxLat = 44.0;
@@ -36,17 +40,23 @@ class MapConstants {
 
   /// Verilen tip için arka plan rengini döndürür
   static Color getBackgroundColor(String type) {
-    return type == 'Güneş Paneli' ? solarBgColor : windBgColor;
+    if (type == 'Güneş Paneli') return solarBgColor;
+    if (type == 'HES' || type == 'Hidroelektrik') return hesBgColor;
+    return windBgColor;
   }
 
   /// Verilen tip için ön plan rengini döndürür
   static Color getForegroundColor(String type) {
-    return type == 'Güneş Paneli' ? solarFgColor : windFgColor;
+    if (type == 'Güneş Paneli') return solarFgColor;
+    if (type == 'HES' || type == 'Hidroelektrik') return hesFgColor;
+    return windFgColor;
   }
 
   /// Verilen tip için ikonu döndürür
   static IconData getIcon(String type) {
-    return type == 'Güneş Paneli' ? Icons.wb_sunny : Icons.wind_power;
+    if (type == 'Güneş Paneli') return Icons.wb_sunny;
+    if (type == 'HES' || type == 'Hidroelektrik') return Icons.water_drop;
+    return Icons.wind_power;
   }
 
   /// Harita stili için URL döndürür

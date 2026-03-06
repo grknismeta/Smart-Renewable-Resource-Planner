@@ -44,7 +44,7 @@ class MapBottomSheet extends StatelessWidget {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.15),
+                  color: Colors.black.withValues(alpha: 0.15),
                   blurRadius: 10,
                   offset: const Offset(0, -2),
                 ),
@@ -121,7 +121,9 @@ class MapBottomSheet extends StatelessWidget {
                               Navigator.of(context).pushReplacementNamed('/auth');
                             } else {
                               await authViewModel.logout();
-                              Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                              if (context.mounted) {
+                                Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                              }
                             }
                           },
                         ),

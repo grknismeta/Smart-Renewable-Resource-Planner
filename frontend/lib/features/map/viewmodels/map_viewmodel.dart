@@ -1,17 +1,23 @@
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'dart:math' as math;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend/core/network/api_service.dart';
 import 'package:frontend/core/base/base_view_model.dart';
 import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/data/models/system_data_models.dart';
 import 'package:frontend/data/models/weather_model.dart';
 import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
-import 'package:frontend/features/map/viewmodels/map_layer_mixin.dart'; // Mixin import
+import 'package:frontend/features/map/viewmodels/map_layer_mixin.dart';
 import 'package:frontend/features/map/layers/map_layers_system.dart';
-export 'package:frontend/features/map/layers/map_layers_system.dart' show MapLayerType;
+import 'package:frontend/data/models/recommendation_model.dart';
+export 'package:frontend/features/map/layers/map_layers_system.dart'
+    show MapLayerType;
 
+// SharedPreferences key prefix — versiyonlu, schema değişirse eski cache invalidate olur
+const _kCityPrefix = 'city_v2_';
 
 // Pin ekleme modunu String olarak tanımla
 typedef PinType = String;
@@ -52,9 +58,13 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   List<Equipment> _equipments = [];
   bool _equipmentsLoading = false;
 
+  // Pin şehir adı cache: {pinId: "İl / İlçe"}
+  final Map<int, String> _pinCityNames = {};
+
   // --- Harita katman zaman dönemi ve neon toggle ---
   bool _showDataPoints = false;
   bool _showPins = true;
+  bool _showVectorLayer = false; // MVT katmanı — varsayılan kapalı (render crash önleme)
   MapTimePeriod _selectedPeriod = MapTimePeriod.current;
 
   List<Pin> get pins => _pins;
@@ -64,8 +74,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   bool get showDataPoints => _showDataPoints;
   bool get showPins => _showPins;
+  bool get showVectorLayer => _showVectorLayer;
   MapTimePeriod get selectedPeriod => _selectedPeriod;
-
 
   List<CityWeatherData> get weatherData => _weatherData;
   DateTime get selectedTime => _selectedTime;
@@ -89,6 +99,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   bool get isEquipmentLoading => _equipmentsLoading;
   bool get equipmentsLoading => _equipmentsLoading;
 
+  /// Pin için şehir adı (cache'ten)
+  String pinCityName(int pinId) => _pinCityNames[pinId] ?? '';
+
   void toggleDataPoints(bool value) {
     _showDataPoints = value;
     notifyListeners();
@@ -96,6 +109,11 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   void togglePinsVisibility(bool value) {
     _showPins = value;
+    notifyListeners();
+  }
+
+  void toggleVectorLayer(bool value) {
+    _showVectorLayer = value;
     notifyListeners();
   }
 
@@ -120,7 +138,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   Future<void> _loadWeatherSummarySafe() async {
     try {
-      _weatherSummary = await _apiService.weather.fetchWeatherSummary(hours: 168);
+      _weatherSummary = await _apiService.weather.fetchWeatherSummary(
+        hours: 168,
+      );
       // Işınım verilerini de yükle
       _solarSummary = await _apiService.weather.fetchSolarSummary(hours: 168);
       notifyListeners();
@@ -136,7 +156,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   void _handleAuthChange() {
     if (_authViewModel.isLoggedIn == true) {
-      fetchPins();
+      unawaited(fetchPins());
     } else if (_authViewModel.isLoggedIn == false) {
       _pins = [];
       notifyListeners();
@@ -153,7 +173,6 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     try {
       _equipments = await _apiService.equipment.fetchEquipments(type: type);
     } catch (e) {
-    
       debugPrint('[MapViewModel.loadEquipments] Hata: $e');
     } finally {
       _equipmentsLoading = false;
@@ -282,14 +301,15 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         maxLon = math.max(maxLon, point.longitude);
       }
 
-      _optimizationResult = await _apiService.optimization.optimizeWindPlacement(
-        topLeftLat: maxLat,
-        topLeftLon: minLon,
-        bottomRightLat: minLat,
-        bottomRightLon: maxLon,
-        equipmentId: equipmentId,
-        minDistanceM: minDistanceM,
-      );
+      _optimizationResult = await _apiService.optimization
+          .optimizeWindPlacement(
+            topLeftLat: maxLat,
+            topLeftLon: minLon,
+            bottomRightLat: minLat,
+            bottomRightLon: maxLon,
+            equipmentId: equipmentId,
+            minDistanceM: minDistanceM,
+          );
     } catch (e) {
       debugPrint('Optimizasyon hatası: $e');
       setError('Optimizasyon hesaplaması başarısız oldu.');
@@ -298,7 +318,6 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     }
   }
 
-
   void clearCalculationResult() {
     _latestCalculationResult = null;
     notifyListeners();
@@ -306,18 +325,90 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   // --- API İşlemleri ---
   Future<void> fetchPins() async {
-    if (_authViewModel.isLoggedIn != true) {
-      return;
-    }
+    if (_authViewModel.isLoggedIn != true) return;
     setBusy(true);
     try {
       _pins = await _apiService.resource.fetchPins();
+      // 1. Önce SharedPreferences'tan anlık yükle (API çağrısı yok)
+      await _loadCityNamesFromCache();
+      // 2. Sonra eksik olanları arka planda API'den çek
+      _fetchMissingCityNames();
     } catch (e) {
       debugPrint('[MapViewModel] Pin yüklenirken hata: $e');
-      // setError(e.toString()); // Pin yüklenemezse tüm haritayı bloke etmek istemeyebiliriz
     } finally {
       setBusy(false);
     }
+  }
+
+  /// SharedPreferences'tan mevcut pin'lerin şehir adlarını yükle.
+  /// Senkron değil ama await edilir — UI kilitlenemez, hızlıdır.
+  Future<void> _loadCityNamesFromCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      bool changed = false;
+      for (final pin in _pins) {
+        if (_pinCityNames.containsKey(pin.id)) continue;
+        final cached = prefs.getString('$_kCityPrefix${pin.id}');
+        if (cached != null && cached.isNotEmpty) {
+          _pinCityNames[pin.id] = cached;
+          changed = true;
+        }
+      }
+      if (changed && !_disposed) notifyListeners();
+    } catch (_) {
+      // SharedPreferences erişim hatası — sessizce atla
+    }
+  }
+
+  bool _disposed = false;
+  bool _cityFetchRunning = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _authViewModel.removeListener(_handleAuthChange);
+    super.dispose();
+  }
+
+  void _fetchMissingCityNames() {
+    if (_cityFetchRunning) return;
+    final missing = _pins.where((p) => !_pinCityNames.containsKey(p.id)).toList();
+    if (missing.isEmpty) return;
+    _cityFetchRunning = true;
+    _fetchCityNamesSequential(missing);
+  }
+
+  Future<void> _fetchCityNamesSequential(List<dynamic> pins) async {
+    SharedPreferences? prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+    } catch (_) {}
+
+    for (final pin in pins) {
+      if (_disposed) break;
+      try {
+        final info = await _apiService.geo.getCityForCoords(
+          pin.latitude, pin.longitude,
+        ).timeout(const Duration(seconds: 5));
+        if (_disposed) break;
+        if (info.isNotEmpty) {
+          final province = info['province'] ?? '';
+          final district = info['district'] ?? '';
+          if (province.isNotEmpty || district.isNotEmpty) {
+            final cityStr = district.isNotEmpty ? '$district / $province' : province;
+            _pinCityNames[pin.id] = cityStr;
+            // SharedPreferences'a kalıcı olarak kaydet
+            await prefs?.setString('$_kCityPrefix${pin.id}', cityStr);
+            if (!_disposed) notifyListeners();
+          }
+        }
+      } catch (_) {
+        // Timeout veya hata — bu pin'i atla, uygulamayı dondurma
+      }
+      // Arka planda yavaş yükle — backend'i boğma
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+    _cityFetchRunning = false;
   }
 
   Future<Pin> addPin(
@@ -358,8 +449,11 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     String type,
     double capacityMw,
     int? equipmentId,
-    double? panelArea,
-  ) async {
+    double? panelArea, {
+    double? flowRate,
+    double? headHeight,
+    double? basinAreaKm2,
+  }) async {
     try {
       final updatedPin = await _apiService.resource.updatePin(
         pinId,
@@ -369,6 +463,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         capacityMw,
         equipmentId,
         panelArea,
+        flowRate: flowRate,
+        headHeight: headHeight,
+        basinAreaKm2: basinAreaKm2,
       );
       await fetchPins(); // Listeyi güncelle
       return updatedPin;
@@ -394,17 +491,24 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     required String type,
     required double capacityMw,
     double? panelArea,
+    double? flowRate,
+    double? headHeight,
+    double? basinAreaKm2,
   }) async {
     setBusy(true);
     _latestCalculationResult = null;
     try {
-      _latestCalculationResult = await _apiService.resource.calculateEnergyPotential(
-        lat: lat,
-        lon: lon,
-        type: type,
-        capacityMw: capacityMw,
-        panelArea: panelArea ?? 0.0,
-      );
+      _latestCalculationResult = await _apiService.resource
+          .calculateEnergyPotential(
+            lat: lat,
+            lon: lon,
+            type: type,
+            capacityMw: capacityMw,
+            panelArea: panelArea ?? 0.0,
+            flowRate: flowRate,
+            headHeight: headHeight,
+            basinAreaKm2: basinAreaKm2,
+          );
     } catch (e) {
       debugPrint('Hesaplama hatası: $e');
       setError('Hesaplama yapılamadı.');
@@ -431,11 +535,13 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     _selectedTime = truncatedTime;
 
     try {
-      _weatherData = await _apiService.weather.fetchWeatherForTime(truncatedTime);
+      _weatherData = await _apiService.weather.fetchWeatherForTime(
+        truncatedTime,
+      );
 
       // EĞER HARİTA KATMANI AÇIKSA, ONU DA GÜNCELLE
       if (currentLayer != MapLayerType.none) {
-        fetchHeatmapDataForLayer(currentLayer);
+        unawaited(fetchHeatmapDataForLayer(currentLayer));
       }
     } catch (e) {
       debugPrint('Hava durumu yüklenirken hata: $e');
@@ -448,7 +554,10 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   Future<void> loadCityWeekly(String cityName) async {
     try {
       _cityHourlyName = cityName;
-      _cityHourly = await _apiService.weather.fetchCityHourly(cityName, hours: 168);
+      _cityHourly = await _apiService.weather.fetchCityHourly(
+        cityName,
+        hours: 168,
+      );
     } catch (e) {
       _cityHourly = [];
     }
@@ -546,7 +655,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     int limit = 10,
   }) async {
     try {
-      final cities = await _apiService.weather.fetchBestSolarCities(limit: limit);
+      final cities = await _apiService.weather.fetchBestSolarCities(
+        limit: limit,
+      );
       return cities;
     } catch (e) {
       debugPrint('[MapViewModel.loadBestSolarCities] Hata: $e');
@@ -636,6 +747,41 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   void clearGeoAnalysis() {
     _latestGeoAnalysis = null;
     _restrictedArea = [];
+    notifyListeners();
+  }
+
+  // --- Öneri / Weibull State ---
+  RecommendationsData? _recommendations;
+  bool _isLoadingRecommendations = false;
+  String? _recommendationError;
+
+  RecommendationsData? get recommendations => _recommendations;
+  bool get isLoadingRecommendations => _isLoadingRecommendations;
+  String? get recommendationError => _recommendationError;
+
+  /// Weibull analizine dayalı bölge önerilerini backend'den yükler.
+  Future<void> loadRecommendations({int hours = 168}) async {
+    if (_isLoadingRecommendations) return;
+    _isLoadingRecommendations = true;
+    _recommendationError = null;
+    notifyListeners();
+
+    try {
+      _recommendations = await _apiService.recommendation.fetchRecommendations(
+        hours: hours,
+      );
+    } catch (e) {
+      debugPrint('[MapViewModel.loadRecommendations] Hata: $e');
+      _recommendationError = e.toString();
+    } finally {
+      _isLoadingRecommendations = false;
+      notifyListeners();
+    }
+  }
+
+  void clearRecommendations() {
+    _recommendations = null;
+    _recommendationError = null;
     notifyListeners();
   }
 }

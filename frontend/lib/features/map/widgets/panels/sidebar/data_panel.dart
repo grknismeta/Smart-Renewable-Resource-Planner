@@ -29,30 +29,38 @@ class DataPanel extends StatelessWidget {
     final solarPins = mapViewModel.pins
         .where((p) => p.type.contains('Güneş') || p.type.contains('Solar'))
         .toList();
+    final hesPins = mapViewModel.pins
+        .where((p) => p.type == 'Hidroelektrik')
+        .toList();
 
     final windMw = windPins.fold(0.0, (sum, p) => sum + p.capacityMw);
     final solarMw = solarPins.fold(0.0, (sum, p) => sum + p.capacityMw);
+    final hesMw = hesPins.fold(0.0, (sum, p) => sum + p.capacityMw);
 
     if (isCollapsed) {
-      return _buildCollapsedView(windPins.length, solarPins.length);
+      return _buildCollapsedView(windPins.length, solarPins.length, hesPins.length);
     }
 
     return _buildExpandedView(
       windPins.length,
       solarPins.length,
+      hesPins.length,
       windMw,
       solarMw,
+      hesMw,
     );
   }
 
   /// Dar mod görünümü
-  Widget _buildCollapsedView(int windCount, int solarCount) {
+  Widget _buildCollapsedView(int windCount, int solarCount, int hesCount) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildCollapsedStatIcon(Icons.air, windFgColor, windCount),
         const SizedBox(height: 12),
         _buildCollapsedStatIcon(Icons.wb_sunny, solarFgColor, solarCount),
+        const SizedBox(height: 12),
+        _buildCollapsedStatIcon(Icons.water_drop, const Color(0xFF00BCD4), hesCount),
         const SizedBox(height: 20),
         Divider(
           color: theme.secondaryTextColor.withValues(alpha: 0.1),
@@ -127,8 +135,10 @@ class DataPanel extends StatelessWidget {
   Widget _buildExpandedView(
     int windCount,
     int solarCount,
+    int hesCount,
     double windMw,
     double solarMw,
+    double hesMw,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -168,6 +178,19 @@ class DataPanel extends StatelessWidget {
                 fgColor: solarFgColor,
               ),
             ),
+            if (hesCount > 0) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                child: _StatCard(
+                  title: "HES",
+                  count: hesCount.toString(),
+                  capacity: "${hesMw.toStringAsFixed(1)} MW",
+                  icon: Icons.water_drop,
+                  bgColor: const Color(0xFF0A3040),
+                  fgColor: const Color(0xFF00BCD4),
+                ),
+              ),
+            ],
           ],
         ),
 

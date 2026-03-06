@@ -9,8 +9,10 @@ class MapControls extends StatelessWidget {
   final VoidCallback onToggleLayers;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
+  final VoidCallback onToggleVectorLayer;
   final bool isSelectingRegion;
   final bool isLayersPanelVisible;
+  final bool showVectorLayer;
 
   const MapControls({
     super.key,
@@ -20,8 +22,10 @@ class MapControls extends StatelessWidget {
     required this.onToggleLayers,
     required this.onZoomIn,
     required this.onZoomOut,
+    required this.onToggleVectorLayer,
     required this.isSelectingRegion,
     required this.isLayersPanelVisible,
+    required this.showVectorLayer,
   });
 
   @override
@@ -53,19 +57,55 @@ class MapControls extends StatelessWidget {
                 color: isLayersPanelVisible ? Colors.greenAccent : theme.textColor,
                 theme: theme,
               ),
+              const SizedBox(height: 16),
+              // Vector (Su/Enerji) Katmanı
+              MapControlButton(
+                icon: Icons.water,
+                tooltip: showVectorLayer ? "Su/Enerji katmanı kapat" : "Su/Enerji katmanını göster",
+                onTap: onToggleVectorLayer,
+                color: showVectorLayer ? Colors.cyanAccent : theme.textColor,
+                theme: theme,
+              ),
             ],
           ),
         ),
 
-        // 2. Zoom Buttons (Bottom Left)
+        // 2. Zoom Buttons + Bölge Seç (Bottom Left)
         Positioned(
-          bottom: 40, // Sheet is minimized (only handle at ~20-30px), so 40-50 is safe.
+          bottom: 40,
           left: 20,
           child: Column(
             children: [
               _buildZoomButton(Icons.add, onZoomIn),
               const SizedBox(height: 8),
               _buildZoomButton(Icons.remove, onZoomOut),
+              const SizedBox(height: 16),
+              // Bölge Seç Butonu
+              Tooltip(
+                message: isSelectingRegion ? 'Seçimi İptal Et' : 'Bölge Seç',
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: isSelectingRegion
+                        ? Colors.blue.withValues(alpha: 0.9)
+                        : theme.cardColor.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                    border: Border.all(
+                      color: isSelectingRegion
+                          ? Colors.blueAccent
+                          : theme.secondaryTextColor.withValues(alpha: 0.1),
+                    ),
+                  ),
+                  child: IconButton(
+                    icon: Icon(
+                      isSelectingRegion ? Icons.cancel_outlined : Icons.select_all,
+                      color: isSelectingRegion ? Colors.white : theme.textColor,
+                    ),
+                    onPressed: onSelectRegion,
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                  ),
+                ),
+              ),
             ],
           ),
         ),

@@ -6,6 +6,24 @@ import 'package:frontend/core/network/api_client.dart';
 class GeoService extends BaseService {
   GeoService(super.storageService);
 
+  /// Koordinata göre il/ilçe adı döndürür. Hata durumunda boş map döner.
+  Future<Map<String, String>> getCityForCoords(double lat, double lon) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/geo/city?lat=$lat&lon=$lon'),
+        headers: await getHeaders(),
+      );
+      if (response.statusCode == 200) {
+        final data = processResponse(response) as Map<String, dynamic>;
+        return {
+          'province': data['province']?.toString() ?? '',
+          'district': data['district']?.toString() ?? '',
+        };
+      }
+    } catch (_) {}
+    return {};
+  }
+
   Future<Map<String, dynamic>> checkGeoSuitability(
     double lat,
     double lon,

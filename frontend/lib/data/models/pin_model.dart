@@ -24,6 +24,11 @@ class Pin {
   final String? equipmentName;
   final PinCalculationResponse? analysis;
 
+  // HES (Hidroelektrik) spesifik alanlar
+  final double? flowRate;       // Debi (m³/s)
+  final double? headHeight;     // Düşü yüksekliği (m)
+  final double? basinAreaKm2;   // Havza alanı (km²)
+
   Pin({
     required this.id,
     required this.latitude,
@@ -41,25 +46,25 @@ class Pin {
     this.equipmentId,
     this.equipmentName,
     this.analysis,
+    this.flowRate,
+    this.headHeight,
+    this.basinAreaKm2,
   });
 
-  // Backend'e (POST /pins/ veya POST /pins/calculate) göndermek için
+  // Backend'e (PUT /pins/{id}) göndermek için — backend PinBase schema ile eşleşir
   Map<String, dynamic> toJson() {
     return {
-      // Not: id ve ownerId backend'e gönderilmez (genellikle)
-      // ancak PinBase şemana göre (schemas.py) backend bunları ayıklar.
       'latitude': latitude,
       'longitude': longitude,
-      'name': name,
+      'title': name,          // backend PinBase.title kullanır, 'name' değil!
       'type': type,
       'capacity_mw': capacityMw,
       'panel_area': panelArea,
-      'panel_tilt': panelTilt,
-      'panel_azimuth': panelAzimuth,
-      'turbine_model_id': turbineModelId,
-      'panel_model_id': panelModelId,
-      'equipment_id': equipmentId,
-      // equipment_name read-only usually, but no harm sending
+      if (equipmentId != null) 'equipment_id': equipmentId,
+      // HES alanları — null ise gönderilmez
+      if (flowRate != null) 'flow_rate': flowRate,
+      if (headHeight != null) 'head_height': headHeight,
+      if (basinAreaKm2 != null) 'basin_area_km2': basinAreaKm2,
     };
   }
 
@@ -86,33 +91,58 @@ class Pin {
       analysis: json['analysis'] != null
           ? PinCalculationResponse.fromJson(json['analysis'])
           : null,
+      // HES alanları
+      flowRate: (json['flow_rate'] as num?)?.toDouble(),
+      headHeight: (json['head_height'] as num?)?.toDouble(),
+      basinAreaKm2: (json['basin_area_km2'] as num?)?.toDouble(),
     );
   }
 }
 
 // --- FINANSAL MODEL ---
+// Backend schemas.py FinancialAnalysis ile eşleştirilmiş.
+// Türkiye 2024-2025 YEKDEM/Piyasa değerleriyle NPV, LCOE, IRR destekli.
 class FinancialAnalysis {
-  final double lcoeUsdKwh;
-  final double paybackPeriodYears;
-  final double roiPercentage;
-  final double carbonSavingsTonsAnnual;
-  final double carbonCreditIncomeUsdAnnual;
+  final double initialInvestmentUsd;    // Toplam kurulum maliyeti ($)
+  final double annualEarningsUsd;       // İlk yıl net kazanç (O&M düşülmüş, $)
+  final double paybackPeriodYears;      // Geri ödeme süresi (yıl)
+  final double roiPercentage;           // Basit ROI (%)
+  // Gelişmiş metrikler
+  final double lcoeUsdKwh;             // Normalleştirilmiş Enerji Maliyeti ($/kWh)
+  final double npvUsd;                  // Net Bugünkü Değer — %8 iskonto ($)
+  final double irrPercentage;           // İç Verim Oranı (%)
+  final double lifetimeRevenueUsd;      // Ömür boyu brüt gelir ($)
+  final String pricingMode;             // "yekdem" | "market"
+  final double pricePerKwhUsd;          // İlk yıl birim fiyat ($/kWh)
+  final int lifetimeYears;              // Sistem ömrü (yıl)
 
   FinancialAnalysis({
-    required this.lcoeUsdKwh,
+    required this.initialInvestmentUsd,
+    required this.annualEarningsUsd,
     required this.paybackPeriodYears,
     required this.roiPercentage,
-    required this.carbonSavingsTonsAnnual,
-    required this.carbonCreditIncomeUsdAnnual,
+    this.lcoeUsdKwh = 0.0,
+    this.npvUsd = 0.0,
+    this.irrPercentage = 0.0,
+    this.lifetimeRevenueUsd = 0.0,
+    this.pricingMode = 'yekdem',
+    this.pricePerKwhUsd = 0.07,
+    this.lifetimeYears = 25,
   });
 
   factory FinancialAnalysis.fromJson(Map<String, dynamic> json) {
     return FinancialAnalysis(
-      lcoeUsdKwh: (json['lcoe_usd_kwh'] as num?)?.toDouble() ?? 0.0,
-      paybackPeriodYears: (json['payback_period_years'] as num?)?.toDouble() ?? 0.0,
-      roiPercentage: (json['roi_percentage'] as num?)?.toDouble() ?? 0.0,
-      carbonSavingsTonsAnnual: (json['carbon_savings_tons_annual'] as num?)?.toDouble() ?? 0.0,
-      carbonCreditIncomeUsdAnnual: (json['carbon_credit_income_usd_annual'] as num?)?.toDouble() ?? 0.0,
+      initialInvestmentUsd: (json['initial_investment_usd'] as num?)?.toDouble() ?? 0.0,
+      annualEarningsUsd:    (json['annual_earnings_usd']    as num?)?.toDouble() ?? 0.0,
+      paybackPeriodYears:   (json['payback_period_years']   as num?)?.toDouble() ?? 0.0,
+      roiPercentage:        (json['roi_percentage']          as num?)?.toDouble() ?? 0.0,
+      lcoeUsdKwh:           (json['lcoe_usd_kwh']           as num?)?.toDouble() ?? 0.0,
+      npvUsd:               (json['npv_usd']                as num?)?.toDouble() ?? 0.0,
+      irrPercentage:        (json['irr_percentage']          as num?)?.toDouble() ?? 0.0,
+      lifetimeRevenueUsd:   (json['lifetime_revenue_usd']   as num?)?.toDouble() ?? 0.0,
+      pricingMode:          (json['pricing_mode']            as String?) ?? 'yekdem',
+      pricePerKwhUsd:       (json['price_per_kwh_usd']      as num?)?.toDouble() ?? 0.07,
+      lifetimeYears:        (json['lifetime_years']          as num?)?.toInt()    ?? 25,
     );
   }
 }
@@ -164,6 +194,9 @@ class SolarCalculationResponse {
               ),
             )
           : null,
+      financials: json['financials'] != null
+          ? FinancialAnalysis.fromJson(json['financials'] as Map<String, dynamic>)
+          : null,
     );
   }
 }
@@ -207,6 +240,9 @@ class WindCalculationResponse {
               ),
             )
           : null,
+      financials: json['financials'] != null
+          ? FinancialAnalysis.fromJson(json['financials'] as Map<String, dynamic>)
+          : null,
     );
   }
 }
@@ -227,6 +263,9 @@ class HydroCalculationResponse {
   final double capacityFactor;
   final Map<String, double>? monthlyProduction;
   final Map<String, double>? monthlyFlowRates;
+  final FinancialAnalysis? financials;             // HES finansal analizi
+  final String? plantType;                         // "Nehir Tipi HES" | "Barajlı" vb.
+  final String? economicViabilityWarning;          // Min debi eşiği uyarısı
 
   HydroCalculationResponse({
     required this.predictedAnnualProductionKwh,
@@ -242,6 +281,9 @@ class HydroCalculationResponse {
     required this.capacityFactor,
     this.monthlyProduction,
     this.monthlyFlowRates,
+    this.financials,
+    this.plantType,
+    this.economicViabilityWarning,
   });
 
   // Calculate derived values
@@ -276,6 +318,11 @@ class HydroCalculationResponse {
               ),
             )
           : null,
+      financials: json['financials'] != null
+          ? FinancialAnalysis.fromJson(json['financials'] as Map<String, dynamic>)
+          : null,
+      plantType:                 json['plant_type']                  as String?,
+      economicViabilityWarning:  json['economic_viability_warning']  as String?,
     );
   }
 }

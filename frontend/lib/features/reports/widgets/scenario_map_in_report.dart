@@ -36,7 +36,9 @@ class ScenarioMapInReport extends StatelessWidget {
     for (var pin in scenarioPins) {
       final color = pin.type == 'Güneş Paneli'
           ? Colors.orangeAccent
-          : Colors.blueAccent;
+          : pin.type == 'HES'
+              ? Colors.cyanAccent
+              : Colors.blueAccent;
       markers.add(
         Marker(
           point: LatLng(pin.latitude, pin.longitude),
@@ -59,7 +61,11 @@ class ScenarioMapInReport extends StatelessWidget {
                 ],
               ),
               child: Icon(
-                pin.type == 'Güneş Paneli' ? Icons.wb_sunny : Icons.wind_power,
+                pin.type == 'Güneş Paneli'
+                    ? Icons.wb_sunny
+                    : pin.type == 'HES'
+                        ? Icons.waves
+                        : Icons.wind_power,
                 color: Colors.white,
                 size: 16,
               ),

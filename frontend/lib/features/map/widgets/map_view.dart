@@ -134,27 +134,22 @@ class _MapViewState extends State<MapView> {
             panBuffer: 1,
           ),
 
-          // 1.5 Vector Tile Layer (MVT) for backend data
-          VectorTileLayer(
-            theme: SrrpVectorStyle.theme,
-            backgroundTheme: null,
-            tileProviders: TileProviders(
-               {
-                 'srrp_hydro': NetworkVectorTileProvider(
-                    urlTemplate: "http://localhost:8000/api/v1/tiles/hydro/{z}/{x}/{y}.pbf",
-                    maximumZoom: 14,
-                 ),
-                 'srrp_restricted': NetworkVectorTileProvider(
-                    urlTemplate: "http://localhost:8000/api/v1/tiles/restricted/{z}/{x}/{y}.pbf",
-                    maximumZoom: 14,
-                 ),
-                 'srrp_energy': NetworkVectorTileProvider(
-                    urlTemplate: "http://localhost:8000/api/v1/tiles/energy/{z}/{x}/{y}.pbf",
-                    maximumZoom: 14,
-                 )
-               }
+          // 1.5 Vector Tile Layer (MVT) — su/baraj/enerji alanları
+          // Varsayılan KAPALI — kullanıcı harita kontrollerinden açabilir.
+          // VectorTileLayer yalnızca açıkken oluşturulur: her build()'de
+          // isolate patlamasını önlemek için theme static final'dır.
+          if (mapViewModel.showVectorLayer)
+            VectorTileLayer(
+              theme: SrrpVectorStyle.theme,
+              backgroundTheme: null,
+              tileProviders: TileProviders({
+                'srrp_all': NetworkVectorTileProvider(
+                  urlTemplate:
+                      "http://localhost:8000/api/v1/tiles/{z}/{x}/{y}.pbf",
+                  maximumZoom: 14,
+                ),
+              }),
             ),
-          ),
 
           // 2. Heatmap Layer
           if (mapViewModel.currentLayer != MapLayerType.none)

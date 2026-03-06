@@ -5,7 +5,8 @@ import 'package:frontend/data/models/weather_model.dart'; // Added for CityWeath
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart'; // For finding nearest city
 import 'package:frontend/features/map/widgets/map_legend.dart';
 import 'package:frontend/features/map/overlays/map_dashboard.dart'; // For MapDashboard
-import 'package:frontend/features/map/layers/map_layers_system.dart';
+import 'package:frontend/features/map/widgets/map_date_picker.dart';
+import 'package:frontend/features/map/widgets/recommendations_panel.dart';
 
 
 class MapOverlays extends StatelessWidget {
@@ -51,7 +52,28 @@ class MapOverlays extends StatelessWidget {
              child: layersPanel!,
            ),
 
-        // 4. Legends (Bottom Right)
+        // 4. Tarih Seçici (Sol alt — hava katmanı açıkken görünür)
+        if (mapViewModel.currentLayer != MapLayerType.none)
+          Positioned(
+            bottom: 100,
+            left: 20,
+            child: MapDatePickerWidget(
+              theme: theme,
+              mapViewModel: mapViewModel,
+            ),
+          ),
+
+        // 5. Önerilen Bölgeler Paneli (Sağ alt)
+        Positioned(
+          bottom: 100,
+          right: 20,
+          child: RecommendationsPanel(
+            theme: theme,
+            mapViewModel: mapViewModel,
+          ),
+        ),
+
+        // 6. Legends (Bottom Right)
         if (mapViewModel.currentLayer == MapLayerType.irradiance)
           Positioned(
             bottom: 40,
@@ -62,7 +84,7 @@ class MapOverlays extends StatelessWidget {
               titleFontSize: 11,
               unit: 'kWh/m²/yıl',
               gradientColors: [
-                Colors.black.withOpacity(0.5), // Representing Transparent/Low
+                Colors.black.withValues(alpha: 0.5), // Representing Transparent/Low
                 Colors.deepOrangeAccent,
                 Colors.redAccent.shade700,
                 Colors.orangeAccent,
@@ -81,7 +103,7 @@ class MapOverlays extends StatelessWidget {
               title: 'Rüzgar Hızı',
               unit: 'm/s',
               gradientColors: [
-                Colors.black.withOpacity(0.5),
+                Colors.black.withValues(alpha: 0.5),
                 Colors.blueAccent.shade700,
                 Colors.cyanAccent,
                 Colors.white,

@@ -6,6 +6,7 @@ import json
 
 from app import auth
 from app.crud import crud
+from app.core.logger import logger
 from app.db import models
 from app.schemas import schemas
 # Services moved
@@ -210,14 +211,16 @@ def calculate_scenario(
     start_date = start_date_obj
     end_date = end_date_obj
     
-    print(f"Senaryo Hesaplanıyor: {start_date} - {end_date}")
+    logger.info("Senaryo hesaplanıyor: {} - {}", start_date, end_date)
     
     # Her pin için hesaplama yap
     pin_results = []
     total_solar_kwh = 0.0
     total_wind_kwh = 0.0
+    total_hydro_kwh = 0.0
     solar_count = 0
     wind_count = 0
+    hydro_count = 0
     
     # On-Demand Service Import
     from app.services.collectors.on_demand import fetch_point_climate_data
@@ -292,7 +295,7 @@ def calculate_scenario(
                     solar_count += 1
                         
                 except Exception as e:
-                    print(f"Error calculating solar for pin {pin_id}: {e}")
+                    logger.warning("Solar hesaplama hatası (pin {}): {}", pin_id, e)
                     prediction_result["error"] = f"Solar hesaplama hatası: {str(e)}"
                 
             elif "Rüzgar" in pin_type or "Wind" in pin_type or pin_type == "Rüzgar Türbini":
@@ -339,24 +342,63 @@ def calculate_scenario(
 
                     total_wind_kwh += annual_prod
                     wind_count += 1
-                    
+
                 except Exception as e:
-                     print(f"Error calculating wind for pin {pin_id}: {e}")
+                     logger.warning("Rüzgar hesaplama hatası (pin {}): {}", pin_id, e)
                      prediction_result["error"] = f"Rüzgar hesaplama hatası: {str(e)}"
-            
+
+            elif "Hidroelektrik" in pin_type or "Hydro" in pin_type or "HES" in pin_type:
+                try:
+                    from app.services.hydro_service import HydroService
+                    hydro_service = HydroService()
+
+                    flow_rate = float(db_pin.flow_rate) if db_pin.flow_rate else None  # type: ignore
+                    head_height = float(db_pin.head_height) if db_pin.head_height else None  # type: ignore
+                    basin_area_km2 = float(db_pin.basin_area_km2) if db_pin.basin_area_km2 else None  # type: ignore
+
+                    if flow_rate is None and basin_area_km2 is None:
+                        prediction_result["error"] = "HES için debi veya havza alanı gerekli"
+                        pin_results.append(prediction_result)
+                        continue
+
+                    hydro_results = hydro_service.calculate(
+                        lat=pin_lat,
+                        lon=pin_lon,
+                        flow_rate=flow_rate,
+                        head_height=head_height,
+                        basin_area_km2=basin_area_km2,
+                    )
+
+                    annual_prod = hydro_results.get("predicted_annual_production_kwh", 0.0)
+                    prediction_result.update({
+                        "total_prediction_value": round(annual_prod, 2),
+                        "daily_avg_production": round(annual_prod / 365, 2),
+                        "info": f"HES fiziksel hesaplama ({hydro_results.get('turbine_type', '')})",
+                        "history": [],
+                        "future": [],
+                    })
+                    total_hydro_kwh += annual_prod
+                    hydro_count += 1
+
+                except Exception as e:
+                    logger.warning("HES hesaplama hatası (pin {}): {}", pin_id, e)
+                    prediction_result["error"] = f"HES hesaplama hatası: {str(e)}"
+
             pin_results.append(prediction_result)
             
     except Exception as e:
-        print(f"Global calculation error: {e}")
+        logger.error("Senaryo genel hesaplama hatası: {}", e)
         pass
 
     # Toplu sonuçları kaydet
     summary = {
         "total_solar_kwh": total_solar_kwh,
         "total_wind_kwh": total_wind_kwh,
-        "total_kwh": total_solar_kwh + total_wind_kwh,
+        "total_hydro_kwh": total_hydro_kwh,
+        "total_kwh": total_solar_kwh + total_wind_kwh + total_hydro_kwh,
         "solar_count": solar_count,
         "wind_count": wind_count,
+        "hydro_count": hydro_count,
         "pin_results": pin_results
     }
     

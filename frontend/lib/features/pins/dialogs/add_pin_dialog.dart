@@ -85,10 +85,10 @@ class _AddPinDialogState extends State<AddPinDialog> {
         final solar = result['solar_details'];
         final wind = result['wind_details'];
         if (solar != null && solar['reasons'] != null) {
-           for(var r in solar['reasons']) reasons.add("Güneş: $r");
+          for (var r in solar['reasons']) { reasons.add("Güneş: $r"); }
         }
         if (wind != null && wind['reasons'] != null) {
-           for(var r in wind['reasons']) reasons.add("Rüzgar: $r");
+          for (var r in wind['reasons']) { reasons.add("Rüzgar: $r"); }
         }
       }
 
@@ -451,8 +451,10 @@ class _AddPinDialogState extends State<AddPinDialog> {
         await Provider.of<ApiService>(context, listen: false)
             .scenario
             .addPinsToScenario(_selectedScenarioId!, [newPin.id]);
-        
-        Provider.of<ScenarioViewModel>(context, listen: false).loadScenarios();
+        // mounted yeniden kontrol et (await sonrası context geçersiz olabilir)
+        if (context.mounted) {
+          Provider.of<ScenarioViewModel>(context, listen: false).loadScenarios();
+        }
       }
 
       if (context.mounted) {

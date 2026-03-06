@@ -8,7 +8,6 @@ REM  true  → Aktif (shapefile yükler, suitability kontrolü yapar)
 REM  false → Devre dışı (hızlı başlangıç, /geo endpoint'i kapalı)
 REM ============================================================
 set GEO_ANALYSIS_ENABLED=false
-
 echo.
 echo  [92m╔══════════════════════════════════════════════════════════════╗[0m
 echo  [92m║   ⚡  Smart Renewable Resource Planner — Backend v2.1.0      ║[0m
@@ -28,10 +27,16 @@ echo.
 echo  [90m──────────────────────────────────────────────────────────────[0m
 echo.
 cd backend
-if exist venv\Scripts\activate.bat (
-    call venv\Scripts\activate.bat
+
+REM Proje kokündeki .venv'i aktiflestirir (backend\venv degil, ..\.venv)
+if exist ..\.venv\Scripts\activate.bat (
+    call ..\.venv\Scripts\activate.bat
+) else (
+    echo  UYARI: .venv bulunamadi, sistem Python kullaniliyor.
 )
-uvicorn app.main:app --reload --host 0.0.0.0
+
+REM Dogrudan .venv icindeki uvicorn'u cagir (aktivasyon basarisiz olsa bile)
+..\.venv\Scripts\uvicorn.exe app.main:app --reload --host 0.0.0.0
 echo.
 echo  [91m✖  Sunucu durduruldu.[0m
 pause

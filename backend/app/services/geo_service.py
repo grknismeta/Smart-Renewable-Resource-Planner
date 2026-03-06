@@ -146,11 +146,25 @@ class GeoService:
         notes = []
         is_suitable = True
 
-        # 1. Mesafe Kontrolleri (Rüzgar daha hassas)
-        # Binalara en az 500m (0.005 derece) uzak olmalı (Gürültü/Gölgeleme)
-        if self._check_distance(self.buildings_gdf, point, 0.005): 
+        # 1. Binalara Mesafe — Türkiye Yenilenebilir Enerji Yönetmeliği: min 1500m
+        bldg_dist_m = self._get_distance_m(self.buildings_gdf, point)
+        if bldg_dist_m is not None:
+            if bldg_dist_m < 1500:
+                is_suitable = False
+                reasons.append(
+                    f"Yerleşim alanına çok yakın ({bldg_dist_m:.0f}m — "
+                    "Türkiye yönetmeliği min. 1500m gerektirir)"
+                )
+            elif bldg_dist_m < 3000:
+                notes.append(
+                    f"⚠️ En yakın bina {bldg_dist_m:.0f}m uzakta "
+                    "(yasal min. 1500m karşılanıyor, ancak dikkat)"
+                )
+            else:
+                notes.append(f"✅ En yakın yerleşim {bldg_dist_m:.0f}m uzakta")
+        elif self._check_distance(self.buildings_gdf, point, 0.0135):  # fallback ~1500m
             is_suitable = False
-            reasons.append("Yerleşim yerine/Binalara çok yakın (Güvenlik mesafesi)")
+            reasons.append("Yerleşim alanına çok yakın (min. 1500m güvenlik mesafesi gerekli)")
         
         # Şehir merkezinin içine kurulamaz (Landuse Residential)
         forbidden_land = ['residential', 'commercial', 'industrial', 'cemetery', 'military']
@@ -345,6 +359,24 @@ class GeoService:
                     if t in match_list:
                         target_list.append(f"{label}: {t}")
             except: pass
+
+    def _get_distance_m(self, gdf, point, search_deg: float = 0.05):
+        """En yakın geometriye mesafeyi metre olarak döndürür (None → veri yok)."""
+        if gdf is None:
+            return None
+        try:
+            bbox = box(
+                point.x - search_deg, point.y - search_deg,
+                point.x + search_deg, point.y + search_deg,
+            )
+            nearby = gdf[gdf.intersects(bbox)]
+            if nearby.empty:
+                return None
+            min_deg = float(nearby.distance(point).min())
+            # 1° ≈ 111,000 m (Türkiye enlemi için yaklaşık)
+            return min_deg * 111_000.0
+        except Exception:
+            return None
 
     def _check_type_positive(self, gdf, point, match_list, target_list, msg):
         if gdf is not None:

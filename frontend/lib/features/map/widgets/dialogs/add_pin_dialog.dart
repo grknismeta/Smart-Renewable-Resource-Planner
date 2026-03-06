@@ -50,6 +50,7 @@ class _AddPinDialogState extends State<AddPinDialog> {
 
   bool _isCheckingSuitability = true;
   bool _isSuitable = false;
+  bool _forceAdd = false; // "Yine de ekle" seçeneği
   String _suitabilityMessage = "Konum analiz ediliyor...";
   List<String> _suitabilityReasons = [];
 
@@ -127,15 +128,15 @@ class _AddPinDialogState extends State<AddPinDialog> {
           final solar = result['solar_details'];
           final wind = result['wind_details'];
           if (pinType == 'Güneş Paneli' && solar != null && solar['reasons'] != null) {
-            for (var r in solar['reasons']) reasons.add("Güneş: $r");
+            for (var r in solar['reasons']) { reasons.add("Güneş: $r"); }
           }
           if (pinType == 'Rüzgar Türbini' && wind != null && wind['reasons'] != null) {
-            for (var r in wind['reasons']) reasons.add("Rüzgar: $r");
+            for (var r in wind['reasons']) { reasons.add("Rüzgar: $r"); }
           }
           // Hiç neden yoksa solar+wind ikisini birden tara
           if (reasons.isEmpty) {
-            if (solar?['reasons'] != null) for (var r in solar['reasons']) reasons.add("Güneş: $r");
-            if (wind?['reasons'] != null) for (var r in wind['reasons']) reasons.add("Rüzgar: $r");
+            if (solar?['reasons'] != null) { for (var r in solar['reasons']) { reasons.add("Güneş: $r"); } }
+            if (wind?['reasons'] != null) { for (var r in wind['reasons']) { reasons.add("Rüzgar: $r"); } }
           }
         }
       }
@@ -288,6 +289,28 @@ class _AddPinDialogState extends State<AddPinDialog> {
                                     "• $r",
                                     style: TextStyle(color: theme.textColor, fontSize: 12),
                                   )),
+                                  const SizedBox(height: 8),
+                                  GestureDetector(
+                                    onTap: () => setState(() => _forceAdd = !_forceAdd),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          _forceAdd ? Icons.check_box : Icons.check_box_outline_blank,
+                                          size: 18,
+                                          color: Colors.orange,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Yine de buraya ekle',
+                                          style: TextStyle(
+                                            color: Colors.orange,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ]
                               ],
                             ),
@@ -343,7 +366,10 @@ class _AddPinDialogState extends State<AddPinDialog> {
                         controller: _basinAreaController,
                         label: 'Havza Alanı (km²) - Yağıştan debi tahmini için',
                         isNumber: true,
-                        onChanged: (val) => viewModel.setBasinArea(val),
+                        onChanged: (val) {
+                          viewModel.setBasinArea(val);
+                          setState(() {}); // sel uyarısını güncelle
+                        },
                         theme: theme,
                       ),
                       const SizedBox(height: 8),
@@ -355,6 +381,34 @@ class _AddPinDialogState extends State<AddPinDialog> {
                           fontStyle: FontStyle.italic,
                         ),
                       ),
+                      // Havza sel uyarısı
+                      if (_basinAreaController.text.isNotEmpty &&
+                          (double.tryParse(_basinAreaController.text) ?? 0) >= 50) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.warning_amber, color: Colors.orange, size: 16),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  'Geniş havza: Su tutma kapasitesi yüksek barajlarda taşkın riski oluşabilir. AFAD taşkın haritalarını inceleyin.',
+                                  style: TextStyle(
+                                    color: Colors.orange.shade800,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       // --- İKİ NOKTA RAKIM ANALİZİ ---
                       Container(
@@ -497,28 +551,52 @@ class _AddPinDialogState extends State<AddPinDialog> {
                     _buildTypeSelector(theme, viewModel),
                     const SizedBox(height: 20),
 
-                    // Equipment Selector
-                    Text(
-                      viewModel.selectedType == 'Güneş Paneli'
-                          ? 'Panel Modeli'
-                          : viewModel.selectedType == 'Hidroelektrik'
-                              ? 'Türbin Tipi'
-                              : 'Türbin Modeli',
-                      style: TextStyle(
-                        color: theme.secondaryTextColor,
-                        fontSize: 12,
+                    // Equipment Selector (HES için türbin otomatik seçilir)
+                    if (viewModel.selectedType != 'Hidroelektrik') ...[
+                      Text(
+                        viewModel.selectedType == 'Güneş Paneli'
+                            ? 'Panel Modeli'
+                            : 'Türbin Modeli',
+                        style: TextStyle(
+                          color: theme.secondaryTextColor,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    EquipmentSelectorWidget(
-                      equipments: viewModel.availableEquipments,
-                      selectedEquipmentId: viewModel.selectedEquipmentId,
-                      isLoading: viewModel.isLoadingEquipments,
-                      theme: theme,
-                      onChanged: (id) {
-                        if (id != null) viewModel.selectEquipment(id);
-                      },
-                    ),
+                      const SizedBox(height: 8),
+                      EquipmentSelectorWidget(
+                        equipments: viewModel.availableEquipments,
+                        selectedEquipmentId: viewModel.selectedEquipmentId,
+                        isLoading: viewModel.isLoadingEquipments,
+                        theme: theme,
+                        onChanged: (id) {
+                          if (id != null) viewModel.selectEquipment(id);
+                        },
+                      ),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.teal.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.teal, size: 16),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Türbin tipi, düşü yüksekliği ve debi değerlerine göre otomatik belirlenir.',
+                                style: TextStyle(
+                                  color: theme.secondaryTextColor,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
 
                     const SizedBox(height: 32),
 
@@ -526,7 +604,7 @@ class _AddPinDialogState extends State<AddPinDialog> {
                     MapDialogActionButtons(
                       theme: theme,
                       onCancel: () => Navigator.of(context).pop(),
-                      onSave: (viewModel.canSubmit && !_isCheckingSuitability && _isSuitable) ? () => _handleSave(context, viewModel) : null,
+                      onSave: (viewModel.canSubmit && !_isCheckingSuitability && (_isSuitable || _forceAdd)) ? () => _handleSave(context, viewModel) : null,
                       isSaving: viewModel.isSubmitting,
                     ),
                   ],
@@ -729,9 +807,19 @@ class _AddPinDialogState extends State<AddPinDialog> {
     // We should call MapViewModel.addPin here.
     
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
-    final capacityMw = viewModel.getSelectedCapacityMw();
-    
-    if (capacityMw == null) return;
+
+    // HES için ekipman seçimi zorunlu değil — backend debi+düşüden kapasiteyi hesaplar
+    double capacityMw;
+    if (viewModel.selectedType == 'Hidroelektrik') {
+      capacityMw = viewModel.getSelectedCapacityMw() ?? 0.0;
+    } else {
+      final cap = viewModel.getSelectedCapacityMw();
+      if (cap == null) {
+        MapDialogs.showErrorDialog(context, 'Lütfen bir ekipman modeli seçin.');
+        return;
+      }
+      capacityMw = cap;
+    }
 
     try {
       // 1. Pini ekle
@@ -742,9 +830,9 @@ class _AddPinDialogState extends State<AddPinDialog> {
         capacityMw,
         viewModel.selectedEquipmentId,
         viewModel.panelArea,
-        flowRate: viewModel.flowRate,
-        headHeight: viewModel.headHeight,
-        basinAreaKm2: viewModel.basinAreaKm2,
+        flowRate: viewModel.flowRate > 0 ? viewModel.flowRate : null,
+        headHeight: viewModel.headHeight > 0 ? viewModel.headHeight : null,
+        basinAreaKm2: viewModel.basinAreaKm2 > 0 ? viewModel.basinAreaKm2 : null,
       );
 
       // 2. Senaryo seçiliyse ona da ekle

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/core/theme/app_theme.dart';
+import 'package:frontend/core/utils/format_utils.dart';
 
 /// Modern enerji çıktısı gösterimi (Yıllık, Aylık, Haftalık)
 class EnergyOutputWidget extends StatelessWidget {
@@ -170,7 +171,7 @@ class EnergyOutputWidget extends StatelessWidget {
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: theme.textColor),
                     ),
                     Text(
-                      '${hydro.turbineType} Türbini — ${(hydro.turbineEfficiency * 100).toStringAsFixed(0)}% verim',
+                      '${hydro.turbineType} Türbini — ${FormatUtils.formatPercent(hydro.turbineEfficiency * 100, decimals: 0)} verim',
                       style: const TextStyle(fontSize: 12, color: Colors.teal),
                     ),
                   ],
@@ -208,7 +209,7 @@ class EnergyOutputWidget extends StatelessWidget {
                           ),
                           if (hydro.grossFlowRateM3s != null)
                             TextSpan(
-                              text: '  (Brüt: ${hydro.grossFlowRateM3s!.toStringAsFixed(2)} → Net: ${hydro.avgFlowRateM3s.toStringAsFixed(2)} m³/s)',
+                              text: '  (Brüt: ${FormatUtils.formatFlow(hydro.grossFlowRateM3s!)} → Net: ${FormatUtils.formatFlow(hydro.avgFlowRateM3s)})',
                               style: TextStyle(fontSize: 10, color: theme.secondaryTextColor),
                             ),
                         ],
@@ -235,9 +236,9 @@ class EnergyOutputWidget extends StatelessWidget {
           const SizedBox(height: 16),
           const Divider(),
           const SizedBox(height: 8),
-          _buildInfoRow('Ortalama Debi', '${hydro.avgFlowRateM3s.toStringAsFixed(2)} m³/s', Icons.water),
-          _buildInfoRow('Düşü Yüksekliği', '${hydro.headHeightM.toStringAsFixed(1)} m', Icons.height),
-          _buildInfoRow('Kapasite Faktörü', '${(hydro.capacityFactor * 100).toStringAsFixed(1)}%', Icons.battery_charging_full),
+          _buildInfoRow('Ortalama Debi', FormatUtils.formatFlow(hydro.avgFlowRateM3s), Icons.water),
+          _buildInfoRow('Düşü Yüksekliği', FormatUtils.formatMeters(hydro.headHeightM), Icons.height),
+          _buildInfoRow('Kapasite Faktörü', FormatUtils.formatPercent(hydro.capacityFactor * 100, decimals: 1), Icons.battery_charging_full),
           _buildInfoRow('Türbin Açıklaması', hydro.turbineDescription, Icons.info_outline),
           if (hydro.monthlyProduction != null && hydro.monthlyProduction!.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -490,12 +491,12 @@ class EnergyOutputWidget extends StatelessWidget {
       widgets.addAll([
         _buildInfoRow(
           'Panel Verimi',
-          '${(solar.panelEfficiency * 100).toStringAsFixed(1)}%',
+          FormatUtils.formatPercent(solar.panelEfficiency * 100, decimals: 1),
           Icons.solar_power,
         ),
         _buildInfoRow(
           'Performans Oranı',
-          '${(solar.performanceRatio * 100).toStringAsFixed(1)}%',
+          FormatUtils.formatPercent(solar.performanceRatio * 100, decimals: 1),
           Icons.speed,
         ),
         _buildInfoRow('Panel Modeli', solar.panelModel, Icons.build_circle),
@@ -507,12 +508,12 @@ class EnergyOutputWidget extends StatelessWidget {
       widgets.addAll([
         _buildInfoRow(
           'Kapasite Faktörü',
-          '${(wind.capacityFactor * 100).toStringAsFixed(1)}%',
+          FormatUtils.formatPercent(wind.capacityFactor * 100, decimals: 1),
           Icons.battery_charging_full,
         ),
         _buildInfoRow(
           'Rüzgar Hızı',
-          '${wind.windSpeedMS.toStringAsFixed(1)} m/s',
+          '${FormatUtils.formatDec1(wind.windSpeedMS)} m/s',
           Icons.air,
         ),
         _buildInfoRow('Türbin Modeli', wind.turbineModel, Icons.build_circle),
@@ -533,13 +534,17 @@ class EnergyOutputWidget extends StatelessWidget {
             label,
             style: TextStyle(fontSize: 13, color: theme.secondaryTextColor),
           ),
-          const Spacer(),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: theme.textColor,
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: theme.textColor,
+              ),
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
             ),
           ),
         ],
@@ -547,14 +552,6 @@ class EnergyOutputWidget extends StatelessWidget {
     );
   }
 
-  /// Enerji değerini formatla (kWh → MWh dönüşümü)
-  String _formatEnergy(double kWh) {
-    if (kWh >= 1000000) {
-      return '${(kWh / 1000000).toStringAsFixed(2)} GWh';
-    } else if (kWh >= 1000) {
-      return '${(kWh / 1000).toStringAsFixed(2)} MWh';
-    } else {
-      return '${kWh.toStringAsFixed(1)} kWh';
-    }
-  }
+  /// Enerji değerini formatla — FormatUtils üzerinden Türkçe format
+  String _formatEnergy(double kWh) => FormatUtils.formatEnergy(kWh);
 }

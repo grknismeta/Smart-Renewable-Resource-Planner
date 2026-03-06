@@ -46,6 +46,9 @@ class _PinsPanelState extends State<PinsPanel> {
     final windPins = widget.mapViewModel.pins
         .where((p) => p.type == 'Rüzgar Türbini')
         .toList();
+    final hesPins = widget.mapViewModel.pins
+        .where((p) => p.type == 'Hidroelektrik')
+        .toList();
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
@@ -66,7 +69,11 @@ class _PinsPanelState extends State<PinsPanel> {
             borderRadius: BorderRadius.circular(8),
             child: Row(
               children: [
-                Icon(Icons.location_on, color: widget.theme.textColor, size: 20),
+                Icon(
+                  Icons.location_on,
+                  color: widget.theme.textColor,
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'Pinlerim',
@@ -78,7 +85,10 @@ class _PinsPanelState extends State<PinsPanel> {
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: widget.theme.backgroundColor.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(10),
@@ -101,7 +111,7 @@ class _PinsPanelState extends State<PinsPanel> {
               ],
             ),
           ),
-          
+
           // Genişletilmiş Liste
           if (_isExpanded) ...[
             const SizedBox(height: 12),
@@ -128,9 +138,25 @@ class _PinsPanelState extends State<PinsPanel> {
                 Colors.blue,
               ),
               const SizedBox(height: 6),
-              ...windPins.map((pin) => _buildPinItem(context, pin, Colors.blue)),
+              ...windPins.map(
+                (pin) => _buildPinItem(context, pin, Colors.blue),
+              ),
+              const SizedBox(height: 8),
             ],
-            
+
+            // HES Kurulumları
+            if (hesPins.isNotEmpty) ...[
+              _buildCategoryHeader(
+                'HES Kurulumları',
+                hesPins.length,
+                const Color(0xFF00BCD4),
+              ),
+              const SizedBox(height: 6),
+              ...hesPins.map(
+                (pin) => _buildPinItem(context, pin, const Color(0xFF00BCD4)),
+              ),
+            ],
+
             if (widget.mapViewModel.pins.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -183,6 +209,9 @@ class _PinsPanelState extends State<PinsPanel> {
   }
 
   Widget _buildPinItem(BuildContext context, Pin pin, Color accentColor) {
+    final cityName = widget.mapViewModel.pinCityName(pin.id);
+    final coords = '(${pin.latitude.toStringAsFixed(3)}, ${pin.longitude.toStringAsFixed(3)})';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       child: Material(
@@ -205,6 +234,8 @@ class _PinsPanelState extends State<PinsPanel> {
                 Icon(
                   pin.type == 'Güneş Paneli'
                       ? Icons.wb_sunny
+                      : pin.type == 'Hidroelektrik'
+                      ? Icons.water_drop
                       : Icons.wind_power,
                   color: accentColor,
                   size: 16,
@@ -214,8 +245,21 @@ class _PinsPanelState extends State<PinsPanel> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Şehir/İlçe adı (en başta) veya pin adı
+                      if (cityName.isNotEmpty)
+                        Text(
+                          cityName,
+                          style: TextStyle(
+                            color: accentColor,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      // Pin adı + koordinat
                       Text(
-                        pin.name,
+                        cityName.isNotEmpty ? '${pin.name} $coords' : '${pin.name} $coords',
                         style: TextStyle(
                           color: widget.theme.textColor,
                           fontSize: 12,

@@ -16,7 +16,7 @@ import 'package:frontend/features/map/overlays/selection_indicators.dart';
 
 // Sidebar & Dialogs
 import 'package:frontend/features/sidebar/map_bottom_sheet.dart';
-import 'package:frontend/features/pins/dialogs/add_pin_dialog.dart';
+import 'package:frontend/features/map/widgets/dialogs/add_pin_dialog.dart';
 
 
 class MapScreen extends StatefulWidget {
@@ -96,8 +96,11 @@ class _MapScreenState extends State<MapScreen> {
                         onToggleLayers: () => setState(() => _showLayersPanel = !_showLayersPanel),
                         onZoomIn: _zoomIn,
                         onZoomOut: _zoomOut,
+                        onToggleVectorLayer: () =>
+                            mapViewModel.toggleVectorLayer(!mapViewModel.showVectorLayer),
                         isSelectingRegion: mapViewModel.isSelectingRegion,
                         isLayersPanelVisible: _showLayersPanel,
+                        showVectorLayer: mapViewModel.showVectorLayer,
                       ),
 
                      // 4. Map Bottom Sheet (Persistent Sidebar Replacement)
@@ -154,84 +157,30 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _checkGeoSuitability(MapViewModel viewModel, LatLng point) async {
-     // Invoke the VM/Service
-     // Show Loading Dialog
-    final theme = Provider.of<ThemeViewModel>(context, listen: false);
+     // Dialog kendi içinde geoCheck + uygunluk kontrolü yapıyor
+     if (!context.mounted) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        backgroundColor: theme.cardColor,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-               const CircularProgressIndicator(),
-               const SizedBox(width: 16),
-               Text("Analiz ediliyor...", style: TextStyle(color: theme.textColor)),
-            ],
-          ),
-        ),
-      ),
-    );
+     final apiService = Provider.of<ApiService>(context, listen: false);
+     final themeVM = Provider.of<ThemeViewModel>(context, listen: false);
+     final scenarioVM = Provider.of<ScenarioViewModel>(context, listen: false);
 
-     try {
-       await viewModel.geoCheck(point); // Geo kapalıysa hata vermez, devam eder
-       
-       if (context.mounted) Navigator.pop(context); // Close loading
-
-       // Geo kapalı veya serbest - her durumda devam et
-       if (context.mounted) {
-          final apiService = Provider.of<ApiService>(context, listen: false);
-          final themeVM = Provider.of<ThemeViewModel>(context, listen: false);
-          final scenarioVM = Provider.of<ScenarioViewModel>(context, listen: false);
-
-          showDialog(
-            context: context,
-            builder: (ctx) => MultiProvider(
-              providers: [
-                ChangeNotifierProvider<MapViewModel>.value(value: viewModel),
-                ChangeNotifierProvider<ThemeViewModel>.value(value: themeVM),
-                ChangeNotifierProvider<ScenarioViewModel>.value(value: scenarioVM),
-                Provider<ApiService>.value(value: apiService),
-              ],
-              child: AddPinDialog(
-                 point: point,
-                 initialPinType: viewModel.placingPinType ?? 'Güneş Paneli',
-              ),
-            ),
-          ).then((_) {
-             viewModel.stopPlacingMarker();
-          });
-       }
-     } catch (e) {
-        debugPrint("Geo Check Exception: $e");
-        if (context.mounted) Navigator.pop(context);
-        // Hata durumunda da dialog'u aç
-        if (context.mounted) {
-           final apiService = Provider.of<ApiService>(context, listen: false);
-           final themeVM = Provider.of<ThemeViewModel>(context, listen: false);
-           final scenarioVM = Provider.of<ScenarioViewModel>(context, listen: false);
-
-           showDialog(
-             context: context,
-             builder: (ctx) => MultiProvider(
-               providers: [
-                 ChangeNotifierProvider<MapViewModel>.value(value: viewModel),
-                 ChangeNotifierProvider<ThemeViewModel>.value(value: themeVM),
-                 ChangeNotifierProvider<ScenarioViewModel>.value(value: scenarioVM),
-                 Provider<ApiService>.value(value: apiService),
-               ],
-               child: AddPinDialog(
-                  point: point,
-                  initialPinType: viewModel.placingPinType ?? 'Güneş Paneli',
-               ),
-             ),
-           ).then((_) => viewModel.stopPlacingMarker());
-        }
-     }
+     showDialog(
+       context: context,
+       builder: (ctx) => MultiProvider(
+         providers: [
+           ChangeNotifierProvider<MapViewModel>.value(value: viewModel),
+           ChangeNotifierProvider<ThemeViewModel>.value(value: themeVM),
+           ChangeNotifierProvider<ScenarioViewModel>.value(value: scenarioVM),
+           Provider<ApiService>.value(value: apiService),
+         ],
+         child: AddPinDialog(
+            point: point,
+            initialPinType: viewModel.placingPinType ?? 'Güneş Paneli',
+         ),
+       ),
+     ).then((_) {
+        viewModel.stopPlacingMarker();
+     });
   }
 
   void _showPinTypePicker(MapViewModel viewModel) {
@@ -246,7 +195,7 @@ class _MapScreenState extends State<MapScreen> {
           children: [
             _pinTypeOption(theme, 'Güneş Paneli', Icons.wb_sunny, Colors.orange, viewModel),
             _pinTypeOption(theme, 'Rüzgar Türbini', Icons.air, Colors.lightBlue, viewModel),
-            _pinTypeOption(theme, 'HES', Icons.water, Colors.cyan, viewModel),
+            _pinTypeOption(theme, 'Hidroelektrik', Icons.water, Colors.cyan, viewModel),
           ],
         ),
       ),

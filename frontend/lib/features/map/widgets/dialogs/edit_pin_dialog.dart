@@ -10,7 +10,7 @@ import 'package:frontend/features/pins/viewmodels/pin_dialog_viewmodel.dart';
 
 import 'package:frontend/core/widgets/themed_inputs.dart';
 import 'package:frontend/features/pins/widgets/equipment_selector.dart';
-import 'package:frontend/features/map/widgets/dialogs/map_dialogs.dart'; // For error/calculation dialogs
+import 'package:frontend/features/map/widgets/dialogs/map_dialogs.dart';
 
 class EditPinDialog extends StatefulWidget {
   final Pin pin;
@@ -21,7 +21,7 @@ class EditPinDialog extends StatefulWidget {
     final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent, // Let content duplicate theme color
+      backgroundColor: Colors.transparent,
       builder: (_) => EditPinDialog(pin: pin),
     );
 
@@ -49,12 +49,26 @@ class _EditPinDialogState extends State<EditPinDialog> {
   late TextEditingController _nameController;
   late TextEditingController _panelAreaController;
 
+  // HES alanları
+  late TextEditingController _headHeightController;
+  late TextEditingController _flowRateController;
+  late TextEditingController _basinAreaController;
+
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.pin.name);
     _panelAreaController = TextEditingController(
       text: widget.pin.panelArea?.toStringAsFixed(1) ?? "100.0",
+    );
+    _headHeightController = TextEditingController(
+      text: widget.pin.headHeight?.toStringAsFixed(1) ?? '',
+    );
+    _flowRateController = TextEditingController(
+      text: widget.pin.flowRate?.toStringAsFixed(3) ?? '',
+    );
+    _basinAreaController = TextEditingController(
+      text: widget.pin.basinAreaKm2?.toStringAsFixed(1) ?? '',
     );
 
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
@@ -73,6 +87,9 @@ class _EditPinDialogState extends State<EditPinDialog> {
   void dispose() {
     _nameController.dispose();
     _panelAreaController.dispose();
+    _headHeightController.dispose();
+    _flowRateController.dispose();
+    _basinAreaController.dispose();
     _viewModel.dispose();
     super.dispose();
   }
@@ -83,6 +100,7 @@ class _EditPinDialogState extends State<EditPinDialog> {
     final iconColor = MapConstants.getForegroundColor(widget.pin.type);
     final bgColor = MapConstants.getBackgroundColor(widget.pin.type);
     final iconData = MapConstants.getIcon(widget.pin.type);
+    final isHes = widget.pin.type == 'Hidroelektrik';
 
     return ChangeNotifierProvider.value(
       value: _viewModel,
@@ -101,7 +119,7 @@ class _EditPinDialogState extends State<EditPinDialog> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- Header Info ---
+                  // --- Header ---
                   Row(
                     children: [
                       Container(
@@ -126,10 +144,11 @@ class _EditPinDialogState extends State<EditPinDialog> {
                             ),
                           ),
                           Text(
-                            'ID: ${widget.pin.id}',
+                            widget.pin.type,
                             style: TextStyle(
-                              color: theme.secondaryTextColor,
-                              fontSize: 12,
+                              color: iconColor,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
@@ -137,16 +156,20 @@ class _EditPinDialogState extends State<EditPinDialog> {
                     ],
                   ),
                   const SizedBox(height: 10),
+                  // Koordinat bilgisi
                   Text(
-                    'Yıllık Potansiyel: ${widget.pin.avgSolarIrradiance?.toStringAsFixed(2) ?? 'N/A'} kWh/m²',
-                    style: TextStyle(color: theme.textColor),
+                    '${widget.pin.latitude.toStringAsFixed(4)}, ${widget.pin.longitude.toStringAsFixed(4)}',
+                    style: TextStyle(
+                      color: theme.secondaryTextColor,
+                      fontSize: 12,
+                    ),
                   ),
                   Divider(
                     color: theme.secondaryTextColor.withValues(alpha: 0.2),
                     height: 24,
                   ),
 
-                  // --- Inputs ---
+                  // --- Ad ---
                   ThemedTextField(
                     controller: _nameController,
                     label: 'Kaynak Adı',
@@ -154,45 +177,106 @@ class _EditPinDialogState extends State<EditPinDialog> {
                   ),
                   const SizedBox(height: 16),
 
-                  ThemedDropdown<String>(
-                    value: viewModel.selectedType,
-                    label: 'Kaynak Tipi',
-                    theme: theme,
-                    items: ['Güneş Paneli', 'Rüzgar Türbini']
-                        .map(
-                          (t) => DropdownMenuItem(
-                            value: t,
-                            child: Text(
-                              t,
-                              style: TextStyle(color: theme.textColor),
+                  // --- Tip Seçimi (HES için sabit göster, değiştirme) ---
+                  if (!isHes) ...[
+                    ThemedDropdown<String>(
+                      value: viewModel.selectedType,
+                      label: 'Kaynak Tipi',
+                      theme: theme,
+                      items: ['Güneş Paneli', 'Rüzgar Türbini', 'Hidroelektrik']
+                          .map(
+                            (t) => DropdownMenuItem(
+                              value: t,
+                              child: Text(
+                                t,
+                                style: TextStyle(color: theme.textColor),
+                              ),
                             ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (val) {
-                      if (val != null) viewModel.changeType(val);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-
-                  EquipmentSelectorWidget(
-                    equipments: viewModel.availableEquipments,
-                    selectedEquipmentId: viewModel.selectedEquipmentId,
-                    isLoading: viewModel.isLoadingEquipments,
-                    onChanged: (id) {
-                      if (id != null) viewModel.selectEquipment(id);
-                    },
-                    theme: theme,
-                  ),
-
-                  if (viewModel.selectedType == 'Güneş Paneli') ...[
+                          )
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) viewModel.changeType(val);
+                      },
+                    ),
                     const SizedBox(height: 16),
+                  ],
+
+                  // --- HES Alanları ---
+                  if (viewModel.selectedType == 'Hidroelektrik') ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.teal.withValues(alpha: 0.25)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.water_drop, color: Colors.teal, size: 16),
+                              const SizedBox(width: 6),
+                              Text(
+                                'HES Parametreleri',
+                                style: TextStyle(
+                                  color: Colors.teal,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          ThemedTextField(
+                            controller: _headHeightController,
+                            label: 'Düşü Yüksekliği (m)',
+                            isNumber: true,
+                            theme: theme,
+                          ),
+                          const SizedBox(height: 10),
+                          ThemedTextField(
+                            controller: _flowRateController,
+                            label: 'Debi (m³/s)',
+                            isNumber: true,
+                            theme: theme,
+                          ),
+                          const SizedBox(height: 10),
+                          ThemedTextField(
+                            controller: _basinAreaController,
+                            label: 'Havza Alanı (km²)',
+                            isNumber: true,
+                            theme: theme,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // --- Güneş Panel Alanı ---
+                  if (viewModel.selectedType == 'Güneş Paneli') ...[
                     ThemedTextField(
                       controller: _panelAreaController,
                       label: 'Panel Alanı (m²)',
                       theme: theme,
                       isNumber: true,
                     ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // --- Ekipman Seçici (Sadece Güneş ve Rüzgar için) ---
+                  if (viewModel.selectedType != 'Hidroelektrik') ...[
+                    EquipmentSelectorWidget(
+                      equipments: viewModel.availableEquipments,
+                      selectedEquipmentId: viewModel.selectedEquipmentId,
+                      isLoading: viewModel.isLoadingEquipments,
+                      onChanged: (id) {
+                        if (id != null) viewModel.selectEquipment(id);
+                      },
+                      theme: theme,
+                    ),
+                    const SizedBox(height: 16),
                   ],
 
                   if (viewModel.isSubmitting)
@@ -200,33 +284,27 @@ class _EditPinDialogState extends State<EditPinDialog> {
                       padding: EdgeInsets.symmetric(vertical: 16),
                       child: Center(child: CircularProgressIndicator()),
                     ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 8),
 
-                  // --- Actions ---
+                  // --- Aksiyonlar ---
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Delete Button
                       IconButton(
                         icon: const Icon(Icons.delete, color: Colors.redAccent),
                         onPressed: () => _handleDelete(context),
                       ),
-
                       Row(
                         children: [
-                          // Save Button
                           OutlinedButton.icon(
                             icon: const Icon(Icons.save),
                             label: const Text('Kaydet'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.blue,
                             ),
-                            onPressed: viewModel.canSubmit
-                                ? () => _handleUpdate(context, viewModel)
-                                : null,
+                            onPressed: () => _handleUpdate(context, viewModel),
                           ),
                           const SizedBox(width: 8),
-                          // Calculate Button
                           ElevatedButton.icon(
                             icon: const Icon(Icons.calculate),
                             label: const Text('Hesapla'),
@@ -234,9 +312,7 @@ class _EditPinDialogState extends State<EditPinDialog> {
                               backgroundColor: Colors.green,
                               foregroundColor: Colors.white,
                             ),
-                            onPressed: viewModel.canSubmit
-                                ? () => _handleCalculate(context, viewModel)
-                                : null,
+                            onPressed: () => _handleCalculate(context, viewModel),
                           ),
                         ],
                       ),
@@ -274,21 +350,29 @@ class _EditPinDialogState extends State<EditPinDialog> {
       final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
       try {
         await mapViewModel.deletePin(widget.pin.id);
-        if (context.mounted) Navigator.pop(context); // Close bottom sheet
+        if (context.mounted) Navigator.pop(context);
       } catch (e) {
         if (context.mounted) MapDialogs.showErrorDialog(context, e.toString());
       }
     }
   }
 
-  Future<void> _performUpdate(
-    BuildContext context,
-    PinDialogViewModel viewModel,
-  ) async {
+  Future<void> _performUpdate(BuildContext context, PinDialogViewModel viewModel) async {
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
-    final capacityMw = viewModel.getSelectedCapacityMw();
+    final isHes = viewModel.selectedType == 'Hidroelektrik';
 
-    if (capacityMw == null) throw Exception("Kapasite seçilmedi");
+    double capacityMw;
+    if (isHes) {
+      capacityMw = viewModel.getSelectedCapacityMw() ?? widget.pin.capacityMw;
+    } else {
+      final cap = viewModel.getSelectedCapacityMw();
+      if (cap == null) throw Exception("Lütfen bir ekipman modeli seçin.");
+      capacityMw = cap;
+    }
+
+    final headHeight = double.tryParse(_headHeightController.text.trim());
+    final flowRate = double.tryParse(_flowRateController.text.trim());
+    final basinArea = double.tryParse(_basinAreaController.text.trim());
 
     await mapViewModel.updatePin(
       widget.pin.id,
@@ -296,18 +380,17 @@ class _EditPinDialogState extends State<EditPinDialog> {
       _nameController.text,
       viewModel.selectedType,
       capacityMw,
-      viewModel.selectedEquipmentId,
-      double.tryParse(_panelAreaController.text),
+      isHes ? null : viewModel.selectedEquipmentId,
+      isHes ? null : double.tryParse(_panelAreaController.text),
+      flowRate: flowRate,
+      headHeight: headHeight,
+      basinAreaKm2: basinArea,
     );
   }
 
-  Future<void> _handleUpdate(
-    BuildContext context,
-    PinDialogViewModel viewModel,
-  ) async {
+  Future<void> _handleUpdate(BuildContext context, PinDialogViewModel viewModel) async {
     try {
       await _performUpdate(context, viewModel);
-
       if (context.mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -322,30 +405,28 @@ class _EditPinDialogState extends State<EditPinDialog> {
     }
   }
 
-  Future<void> _handleCalculate(
-    BuildContext context,
-    PinDialogViewModel viewModel,
-  ) async {
+  Future<void> _handleCalculate(BuildContext context, PinDialogViewModel viewModel) async {
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
+    final isHes = viewModel.selectedType == 'Hidroelektrik';
 
     try {
-      // 1. Önce güncellemeyi yap (Pop etmeden)
       await _performUpdate(context, viewModel);
 
-      // 2. Kapasite bilgisini tekrar al
-      final capacityMw = viewModel.getSelectedCapacityMw();
-      if (capacityMw == null) return;
+      final capacityMw = isHes
+          ? (viewModel.getSelectedCapacityMw() ?? widget.pin.capacityMw)
+          : (viewModel.getSelectedCapacityMw() ?? 0.0);
 
-      // 3. Hesaplamayı başlat
       await mapViewModel.calculatePotential(
         lat: widget.pin.latitude,
         lon: widget.pin.longitude,
         type: viewModel.selectedType,
         capacityMw: capacityMw,
         panelArea: double.tryParse(_panelAreaController.text) ?? 0.0,
+        flowRate: double.tryParse(_flowRateController.text.trim()),
+        headHeight: double.tryParse(_headHeightController.text.trim()),
+        basinAreaKm2: double.tryParse(_basinAreaController.text.trim()),
       );
 
-      // 4. Sonuç varsa dialogu kapat ve sonucu dön
       if (mapViewModel.latestCalculationResult != null && context.mounted) {
         if (Navigator.canPop(context)) {
           Navigator.of(context).pop(mapViewModel.latestCalculationResult);
