@@ -173,12 +173,12 @@ def _fetch_city_stats(hours: int) -> List[dict]:
     """
     db = SystemSessionLocal()
     try:
-        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+        since = datetime.now() - timedelta(hours=hours)  # naive, DB'deki kayıtlarla uyumlu
         result = db.execute(text("""
             SELECT
                 city_name,
-                AVG(lat)               AS lat,
-                AVG(lon)               AS lon,
+                AVG(latitude)          AS lat,
+                AVG(longitude)         AS lon,
                 AVG(wind_speed_10m)    AS avg_wind,
                 MAX(wind_speed_10m)    AS max_wind,
                 STDDEV(wind_speed_10m) AS std_wind,

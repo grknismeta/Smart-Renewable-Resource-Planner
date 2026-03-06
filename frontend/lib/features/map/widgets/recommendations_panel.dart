@@ -188,17 +188,56 @@ class _RecommendationsPanelState extends State<RecommendationsPanel>
                     ),
                   )
 
-                // Boş veri
+                // Boş veri / ML yakında
                 else if (vm.recommendations == null || vm.recommendations!.isEmpty)
                   Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Text(
-                      'Yeterli hava verisi bulunamadı.\nBir süre sonra tekrar deneyin.',
-                      style: TextStyle(
-                        color: theme.secondaryTextColor,
-                        fontSize: 12,
-                      ),
-                      textAlign: TextAlign.center,
+                    child: Column(
+                      children: [
+                        const Icon(
+                          Icons.auto_awesome_mosaic_rounded,
+                          color: Colors.purpleAccent,
+                          size: 32,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'ML Tabanlı Öneri',
+                          style: TextStyle(
+                            color: theme.textColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Makine öğrenimi ile güçlendirilmiş\nbölge önerileri yakında aktif olacak.',
+                          style: TextStyle(
+                            color: theme.secondaryTextColor,
+                            fontSize: 11,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.purpleAccent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.purpleAccent.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: const Text(
+                            '🚀 Geliştirme Aşamasında',
+                            style: TextStyle(
+                              color: Colors.purpleAccent,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   )
 

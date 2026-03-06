@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SRRP — Akıllı Yenilenebilir Kaynak Planlayıcı</title>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- AOS Scroll Animations -->
+  <link href="https://unpkg.com/aos@2.3.4/dist/aos.css" rel="stylesheet">
+  <script src="https://unpkg.com/aos@2.3.4/dist/aos.js"></script>
+
+  <style>
+    /* ── Temel ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green:   #00e5a0;
+      --blue:    #56CCF2;
+      --purple:  #A78BFA;
+      --orange:  #F6A623;
+      --bg:      #0a0f1e;
+      --card:    #111827;
+      --card2:   #1a2035;
+      --border:  rgba(255,255,255,0.07);
+      --text:    #e2e8f0;
+      --muted:   #64748b;
+      --radius:  16px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+    }
+
+    /* ── Yardımcı ── */
+    .container { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+    .section    { padding: 100px 0; }
+    .section-title {
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      font-weight: 800;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+    .section-sub {
+      text-align: center;
+      color: var(--muted);
+      font-size: 1rem;
+      margin-bottom: 60px;
+    }
+    .badge {
+      display: inline-block;
+      background: rgba(0,229,160,.12);
+      color: var(--green);
+      border: 1px solid rgba(0,229,160,.3);
+      border-radius: 999px;
+      padding: 4px 14px;
+      font-size: .78rem;
+      font-weight: 600;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+    .gradient-text {
+      background: linear-gradient(135deg, var(--green) 0%, var(--blue) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ══════════════════════════════════════════
+       1. HERO
+    ══════════════════════════════════════════ */
+    #hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    /* Işıyan arka plan topları */
+    #hero::before {
+      content: '';
+      position: absolute;
+      width: 700px; height: 700px;
+      background: radial-gradient(circle, rgba(0,229,160,.12) 0%, transparent 70%);
+      top: -150px; left: -200px;
+      pointer-events: none;
+    }
+    #hero::after {
+      content: '';
+      position: absolute;
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(86,204,242,.10) 0%, transparent 70%);
+      bottom: -100px; right: -100px;
+      pointer-events: none;
+    }
+
+    /* Parçacık tuvali */
+    #particles-canvas {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .hero-inner {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+    }
+
+    @media (max-width: 768px) {
+      .hero-inner { grid-template-columns: 1fr; text-align: center; }
+    }
+
+    .hero-eyebrow {
+      font-size: .85rem;
+      color: var(--green);
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    .hero-title {
+      font-size: clamp(2.4rem, 5vw, 3.8rem);
+      font-weight: 900;
+      line-height: 1.1;
+      margin-bottom: 22px;
+    }
+
+    .hero-desc {
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.75;
+      max-width: 480px;
+      margin-bottom: 36px;
+    }
+
+    .hero-actions { display: flex; gap: 14px; flex-wrap: wrap; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--green), #00b37e);
+      color: #0a1a0f;
+      font-weight: 700;
+      font-size: .95rem;
+      padding: 14px 28px;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: box-shadow .25s, transform .2s;
+    }
+    .btn-primary:hover {
+      box-shadow: 0 0 28px rgba(0,229,160,.45);
+      transform: translateY(-2px);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text);
+      font-weight: 600;
+      font-size: .95rem;
+      padding: 14px 28px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: background .2s, border-color .2s;
+    }
+    .btn-ghost:hover {
+      background: rgba(255,255,255,.05);
+      border-color: rgba(255,255,255,.2);
+    }
+
+    /* Sağ: Canlı stat kartları */
+    .hero-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+      transition: border-color .3s, transform .2s;
+    }
+    .stat-card:hover {
+      border-color: rgba(0,229,160,.3);
+      transform: translateY(-3px);
+    }
+    .stat-icon {
+      font-size: 1.6rem;
+      margin-bottom: 10px;
+    }
+    .stat-number {
+      font-size: 1.9rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .stat-label {
+      font-size: .78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    /* ══════════════════════════════════════════
+       2. TİMELINE
+    ══════════════════════════════════════════ */
+    #timeline { background: var(--card); }
+
+    .timeline-scroll {
+      position: relative;
+      padding: 40px 0;
+      overflow-x: auto;
+      cursor: grab;
+      user-select: none;
+    }
+    .timeline-scroll:active { cursor: grabbing; }
+
+    .timeline-track {
+      display: flex;
+      gap: 0;
+      padding: 0 60px;
+      min-width: max-content;
+      position: relative;
+    }
+
+    /* Yatay çizgi */
+    .timeline-track::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 60px;
+      right: 60px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--green), var(--blue), var(--purple), transparent);
+      transform: translateY(-50%);
+      z-index: 0;
+    }
+
+    .tl-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: 200px;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Abonelik: üst/alt alternatif */
+    .tl-item:nth-child(odd)  { flex-direction: column; }
+    .tl-item:nth-child(even) { flex-direction: column-reverse; }
+
+    .tl-card {
+      background: var(--card2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      width: 180px;
+      transition: border-color .3s, transform .25s;
+    }
+    .tl-card:hover {
+      border-color: var(--green);
+      transform: scale(1.04);
+    }
+
+    .tl-year {
+      font-size: .72rem;
+      font-weight: 700;
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+    .tl-event {
+      font-size: .82rem;
+      color: var(--text);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .tl-detail {
+      font-size: .75rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .tl-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--green);
+      border: 2px solid var(--bg);
+      flex-shrink: 0;
+      transition: transform .2s, background .2s;
+    }
+    .tl-item:hover .tl-dot { transform: scale(1.5); background: var(--blue); }
+
+    .tl-dot.future { background: var(--purple); }
+
+    .tl-drag-hint {
+      text-align: center;
+      color: var(--muted);
+      font-size: .8rem;
+      margin-top: 20px;
+      animation: pulse-fade 2s ease-in-out infinite;
+    }
+    @keyframes pulse-fade {
+      0%,100% { opacity: .4; }
+      50% { opacity: 1; }
+    }
+
+    /* ══════════════════════════════════════════
+       3. ENERJİ KARIŞIMI (CHARTS)
+    ══════════════════════════════════════════ */
+    #charts { background: var(--bg); }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+    }
+    @media (max-width: 768px) { .charts-grid { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+    }
+    .chart-card h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .chart-card p {
+      font-size: .8rem;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+    .chart-wrap {
+      position: relative;
+      height: 260px;
+      display: flex;
+      justify-content: center;
+    }
+
+    /* ══════════════════════════════════════════
+       4. HEDEFLER
+    ══════════════════════════════════════════ */
+    #goals { background: var(--card); }
+
+    .goals-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+    @media (max-width: 900px) { .goals-grid { grid-template-columns: 1fr; } }
+
+    .goal-card {
+      background: var(--card2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+    }
+    .goal-year {
+      font-size: 2rem;
+      font-weight: 900;
+      margin-bottom: 4px;
+    }
+    .goal-tag {
+      font-size: .72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 20px;
+    }
+    .goal-item {
+      margin-bottom: 16px;
+    }
+    .goal-item-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      font-size: .82rem;
+    }
+    .goal-item-label { color: var(--muted); }
+    .goal-item-value { font-weight: 700; }
+    .progress-bar {
+      height: 6px;
+      background: rgba(255,255,255,.07);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 1.5s ease;
+      width: 0%;
+    }
+
+    /* ══════════════════════════════════════════
+       5. ÖZELLİKLER
+    ══════════════════════════════════════════ */
+    #features { background: var(--bg); }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 1000px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 600px)  { .features-grid { grid-template-columns: 1fr; } }
+
+    .feature-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 22px;
+      transition: border-color .3s, transform .25s;
+    }
+    .feature-card:hover {
+      border-color: rgba(0,229,160,.35);
+      transform: translateY(-4px);
+    }
+
+    .feature-icon {
+      font-size: 2rem;
+      margin-bottom: 16px;
+      display: block;
+    }
+    .feature-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .feature-desc {
+      font-size: .83rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    /* ══════════════════════════════════════════
+       6. BÖLGESEL POTANSİYEL
+    ══════════════════════════════════════════ */
+    #regions { background: var(--card); }
+
+    .regions-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 900px) { .regions-grid { grid-template-columns: 1fr; } }
+
+    .region-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      transition: border-color .3s, transform .2s;
+    }
+    .region-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(255,255,255,.15);
+    }
+    .region-emoji {
+      font-size: 2rem;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .region-name {
+      font-size: .9rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .region-type {
+      font-size: .72rem;
+      color: var(--green);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 8px;
+    }
+    .region-desc {
+      font-size: .8rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    /* ══════════════════════════════════════════
+       7. CTA
+    ══════════════════════════════════════════ */
+    #cta {
+      background: linear-gradient(135deg, #0d2137 0%, #0a1a26 50%, #0d1a2e 100%);
+      text-align: center;
+      padding: 120px 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    #cta::before {
+      content: '';
+      position: absolute;
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(0,229,160,.1) 0%, transparent 65%);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    #cta .section-title { font-size: clamp(1.8rem, 4vw, 2.8rem); position: relative; z-index: 1; }
+    #cta .section-sub   { max-width: 500px; margin: 0 auto 40px; position: relative; z-index: 1; }
+    .cta-actions        { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; position: relative; z-index: 1; }
+
+    /* ══════════════════════════════════════════
+       NAV
+    ══════════════════════════════════════════ */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      background: rgba(10,15,30,.85);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+    }
+    .nav-inner {
+      max-width: 1160px;
+      margin: 0 auto;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-logo {
+      font-size: 1.1rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--green), var(--blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-decoration: none;
+    }
+    .nav-links {
+      display: flex;
+      gap: 28px;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: .88rem;
+      font-weight: 500;
+      transition: color .2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+
+    @media (max-width: 600px) { .nav-links { display: none; } }
+
+    /* Scroll indicator */
+    #scroll-progress {
+      position: fixed;
+      top: 60px; left: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--green), var(--blue));
+      z-index: 101;
+      width: 0%;
+      transition: width .1s;
+    }
+
+    /* ══════════════════════════════════════════
+       FOOTER
+    ══════════════════════════════════════════ */
+    footer {
+      background: #060c18;
+      padding: 40px 24px;
+      text-align: center;
+      color: var(--muted);
+      font-size: .82rem;
+      border-top: 1px solid var(--border);
+    }
+    footer span { color: var(--green); }
+  </style>
+</head>
+<body>
+
+  <!-- Scroll Progress -->
+  <div id="scroll-progress"></div>
+
+  <!-- ── NAV ── -->
+  <nav>
+    <div class="nav-inner">
+      <a class="nav-logo" href="#">⚡ SRRP</a>
+      <ul class="nav-links">
+        <li><a href="#timeline">Tarihçe</a></li>
+        <li><a href="#charts">Durum</a></li>
+        <li><a href="#goals">Hedefler</a></li>
+        <li><a href="#features">Özellikler</a></li>
+        <li><a href="#regions">Bölgeler</a></li>
+        <li><a href="#cta" style="color:var(--green)">Başla →</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ══════════════════════════════════════════
+       1. HERO
+  ══════════════════════════════════════════ -->
+  <section id="hero">
+    <canvas id="particles-canvas"></canvas>
+    <div class="container">
+      <div class="hero-inner">
+
+        <!-- Sol: Metin -->
+        <div>
+          <div class="hero-eyebrow">⚡ Smart Renewable Resource Planner</div>
+          <h1 class="hero-title">
+            Türkiye'nin<br>
+            <span class="gradient-text">Enerji Geleceğini</span><br>
+            Planlayın
+          </h1>
+          <p class="hero-desc">
+            Güneş, rüzgar ve HES potansiyelini harita üzerinde analiz edin.
+            Senaryo simülasyonları oluşturun, Weibull analizleriyle en iyi
+            bölgeleri keşfedin ve 2053 hedeflerine giden yolu planlayın.
+          </p>
+          <div class="hero-actions">
+            <a href="#" class="btn-primary">🚀 Uygulamayı Aç</a>
+            <a href="#timeline" class="btn-ghost">📊 Türkiye'nin Yolculuğu</a>
+          </div>
+        </div>
+
+        <!-- Sağ: İstatistik Kartları -->
+        <div class="hero-stats">
+          <div class="stat-card" data-aos="fade-up" data-aos-delay="100">
+            <div class="stat-icon">☀️</div>
+            <div class="stat-number gradient-text" data-counter="30" data-suffix=" GW">0</div>
+            <div class="stat-label">Kurulu Güneş (2025)</div>
+          </div>
+          <div class="stat-card" data-aos="fade-up" data-aos-delay="200">
+            <div class="stat-icon">💨</div>
+            <div class="stat-number" style="color:var(--blue)" data-counter="13" data-suffix=" GW">0</div>
+            <div class="stat-label">Kurulu Rüzgar (2025)</div>
+          </div>
+          <div class="stat-card" data-aos="fade-up" data-aos-delay="300">
+            <div class="stat-icon">💧</div>
+            <div class="stat-number" style="color:var(--blue)" data-counter="32" data-suffix=" GW">0</div>
+            <div class="stat-label">Hidroelektrik</div>
+          </div>
+          <div class="stat-card" data-aos="fade-up" data-aos-delay="400">
+            <div class="stat-icon">🌿</div>
+            <div class="stat-number" style="color:var(--purple)" data-counter="59" data-suffix="%">0</div>
+            <div class="stat-label">Yenilenebilir Payı (2025)</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       2. TİMELINE
+  ══════════════════════════════════════════ -->
+  <section id="timeline" class="section">
+    <div class="container">
+      <div class="badge">📅 Tarihçe</div>
+      <h2 class="section-title">Türkiye'nin Enerji Dönüşümü</h2>
+      <p class="section-sub">2002'den net-sıfır hedefine — 50 yıllık yolculuk</p>
+    </div>
+
+    <div class="timeline-scroll" id="tl-scroll">
+      <div class="timeline-track" id="tl-track">
+
+        <!-- GEÇMIŞ -->
+        <div class="tl-item">
+          <div class="tl-card">
+            <div class="tl-year">2002</div>
+            <div class="tl-event">Başlangıç Noktası</div>
+            <div class="tl-detail">32 GW kurulu kapasite. Enerji üretiminin %75'i fosil yakıt.</div>
+          </div>
+          <div class="tl-dot"></div>
+        </div>
+
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-year">2005</div>
+            <div class="tl-event">Yenilenebilir Enerji Kanunu</div>
+            <div class="tl-detail">5346 sayılı kanun. Destekleme mekanizmaları oluşturuldu.</div>
+          </div>
+        </div>
+
+        <div class="tl-item">
+          <div class="tl-card">
+            <div class="tl-year">2010</div>
+            <div class="tl-event">Rüzgar Atılımı</div>
+            <div class="tl-detail">Rüzgar kapasitesi 1.3 GW'a ulaştı. İlk offshore planları.</div>
+          </div>
+          <div class="tl-dot"></div>
+        </div>
+
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-year">2013</div>
+            <div class="tl-event">Güneş Çağı Başlıyor</div>
+            <div class="tl-detail">Türkiye'nin ilk büyük güneş santrali Konya'da devreye girdi.</div>
+          </div>
+        </div>
+
+        <div class="tl-item">
+          <div class="tl-card">
+            <div class="tl-year">2017</div>
+            <div class="tl-event">YEKA İhale Modeli</div>
+            <div class="tl-detail">Güneş 3 GW, Rüzgar 6.5 GW. Yüzyılın en büyük ihale modeli hayata geçti.</div>
+          </div>
+          <div class="tl-dot"></div>
+        </div>
+
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div class="tl-year">2020</div>
+            <div class="tl-event">%49 Yenilenebilir</div>
+            <div class="tl-detail">Pandemi döneminde yenilenebilir payı %49'a çıktı. Tarihi rekor.</div>
+          </div>
+        </div>
+
+        <div class="tl-item">
+          <div class="tl-card">
+            <div class="tl-year">2022</div>
+            <div class="tl-event">Enerji Bağımsızlığı</div>
+            <div class="tl-detail">Ukrayna krizi ivme kattı. Güneş kurulumları 2 katına çıktı.</div>
+          </div>
+          <div class="tl-dot"></div>
+        </div>
+
+        <div class="tl-item">
+          <div class="tl-card" style="border-color:rgba(0,229,160,.3)">
+            <div class="tl-year" style="color:var(--green)">2024</div>
+            <div class="tl-event">%57 Yenilenebilir</div>
+            <div class="tl-detail">25 GW güneş, 11.5 GW rüzgar, 32 GW HES. 105 GW toplam kapasite.</div>
+          </div>
+          <div class="tl-dot"></div>
+        </div>
+
+        <div class="tl-item">
+          <div class="tl-dot" style="background:var(--green)"></div>
+          <div class="tl-card" style="border-color:rgba(0,229,160,.5);box-shadow:0 0 16px rgba(0,229,160,.15)">
+            <div class="tl-year" style="color:var(--green)">2026 — BUGÜN</div>
+            <div class="tl-event">SRRP Hayata Geçti 🚀</div>
+            <div class="tl-detail">~30 GW güneş, ~13 GW rüzgar. Weibull analizi + ML tabanlı bölge önerileri uygulamada.</div>
+          </div>
+        </div>
+
+        <!-- GELECEK -->
+        <div class="tl-item">
+          <div class="tl-card" style="border-color:rgba(167,139,250,.3)">
+            <div class="tl-year" style="color:var(--purple)">2030 — HEDEF</div>
+            <div class="tl-event">120 GW Yenilenebilir</div>
+            <div class="tl-detail">52.9 GW güneş + 29.6 GW rüzgar + HES. OECD iklim taahhüdü.</div>
+          </div>
+          <div class="tl-dot future"></div>
+        </div>
+
+        <div class="tl-item">
+          <div class="tl-dot future"></div>
+          <div class="tl-card" style="border-color:rgba(167,139,250,.3)">
+            <div class="tl-year" style="color:var(--purple)">2035 — HEDEF</div>
+            <div class="tl-event">%60+ Yenilenebilir</div>
+            <div class="tl-detail">Elektriğin %60'ı yenilenebilir kaynaklardan üretilecek.</div>
+          </div>
+        </div>
+
+        <div class="tl-item">
+          <div class="tl-card" style="border-color:rgba(86,204,242,.3)">
+            <div class="tl-year" style="color:var(--blue)">2053 — VİZYON</div>
+            <div class="tl-event">Net-Sıfır Türkiye</div>
+            <div class="tl-detail">Paris Anlaşması kapsamında karbon nötrlük hedefi. Tam yeşil enerji.</div>
+          </div>
+          <div class="tl-dot" style="background:var(--blue)"></div>
+        </div>
+
+      </div>
+    </div>
+    <p class="tl-drag-hint container">← Sürükleyerek kaydırın →</p>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       3. ENERJİ KARIŞIMI
+  ══════════════════════════════════════════ -->
+  <section id="charts" class="section">
+    <div class="container">
+      <div class="badge">📊 Mevcut Durum</div>
+      <h2 class="section-title">Türkiye Enerji Karışımı — 2025</h2>
+      <p class="section-sub">Toplam kurulu kapasite ~110 GW · Kaynak: EPDK / TEİAŞ / IRENA (2024 doğrulanmış, 2025 tahmini)</p>
+
+      <div class="charts-grid">
+
+        <!-- Donut: Kaynak Dağılımı -->
+        <div class="chart-card" data-aos="fade-right">
+          <h3>Kurulu Kapasite Dağılımı</h3>
+          <p>Kaynak tipine göre toplam 105 GW kurulu güç</p>
+          <div class="chart-wrap">
+            <canvas id="donutChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Bar: Yıllık Üretim Trendi -->
+        <div class="chart-card" data-aos="fade-left">
+          <h3>Yenilenebilir Kapasite Trendi</h3>
+          <p>2015–2025 yılları arası yıllık kurulu kapasite (GW) · *2025 tahmini</p>
+          <div class="chart-wrap">
+            <canvas id="trendChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Bar: Bölgesel Güneş Potansiyeli -->
+        <div class="chart-card" data-aos="fade-right">
+          <h3>Bölgesel Güneş Potansiyeli</h3>
+          <p>Ortalama yıllık güneş ışınımı (kWh/m²/yıl)</p>
+          <div class="chart-wrap">
+            <canvas id="solarRegionChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Line: CO₂ Emisyon Yolu -->
+        <div class="chart-card" data-aos="fade-left">
+          <h3>Yenilenebilir Elektrik Payı (%)</h3>
+          <p>2015–2025 tarihsel veri · *2025 tahmini · 2030/2035/2053 hedefleri</p>
+          <div class="chart-wrap">
+            <canvas id="shareChart"></canvas>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       4. HEDEFLER
+  ══════════════════════════════════════════ -->
+  <section id="goals" class="section">
+    <div class="container">
+      <div class="badge">🎯 Hedefler</div>
+      <h2 class="section-title">Nereye Gidiyoruz?</h2>
+      <p class="section-sub">Türkiye'nin iklim ve enerji taahhütleri</p>
+
+      <div class="goals-grid">
+
+        <div class="goal-card" data-aos="fade-up" data-aos-delay="0">
+          <div class="goal-year gradient-text">2030</div>
+          <div class="goal-tag">Orta Vadeli Hedef</div>
+
+          <div class="goal-item">
+            <div class="goal-item-header">
+              <span class="goal-item-label">☀️ Güneş Kapasitesi</span>
+              <span class="goal-item-value" style="color:var(--orange)">52.9 GW</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" data-target="47" style="background:var(--orange)"></div>
+            </div>
+          </div>
+
+          <div class="goal-item">
+            <div class="goal-item-header">
+              <span class="goal-item-label">💨 Rüzgar Kapasitesi</span>
+              <span class="goal-item-value" style="color:var(--blue)">29.6 GW</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" data-target="39" style="background:var(--blue)"></div>
+            </div>
+          </div>
+
+          <div class="goal-item">
+            <div class="goal-item-header">
+              <span class="goal-item-label">🌿 Top. Yenilenebilir</span>
+              <span class="goal-item-value" style="color:var(--green)">120 GW</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" data-target="57" style="background:var(--green)"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="goal-card" data-aos="fade-up" data-aos-delay="100">
+          <div class="goal-year" style="background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">2035</div>
+          <div class="goal-tag">Uzun Vadeli Hedef</div>
+
+          <div class="goal-item">
+            <div class="goal-item-header">
+              <span class="goal-item-label">⚡ Yenilenebilir Payı</span>
+              <span class="goal-item-value" style="color:var(--green)">%60+</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" data-target="57" style="background:var(--green)"></div>
+            </div>
+          </div>
+
+          <div class="goal-item">
+            <div class="goal-item-header">
+              <span class="goal-item-label">🔋 Depolama Kapasitesi</span>
+              <span class="goal-item-value" style="color:var(--purple)">7.5 GW</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" data-target="18" style="background:var(--purple)"></div>
+            </div>
+          </div>
+
+          <div class="goal-item">
+            <div class="goal-item-header">
+              <span class="goal-item-label">🌡️ Emisyon Azaltımı</span>
+              <span class="goal-item-value" style="color:var(--orange)">%41</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" data-target="30" style="background:var(--orange)"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="goal-card" data-aos="fade-up" data-aos-delay="200">
+          <div class="goal-year" style="background:linear-gradient(135deg,#60efff,#A78BFA);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">2053</div>
+          <div class="goal-tag">Vizyon — Net Sıfır</div>
+
+          <div class="goal-item">
+            <div class="goal-item-header">
+              <span class="goal-item-label">🌍 Karbon Durumu</span>
+              <span class="goal-item-value" style="color:var(--green)">Net-Sıfır</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" data-target="15" style="background:var(--green)"></div>
+            </div>
+          </div>
+
+          <div class="goal-item">
+            <div class="goal-item-header">
+              <span class="goal-item-label">⚡ Elektrik Üretimi</span>
+              <span class="goal-item-value" style="color:var(--blue)">%100 Temiz</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" data-target="57" style="background:var(--blue)"></div>
+            </div>
+          </div>
+
+          <div class="goal-item">
+            <div class="goal-item-header">
+              <span class="goal-item-label">🚗 EV Dönüşümü</span>
+              <span class="goal-item-value" style="color:var(--purple)">%80+</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" data-target="8" style="background:var(--purple)"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       5. ÖZELLİKLER
+  ══════════════════════════════════════════ -->
+  <section id="features" class="section">
+    <div class="container">
+      <div class="badge">🛠️ Uygulama</div>
+      <h2 class="section-title">Ne Yapabilirsiniz?</h2>
+      <p class="section-sub">SRRP ile enerji potansiyelini bilimsel temelde analiz edin</p>
+
+      <div class="features-grid">
+
+        <div class="feature-card" data-aos="fade-up" data-aos-delay="0">
+          <span class="feature-icon">🗺️</span>
+          <div class="feature-title">İnteraktif Harita</div>
+          <p class="feature-desc">
+            Türkiye genelinde güneş ışınımı, rüzgar hızı ve sıcaklık
+            heatmap'lerini gerçek verilerle görüntüleyin.
+            Tarihe göre verileri filtreleyin.
+          </p>
+        </div>
+
+        <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
+          <span class="feature-icon">📍</span>
+          <div class="feature-title">Pin & Hesaplama</div>
+          <p class="feature-desc">
+            Haritaya güneş, rüzgar veya HES pini ekleyin.
+            Anlık enerji üretim potansiyelini ve ROI hesabını
+            saniyeler içinde görün.
+          </p>
+        </div>
+
+        <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
+          <span class="feature-icon">🧭</span>
+          <div class="feature-title">Rüzgar Gülü & Weibull</div>
+          <p class="feature-desc">
+            16 yönlü rüzgar gülü analizi ve Weibull k/λ parametreleriyle
+            bölgeleri kategorilere ayırın: Güçlü, Stabil,
+            Yüksek Sirkülasyon.
+          </p>
+        </div>
+
+        <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
+          <span class="feature-icon">🗂️</span>
+          <div class="feature-title">Senaryo Simülasyonu</div>
+          <p class="feature-desc">
+            Farklı enerji portföyleri oluşturun, 7 günlük
+            simülasyon çalıştırın ve senaryoları karşılaştırın.
+            Pasta ve bar grafiklerle görselleştirin.
+          </p>
+        </div>
+
+        <div class="feature-card" data-aos="fade-up" data-aos-delay="0">
+          <span class="feature-icon">📊</span>
+          <div class="feature-title">Bölgesel Raporlar</div>
+          <p class="feature-desc">
+            Türkiye'nin 81 ili için enerji potansiyel sıralamaları.
+            PDF olarak dışa aktarın, paylaşın.
+          </p>
+        </div>
+
+        <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
+          <span class="feature-icon">🛰️</span>
+          <div class="feature-title">GIS Analizi</div>
+          <p class="feature-desc">
+            PostGIS tabanlı coğrafya uygunluk kontrolü. Yasak bölgeler,
+            enerji koridorları ve su kaynakları katmanları.
+          </p>
+        </div>
+
+        <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
+          <span class="feature-icon">📱</span>
+          <div class="feature-title">Çevrimdışı Mod</div>
+          <p class="feature-desc">
+            İnternet bağlantısı kesilse bile önbelleğe alınan
+            verilerle çalışmaya devam edin. Gerçek zamanlı
+            bağlantı durumu göstergesi.
+          </p>
+        </div>
+
+        <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
+          <span class="feature-icon">🎯</span>
+          <div class="feature-title">Bölge Optimizasyonu</div>
+          <p class="feature-desc">
+            Poligon seçerek belirlediğiniz alanda en iyi türbin
+            / panel konumlandırmasını otomatik hesaplayın.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       6. BÖLGESEL POTANSİYEL
+  ══════════════════════════════════════════ -->
+  <section id="regions" class="section">
+    <div class="container">
+      <div class="badge">📍 Bölgeler</div>
+      <h2 class="section-title">Türkiye'nin Enerji Güzellikleri</h2>
+      <p class="section-sub">Her bölge farklı bir enerji kaynağında lider</p>
+
+      <div class="regions-grid">
+
+        <div class="region-card" data-aos="fade-up" style="background:rgba(246,166,35,.04)">
+          <div class="region-emoji">🌞</div>
+          <div>
+            <div class="region-name">Güneydoğu Anadolu</div>
+            <div class="region-type">☀️ Güneş Başkenti</div>
+            <p class="region-desc">2.800+ saat/yıl güneşlenme süresi. Şanlıurfa, Gaziantep ve Mardin'de GW ölçeğinde güneş tarlaları. Türkiye'nin en yüksek ışınım bölgesi.</p>
+          </div>
+        </div>
+
+        <div class="region-card" data-aos="fade-up" data-aos-delay="100" style="background:rgba(86,204,242,.04)">
+          <div class="region-emoji">🌬️</div>
+          <div>
+            <div class="region-name">Ege Kıyıları</div>
+            <div class="region-type">💨 Rüzgar Koridoru</div>
+            <p class="region-desc">Meltem rüzgarları (Mayıs–Eylül) yılın yarısında güçlü ve tutarlı enerji üretir. İzmir, Manisa ve Çanakkale rüzgar kapasitesinde öncü.</p>
+          </div>
+        </div>
+
+        <div class="region-card" data-aos="fade-up" data-aos-delay="200" style="background:rgba(86,204,242,.04)">
+          <div class="region-emoji">💧</div>
+          <div>
+            <div class="region-name">Doğu Karadeniz</div>
+            <div class="region-type">💧 HES Cennet</div>
+            <p class="region-desc">Yüksek yağış ve dağlık arazi. Artvin, Rize ve Giresun hidroelektrik kapasitesinde zirvede. Karadeniz'in kuzeydoğu rüzgarları ek potansiyel sunar.</p>
+          </div>
+        </div>
+
+        <div class="region-card" data-aos="fade-up" style="background:rgba(167,139,250,.04)">
+          <div class="region-emoji">🏔️</div>
+          <div>
+            <div class="region-name">İç Anadolu</div>
+            <div class="region-type">⚡ Rüzgar + Güneş</div>
+            <p class="region-desc">Konya ovalarında hem rüzgar hem güneş ideali. Aksaray–Ankara koridoru Türkiye'nin en önemli rüzgar güzergahlarından. Uzun güneşlenme süresi.</p>
+          </div>
+        </div>
+
+        <div class="region-card" data-aos="fade-up" data-aos-delay="100" style="background:rgba(246,166,35,.04)">
+          <div class="region-emoji">🌋</div>
+          <div>
+            <div class="region-name">Ege İç Bölgesi</div>
+            <div class="region-type">♨️ Jeotermal</div>
+            <p class="region-desc">Türkiye'nin jeotermal kaynakların %78'i Ege'de. Denizli, Aydın ve Manisa'da 1.7 GW kurulu jeotermal kapasite. Sürekli ve güvenilir baz yük.</p>
+          </div>
+        </div>
+
+        <div class="region-card" data-aos="fade-up" data-aos-delay="200" style="background:rgba(0,229,160,.04)">
+          <div class="region-emoji">🌊</div>
+          <div>
+            <div class="region-name">Marmara & Trakya</div>
+            <div class="region-type">💨 Rüzgar + Grid</div>
+            <p class="region-desc">Trakya rüzgar koridoru ve Marmara'nın güçlü grid altyapısı. İstanbul'un dev enerji talebiyle en yakın konumda. İletim kayıpları minimumda.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════
+       7. CTA
+  ══════════════════════════════════════════ -->
+  <section id="cta">
+    <div class="section-title" data-aos="fade-up">
+      Türkiye'nin Enerji Dönüşümüne<br>
+      <span class="gradient-text">Katkıda Bulunun</span>
+    </div>
+    <p class="section-sub" data-aos="fade-up" data-aos-delay="100">
+      SRRP ile en doğru bölgeyi seçin, en verimli sistemi tasarlayın
+      ve 2053 net-sıfır hedefine adım atın.
+    </p>
+    <div class="cta-actions" data-aos="fade-up" data-aos-delay="200">
+      <a href="#" class="btn-primary">⚡ Uygulamayı Aç</a>
+      <a href="#timeline" class="btn-ghost">📊 Daha Fazla Öğren</a>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ── -->
+  <footer>
+    <p>© 2025–2026 SRRP — Smart Renewable Resource Planner &nbsp;·&nbsp; <span>Türkiye'nin Enerji Geleceği için</span></p>
+    <p style="margin-top:8px; font-size:.75rem">Doğrulanmış Veriler: EPDK · TEİAŞ · IRENA · IEA (2024) &nbsp;·&nbsp; <span style="color:var(--orange)">* 2025 değerleri trend tahminidir</span></p>
+  </footer>
+
+  <!-- ══════════════════════════════════════════
+       SCRIPTS
+  ══════════════════════════════════════════ -->
+  <script>
+    // ── AOS ──────────────────────────────────
+    AOS.init({ duration: 700, once: true, offset: 80 });
+
+    // ── Scroll Progress Bar ───────────────────
+    window.addEventListener('scroll', () => {
+      const pct = window.scrollY / (document.body.scrollHeight - window.innerHeight) * 100;
+      document.getElementById('scroll-progress').style.width = pct + '%';
+    });
+
+    // ── Animasyonlu Sayaçlar ──────────────────
+    function animateCounter(el) {
+      const target = parseFloat(el.dataset.counter);
+      const suffix = el.dataset.suffix || '';
+      const duration = 1800;
+      const step = 16;
+      const total = duration / step;
+      let current = 0;
+      const timer = setInterval(() => {
+        current++;
+        const value = Math.round((target * current / total) * 10) / 10;
+        el.textContent = (Number.isInteger(target) ? Math.round(value) : value) + suffix;
+        if (current >= total) { el.textContent = target + suffix; clearInterval(timer); }
+      }, step);
+    }
+
+    // IO: sayfa görünümüne girince tetikle
+    const counterObs = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { animateCounter(e.target); counterObs.unobserve(e.target); } });
+    }, { threshold: 0.5 });
+    document.querySelectorAll('[data-counter]').forEach(el => counterObs.observe(el));
+
+    // ── Progress Bar Animasyonu ───────────────
+    const progressObs = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          const bar = e.target;
+          bar.style.width = bar.dataset.target + '%';
+          progressObs.unobserve(bar);
+        }
+      });
+    }, { threshold: 0.3 });
+    document.querySelectorAll('.progress-fill').forEach(el => progressObs.observe(el));
+
+    // ── Timeline Sürükle-Kaydır ───────────────
+    const tlScroll = document.getElementById('tl-scroll');
+    let isDown = false, startX, scrollLeft;
+    tlScroll.addEventListener('mousedown', e => { isDown = true; startX = e.pageX - tlScroll.offsetLeft; scrollLeft = tlScroll.scrollLeft; });
+    tlScroll.addEventListener('mouseleave', () => isDown = false);
+    tlScroll.addEventListener('mouseup', () => isDown = false);
+    tlScroll.addEventListener('mousemove', e => {
+      if (!isDown) return;
+      e.preventDefault();
+      const x = e.pageX - tlScroll.offsetLeft;
+      tlScroll.scrollLeft = scrollLeft - (x - startX) * 1.5;
+    });
+
+    // ── Chart.js Yapılandırması ───────────────
+    Chart.defaults.color = '#64748b';
+    Chart.defaults.borderColor = 'rgba(255,255,255,0.05)';
+    Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
+
+    // 1. Donut: Kaynak Dağılımı (2025 tahmini)
+    new Chart(document.getElementById('donutChart'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Hidroelektrik', 'Güneş', 'Doğal Gaz', 'Kömür', 'Rüzgar', 'Jeotermal & Diğer'],
+        datasets: [{
+          data: [32, 30, 24, 17, 13, 4],
+          backgroundColor: ['#56CCF2', '#F6A623', '#6B7280', '#374151', '#00E5A0', '#A78BFA'],
+          borderWidth: 2,
+          borderColor: '#111827',
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { padding: 16, boxWidth: 12, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.label}: ${ctx.raw} GW (${(ctx.raw/120*100).toFixed(1)}%)`
+            }
+          }
+        },
+        cutout: '62%',
+      }
+    });
+
+    // 2. Bar: Yenilenebilir Trend (2015–2025, 2024 doğrulanmış, 2025 tahmini)
+    new Chart(document.getElementById('trendChart'), {
+      type: 'bar',
+      data: {
+        labels: ['2015','2016','2017','2018','2019','2020','2021','2022','2023','2024','2025*'],
+        datasets: [
+          { label: 'Güneş (GW)', data: [0.83,1.35,3.03,5.06,6.64,8.41,10.2,14.8,20.6,25,30],    backgroundColor: '#F6A62399', borderColor: '#F6A623', borderWidth: 1 },
+          { label: 'Rüzgar (GW)',data: [4.7,6.1,6.5,7.0,7.6,8.7,9.6,10.5,11.2,11.5,13],         backgroundColor: '#00E5A055', borderColor: '#00E5A0', borderWidth: 1 },
+          { label: 'HES (GW)',   data: [25.9,26.7,27.3,28.3,28.8,30.9,31.1,32.0,32.5,32.8,33],  backgroundColor: '#56CCF255', borderColor: '#56CCF2', borderWidth: 1 },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { padding: 14, boxWidth: 10, font: { size: 10 } } },
+          tooltip: { callbacks: { title: tl => tl[0].label === '2025*' ? '2025 (tahmini)' : tl[0].label } }
+        },
+        scales: {
+          x: { stacked: false, grid: { color: 'rgba(255,255,255,0.04)' } },
+          y: { stacked: false, grid: { color: 'rgba(255,255,255,0.04)' },
+               ticks: { callback: v => v + ' GW' } }
+        }
+      }
+    });
+
+    // 3. Bar: Bölgesel Güneş Potansiyeli
+    new Chart(document.getElementById('solarRegionChart'), {
+      type: 'bar',
+      data: {
+        labels: ['Güneydoğu\nAnadolu','Akdeniz','İç Anadolu','Ege','Doğu\nAnadolu','Marmara','Karadeniz'],
+        datasets: [{
+          label: 'Güneş Potansiyeli (kWh/m²/yıl)',
+          data: [2900, 2750, 2400, 2300, 2200, 1850, 1600],
+          backgroundColor: [
+            '#F6A623cc','#F6A623aa','#F6A62388','#F6A62366',
+            '#F6A62355','#F6A62344','#F6A62333'
+          ],
+          borderColor: '#F6A623',
+          borderWidth: 1,
+          borderRadius: 6,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { grid: { color: 'rgba(255,255,255,0.04)' },
+               ticks: { callback: v => v + ' kWh' } }
+        }
+      }
+    });
+
+    // 4. Line: Yenilenebilir Payı (2025 tahmini eklendi)
+    const shareLabels = ['2015','2016','2017','2018','2019','2020','2021','2022','2023','2024','2025*','2030','2035','2053'];
+    new Chart(document.getElementById('shareChart'), {
+      type: 'line',
+      data: {
+        labels: shareLabels,
+        datasets: [
+          {
+            label: 'Tarihsel (%)',
+            data: [37, 34, 33, 43, 44, 49, 53, 52, 56, 57, 59, null, null, null],
+            borderColor: '#00E5A0', backgroundColor: 'rgba(0,229,160,0.08)',
+            fill: true, tension: 0.4, pointRadius: 4,
+          },
+          {
+            label: 'Hedef (%)',
+            data: [null,null,null,null,null,null,null,null,null,null,59,65,72,100],
+            borderColor: '#A78BFA', borderDash: [6,4], backgroundColor: 'transparent',
+            fill: false, tension: 0.4, pointRadius: 5,
+            pointBackgroundColor: '#A78BFA',
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { padding: 14, boxWidth: 10, font: { size: 11 } } },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: %${ctx.raw}` } }
+        },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.04)' } },
+          y: { grid: { color: 'rgba(255,255,255,0.04)' },
+               ticks: { callback: v => '%' + v }, min: 25, max: 105 }
+        }
+      }
+    });
+
+    // ── Parçacık Animasyonu (Hero) ────────────
+    const canvas  = document.getElementById('particles-canvas');
+    const ctx2    = canvas.getContext('2d');
+    let particles = [];
+
+    function resize() {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    function createParticles() {
+      particles = Array.from({ length: 60 }, () => ({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: Math.random() * 1.5 + 0.3,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4,
+        alpha: Math.random() * 0.4 + 0.05,
+      }));
+    }
+    createParticles();
+
+    function animateParticles() {
+      ctx2.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => {
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < 0) p.x = canvas.width;
+        if (p.x > canvas.width) p.x = 0;
+        if (p.y < 0) p.y = canvas.height;
+        if (p.y > canvas.height) p.y = 0;
+        ctx2.beginPath();
+        ctx2.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx2.fillStyle = `rgba(0,229,160,${p.alpha})`;
+        ctx2.fill();
+      });
+      requestAnimationFrame(animateParticles);
+    }
+    animateParticles();
+  </script>
+</body>
+</html>

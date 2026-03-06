@@ -1,0 +1,54 @@
+2026-03-06 21:49:55 | WARNING | app.routers.recommendations:199 — Recommendations DB query failed: (psycopg2.errors.UndefinedColumn) column "lat" does not exist
+LINE 4:                 AVG(lat)               AS lat,
+                            ^
+
+[SQL: 
+            SELECT
+                city_name,
+                AVG(lat)               AS lat,
+                AVG(lon)               AS lon,
+                AVG(wind_speed_10m)    AS avg_wind,
+                MAX(wind_speed_10m)    AS max_wind,
+                STDDEV(wind_speed_10m) AS std_wind,
+                AVG(shortwave_radiation) AS avg_radiation,
+                SUM(shortwave_radiation) / 1000.0 AS total_radiation_kwh,
+                COUNT(*)               AS record_count,
+                array_agg(wind_speed_10m    ORDER BY timestamp) AS speeds_arr,
+                array_agg(wind_direction_10m ORDER BY timestamp) AS dirs_arr
+            FROM hourly_weather_data
+            WHERE timestamp >= %(since)s
+              AND wind_speed_10m IS NOT NULL
+            GROUP BY city_name
+            HAVING COUNT(*) >= 6
+            ORDER BY avg_wind DESC NULLS LAST
+        ]
+[parameters: {'since': datetime.datetime(2026, 2, 27, 18, 49, 55, 19222, tzinfo=datetime.timezone.utc)}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2026-03-06 21:49:55 | WARNING | app.routers.recommendations:222 — Recommendations: Yeterli veri bulunamadı (hours=168)
+2026-03-06 21:50:42 | WARNING | app.routers.recommendations:199 — Recommendations DB query failed: (psycopg2.errors.UndefinedColumn) column "lat" does not exist
+LINE 4:                 AVG(lat)               AS lat,
+                            ^
+
+[SQL: 
+            SELECT
+                city_name,
+                AVG(lat)               AS lat,
+                AVG(lon)               AS lon,
+                AVG(wind_speed_10m)    AS avg_wind,
+                MAX(wind_speed_10m)    AS max_wind,
+                STDDEV(wind_speed_10m) AS std_wind,
+                AVG(shortwave_radiation) AS avg_radiation,
+                SUM(shortwave_radiation) / 1000.0 AS total_radiation_kwh,
+                COUNT(*)               AS record_count,
+                array_agg(wind_speed_10m    ORDER BY timestamp) AS speeds_arr,
+                array_agg(wind_direction_10m ORDER BY timestamp) AS dirs_arr
+            FROM hourly_weather_data
+            WHERE timestamp >= %(since)s
+              AND wind_speed_10m IS NOT NULL
+            GROUP BY city_name
+            HAVING COUNT(*) >= 6
+            ORDER BY avg_wind DESC NULLS LAST
+        ]
+[parameters: {'since': datetime.datetime(2026, 2, 27, 18, 50, 42, 695546, tzinfo=datetime.timezone.utc)}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2026-03-06 21:50:42 | WARNING | app.routers.recommendations:222 — Recommendations: Yeterli veri bulunamadı (hours=168)
