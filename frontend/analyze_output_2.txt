@@ -1,6 +1,0 @@
-﻿Analyzing frontend...                                           
-
-   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\presentation\features\map\dialogs\pin_details_dialog.dart:118:30 - use_build_context_synchronously
-   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\presentation\features\map\dialogs\pin_details_dialog.dart:136:31 - use_build_context_synchronously
-   info - Don't use 'BuildContext's across async gaps, guarded by an unrelated 'mounted' check - lib\presentation\features\map\dialogs\pin_details_dialog.dart:142:30 - use_build_context_synchronously
-
