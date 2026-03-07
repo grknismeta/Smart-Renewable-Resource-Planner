@@ -13,6 +13,7 @@ import 'package:frontend/features/map/layers/data_points_layer.dart';
 import 'package:frontend/features/map/dialogs/map_dialogs.dart';
 import 'package:frontend/features/map/widgets/map_markers.dart';
 import 'package:frontend/features/map/layers/vector_style.dart';
+import 'package:frontend/features/map/widgets/layers/wind_particle_layer.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 
 /// The core map engine widget using FlutterMap
@@ -151,6 +152,19 @@ class _MapViewState extends State<MapView> {
               }),
             ),
 
+          // 1.8 Elevation Layer (OpenTopoMap)
+          if (mapViewModel.showElevation)
+            IgnorePointer(
+              child: TileLayer(
+                urlTemplate: 'https://tile.opentopomap.org/{z}/{x}/{y}.png',
+                tileProvider: CancellableNetworkTileProvider(),
+                keepBuffer: 4,
+                tileBuilder: (context, tileWidget, tile) {
+                  return Opacity(opacity: 0.65, child: tileWidget);
+                },
+              ),
+            ),
+
           // 2. Heatmap Layer
           if (mapViewModel.currentLayer != MapLayerType.none)
             Stack(
@@ -176,6 +190,15 @@ class _MapViewState extends State<MapView> {
                     ),
                   ),
               ],
+            ),
+
+          // 2.05 Wind Particle Layer (animasyonlu rüzgar akışı)
+          if (mapViewModel.showWindParticles && mapViewModel.windVectors.isNotEmpty)
+            IgnorePointer(
+              child: WindParticleLayer(
+                vectors: mapViewModel.windVectors,
+                quality: mapViewModel.windQuality,
+              ),
             ),
 
           // 2.1. Data Points Layer (Neon - herhangi bir katmanda veya katmansız gösterilir)

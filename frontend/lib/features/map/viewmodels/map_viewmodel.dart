@@ -134,6 +134,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     }
     // Ülke genelinde özet (7 gün) ön yükleme
     _loadWeatherSummarySafe();
+    // Rüzgar kalite tercihini yükle
+    loadWindPreferences();
   }
 
   Future<void> _loadWeatherSummarySafe() async {

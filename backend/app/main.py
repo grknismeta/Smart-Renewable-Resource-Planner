@@ -79,7 +79,7 @@ def print_banner():
     print(f"  {_c('gray', '🕐 Başlangıç:')}  {_c('white', now)}")
 
 # ─── ROUTERLARI IMPORT ET ─────────────────────────────────────────────────────
-from .routers import pins, users, equipments, optimization, weather, reports, scenario, tiles, recommendations
+from .routers import pins, users, equipments, optimization, weather, reports, scenario, tiles, recommendations, wind_vectors
 
 # Coğrafya analiz motoru
 _GEO_ENABLED = os.getenv("GEO_ANALYSIS_ENABLED", "false").lower() == "true"
@@ -232,6 +232,7 @@ app.include_router(reports.router,      tags=["📊 Reports"])
 app.include_router(scenario.router,     prefix="/scenarios",  tags=["🗂️ Scenarios"])
 app.include_router(tiles.router,        prefix="/api/v1/tiles",    tags=["🗺️ Map Tiles (MVT)"])
 app.include_router(recommendations.router)                                        # Prefix router içinde
+app.include_router(wind_vectors.router)                                           # Parçacık akış verisi
 
 if _GEO_ENABLED:
     app.include_router(geo.router, prefix="/geo", tags=["🗺️ Geo Analysis"])

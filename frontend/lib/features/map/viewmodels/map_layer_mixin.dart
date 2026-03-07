@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend/core/network/api_service.dart';
 import 'package:frontend/core/base/base_view_model.dart';
 import 'package:frontend/features/map/models/map_models.dart';
@@ -11,6 +12,22 @@ mixin MapLayerMixin on BaseViewModel {
   MapLayerType _currentLayer = MapLayerType.none;
   List<Map<String, dynamic>> _interpolatedData = [];
   bool _isHeatmapLoading = false;
+
+  // ─── Rüzgar Parçacık + Yükseklik Katmanı State ──────────────────────────
+  bool _showWindParticles = false;
+  bool _isWindLoading = false;
+  bool _showElevation = false;
+  WindParticleQuality _windQuality = WindParticleQuality.balanced;
+  List<WindVector> _windVectors = [];
+
+  static const _qualityKey = 'wind_particle_quality';
+
+  bool get showWindParticles => _showWindParticles;
+  bool get isWindLoading => _isWindLoading;
+  bool get showElevation => _showElevation;
+  WindParticleQuality get windQuality => _windQuality;
+  List<WindVector> get windVectors => _windVectors;
+  // ──────────────────────────────────────────────────────────────────────────
 
   MapLayerType get currentLayer => _currentLayer;
   bool get isHeatmapLoading => _isHeatmapLoading;
@@ -71,6 +88,59 @@ mixin MapLayerMixin on BaseViewModel {
       debugPrint('Heatmap loading error: $e');
     } finally {
       _isHeatmapLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // ─── Rüzgar Parçacık Katmanı Metodları ──────────────────────────────────
+
+  Future<void> loadWindPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final idx = prefs.getInt(_qualityKey);
+      if (idx != null && idx < WindParticleQuality.values.length) {
+        _windQuality = WindParticleQuality.values[idx];
+      }
+    } catch (e) {
+      debugPrint('Wind preferences load error: $e');
+    }
+  }
+
+  Future<void> toggleWindParticles(bool val) async {
+    _showWindParticles = val;
+    if (val && _windVectors.isEmpty) {
+      await _fetchWindVectors();
+    } else {
+      notifyListeners();
+    }
+  }
+
+  void toggleElevation(bool val) {
+    _showElevation = val;
+    notifyListeners();
+  }
+
+  Future<void> setWindQuality(WindParticleQuality q) async {
+    _windQuality = q;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_qualityKey, q.index);
+    } catch (e) {
+      debugPrint('Wind quality save error: $e');
+    }
+  }
+
+  Future<void> _fetchWindVectors() async {
+    _isWindLoading = true;
+    notifyListeners();
+    try {
+      final data = await apiService.windVector.fetchWindVectors();
+      _windVectors = data.map((d) => WindVector.fromJson(d)).toList();
+    } catch (e) {
+      debugPrint('Wind vectors fetch error: $e');
+    } finally {
+      _isWindLoading = false;
       notifyListeners();
     }
   }

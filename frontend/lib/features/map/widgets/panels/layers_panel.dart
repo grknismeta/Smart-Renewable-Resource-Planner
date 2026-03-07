@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:frontend/core/theme/theme_view_model.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
+import 'package:frontend/features/map/models/map_models.dart';
 
 
 class LayersPanel extends StatelessWidget {
@@ -104,6 +105,38 @@ class LayersPanel extends StatelessWidget {
                   ),
                 ),
               ],
+
+              const SizedBox(height: 16),
+              Text(
+                "Katman Efektleri",
+                style: TextStyle(
+                  color: theme.secondaryTextColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildEffectToggle(
+                "Rüzgar Akışı",
+                Icons.air,
+                mapViewModel.showWindParticles,
+                (val) => mapViewModel.toggleWindParticles(val),
+                Colors.cyanAccent,
+                isLoading: mapViewModel.isWindLoading,
+              ),
+              // Kalite seçici — sadece rüzgar aktifken göster
+              if (mapViewModel.showWindParticles) ...[
+                const SizedBox(height: 4),
+                _buildQualitySelector(theme, mapViewModel),
+                const SizedBox(height: 4),
+              ],
+              _buildEffectToggle(
+                "Yükseklik Haritası",
+                Icons.terrain,
+                mapViewModel.showElevation,
+                (val) => mapViewModel.toggleElevation(val),
+                Colors.greenAccent,
+              ),
 
               const SizedBox(height: 16),
               Text(
@@ -212,6 +245,101 @@ class LayersPanel extends StatelessWidget {
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap, // Daha kompakt
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEffectToggle(
+    String title,
+    IconData icon,
+    bool isActive,
+    ValueChanged<bool> onChanged,
+    Color activeColor, {
+    bool isLoading = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: isActive ? activeColor : theme.secondaryTextColor),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                color: isActive ? theme.textColor : theme.secondaryTextColor,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          if (isLoading)
+            const SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            Switch(
+              value: isActive,
+              onChanged: onChanged,
+              activeColor: activeColor,
+              activeTrackColor: activeColor.withValues(alpha: 0.3),
+              inactiveThumbColor: theme.secondaryTextColor,
+              inactiveTrackColor: theme.secondaryTextColor.withValues(alpha: 0.1),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQualitySelector(ThemeViewModel theme, MapViewModel mapViewModel) {
+    return Container(
+      margin: const EdgeInsets.only(left: 22),
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: theme.secondaryTextColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          _buildQualityOption("Hafif", WindParticleQuality.light, theme, mapViewModel),
+          _buildQualityOption("Dengeli", WindParticleQuality.balanced, theme, mapViewModel),
+          _buildQualityOption("Yoğun", WindParticleQuality.heavy, theme, mapViewModel),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQualityOption(
+    String title,
+    WindParticleQuality quality,
+    ThemeViewModel theme,
+    MapViewModel mapViewModel,
+  ) {
+    final isSelected = mapViewModel.windQuality == quality;
+    return Expanded(
+      child: InkWell(
+        onTap: () => mapViewModel.setWindQuality(quality),
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          decoration: BoxDecoration(
+            color: isSelected ? theme.cardColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: isSelected
+                ? [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 4)]
+                : [],
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            title,
+            style: TextStyle(
+              color: isSelected ? Colors.cyanAccent : theme.secondaryTextColor,
+              fontSize: 10,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ),
       ),
     );
   }
