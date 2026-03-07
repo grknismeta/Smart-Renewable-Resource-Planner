@@ -104,17 +104,17 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   void toggleDataPoints(bool value) {
     _showDataPoints = value;
-    notifyListeners();
+    safeNotify();
   }
 
   void togglePinsVisibility(bool value) {
     _showPins = value;
-    notifyListeners();
+    safeNotify();
   }
 
   void toggleVectorLayer(bool value) {
     _showVectorLayer = value;
-    notifyListeners();
+    safeNotify();
   }
 
   void setPeriod(MapTimePeriod period) {
@@ -123,7 +123,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     if (currentLayer != MapLayerType.none) {
       fetchHeatmapDataForLayer(currentLayer);
     }
-    notifyListeners();
+    safeNotify();
   }
 
   MapViewModel(this._apiService, this._authViewModel) {

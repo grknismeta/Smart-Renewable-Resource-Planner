@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend/core/network/api_service.dart';
 import 'package:frontend/core/base/base_view_model.dart';
@@ -8,6 +9,19 @@ import 'package:frontend/features/map/layers/map_layers_system.dart';
 mixin MapLayerMixin on BaseViewModel {
   // Abstract dependency
   ApiService get apiService;
+
+  /// notifyListeners() çağrısını mevcut frame sonrasına erteler.
+  /// Pointer event (tap/hover) işlenirken çağrılan state değişikliklerinde
+  /// widget tree mutasyonunu önler — mouse_tracker re-entrant assertion fix.
+  void safeNotify() {
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      // ChangeNotifier dispose edildiyse çağırma
+      try {
+        notifyListeners();
+      } catch (_) {}
+    });
+    SchedulerBinding.instance.scheduleFrame();
+  }
 
   MapLayerType _currentLayer = MapLayerType.none;
   List<Map<String, dynamic>> _interpolatedData = [];
@@ -48,7 +62,7 @@ mixin MapLayerMixin on BaseViewModel {
     if (_currentLayer == layer) return;
     _currentLayer = layer;
     fetchHeatmapDataForLayer(layer);
-    notifyListeners();
+    safeNotify();
   }
 
   void changeMapLayer() {
@@ -71,13 +85,13 @@ mixin MapLayerMixin on BaseViewModel {
   Future<void> fetchHeatmapDataForLayer(MapLayerType layer) async {
     if (layer == MapLayerType.none) {
       _interpolatedData = [];
-      notifyListeners();
+      safeNotify();
       return;
     }
 
     // Mevcut veriyi koruyoruz (User Experience)
     _isHeatmapLoading = true;
-    notifyListeners();
+    safeNotify();
 
     try {
       final apiType = layer.apiName;
@@ -88,6 +102,7 @@ mixin MapLayerMixin on BaseViewModel {
       debugPrint('Heatmap loading error: $e');
     } finally {
       _isHeatmapLoading = false;
+      // await sonrası pointer event bağlamından çıkıldı, doğrudan bildirim güvenli
       notifyListeners();
     }
   }
@@ -111,18 +126,18 @@ mixin MapLayerMixin on BaseViewModel {
     if (val && _windVectors.isEmpty) {
       await _fetchWindVectors();
     } else {
-      notifyListeners();
+      safeNotify();
     }
   }
 
   void toggleElevation(bool val) {
     _showElevation = val;
-    notifyListeners();
+    safeNotify();
   }
 
   Future<void> setWindQuality(WindParticleQuality q) async {
     _windQuality = q;
-    notifyListeners();
+    safeNotify();
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_qualityKey, q.index);
@@ -133,7 +148,7 @@ mixin MapLayerMixin on BaseViewModel {
 
   Future<void> _fetchWindVectors() async {
     _isWindLoading = true;
-    notifyListeners();
+    safeNotify();
     try {
       final data = await apiService.windVector.fetchWindVectors();
       _windVectors = data.map((d) => WindVector.fromJson(d)).toList();
@@ -141,6 +156,7 @@ mixin MapLayerMixin on BaseViewModel {
       debugPrint('Wind vectors fetch error: $e');
     } finally {
       _isWindLoading = false;
+      // await sonrası pointer event bağlamından çıkıldı, doğrudan bildirim güvenli
       notifyListeners();
     }
   }
