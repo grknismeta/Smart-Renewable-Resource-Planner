@@ -25,11 +25,15 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
-  
+
   // Local state for UI toggles (could be in VM but acceptable here for UI-only state)
   bool _showLayersPanel = false;
   String _selectedBaseMap = 'dark';
-  LatLng? _hoverPosition;
+
+  // Hover — ValueNotifier ile sadece MapOverlays rebuild oluyor,
+  // MapView/FlutterMap rebuild OLMUYOR. Bu, "Cannot hit test a render box
+  // that has never been laid out" crash'ini engeller.
+  final ValueNotifier<LatLng?> _hoverNotifier = ValueNotifier<LatLng?>(null);
 
   @override
   void initState() {
@@ -41,6 +45,12 @@ class _MapScreenState extends State<MapScreen> {
         DateTime.now().subtract(const Duration(hours: 1)),
       );
     });
+  }
+
+  @override
+  void dispose() {
+    _hoverNotifier.dispose();
+    super.dispose();
   }
 
   @override
@@ -60,23 +70,30 @@ class _MapScreenState extends State<MapScreen> {
                        mapController: _mapController,
                        selectedBaseMap: _selectedBaseMap,
                        onMapTap: (tapPosition, point) => _handleMapTap(mapViewModel, point),
-                       onHover: (point) => setState(() => _hoverPosition = point),
-                       onExitRange: () => setState(() => _hoverPosition = null),
+                       onHover: (point) => _hoverNotifier.value = point,
+                       onExitRange: () => _hoverNotifier.value = null,
                      ),
 
                      // 2. Overlays (Dashboard, Hover Info, Legends)
-                     MapOverlays(
-                       theme: theme,
-                       mapViewModel: mapViewModel,
-                       hoverPosition: _hoverPosition,
-                       layersPanel: _showLayersPanel 
-                          ? LayersPanel(
-                              theme: theme,
-                              mapViewModel: mapViewModel,
-                              selectedBaseMap: _selectedBaseMap,
-                              onBaseMapChanged: (val) => setState(() => _selectedBaseMap = val),
-                            )
-                          : null,
+                     // ValueListenableBuilder ile sadece overlay rebuild oluyor,
+                     // FlutterMap/MapView ETKİLENMİYOR.
+                     ValueListenableBuilder<LatLng?>(
+                       valueListenable: _hoverNotifier,
+                       builder: (context, hoverPosition, _) {
+                         return MapOverlays(
+                           theme: theme,
+                           mapViewModel: mapViewModel,
+                           hoverPosition: hoverPosition,
+                           layersPanel: _showLayersPanel
+                              ? LayersPanel(
+                                  theme: theme,
+                                  mapViewModel: mapViewModel,
+                                  selectedBaseMap: _selectedBaseMap,
+                                  onBaseMapChanged: (val) => setState(() => _selectedBaseMap = val),
+                                )
+                              : null,
+                         );
+                       },
                      ),
                      
                      // 3. Floating Controls (Buttons)

@@ -278,20 +278,18 @@ class _MapLayerWidgetState extends State<MapLayerWidget> {
   Widget build(BuildContext context) {
     if (_cachedPicture == null || _bounds == null) return const SizedBox.shrink();
 
+    // Opacity → CustomPaint (Stack kaldırıldı — gereksiz render object'i
+    // oluşturuyordu ve StackFit.loose ile CustomPaint boyutunu 0x0 yapıyordu)
     return Opacity(
       opacity: widget.opacity,
-      child: Stack(
-        children: [
-          CustomPaint(
-            painter: _CachedLayerPainter(
-              picture: _cachedPicture!,
-              bounds: _bounds!,
-              imgWidth: _imgWidth,
-              imgHeight: _imgHeight,
-              mapCamera: MapCamera.of(context),
-            ),
-          ),
-        ],
+      child: CustomPaint(
+        painter: _CachedLayerPainter(
+          picture: _cachedPicture!,
+          bounds: _bounds!,
+          imgWidth: _imgWidth,
+          imgHeight: _imgHeight,
+          mapCamera: MapCamera.of(context),
+        ),
       ),
     );
   }

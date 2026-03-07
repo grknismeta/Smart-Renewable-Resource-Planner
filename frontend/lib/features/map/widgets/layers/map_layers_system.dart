@@ -280,18 +280,14 @@ class _MapLayerWidgetState extends State<MapLayerWidget> {
 
     return Opacity(
       opacity: widget.opacity,
-      child: Stack(
-        children: [
-          CustomPaint(
-            painter: _CachedLayerPainter(
-              picture: _cachedPicture!,
-              bounds: _bounds!,
-              imgWidth: _imgWidth,
-              imgHeight: _imgHeight,
-              mapCamera: MapCamera.of(context),
-            ),
-          ),
-        ],
+      child: CustomPaint(
+        painter: _CachedLayerPainter(
+          picture: _cachedPicture!,
+          bounds: _bounds!,
+          imgWidth: _imgWidth,
+          imgHeight: _imgHeight,
+          mapCamera: MapCamera.of(context),
+        ),
       ),
     );
   }

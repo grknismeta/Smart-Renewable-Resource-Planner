@@ -45,11 +45,6 @@ class _MapViewState extends State<MapView> {
   }
 
   @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final theme = Provider.of<ThemeViewModel>(context);
     final mapViewModel = Provider.of<MapViewModel>(context);
@@ -93,15 +88,17 @@ class _MapViewState extends State<MapView> {
        markers.addAll(optimizedMarkers);
     }
 
-    return MouseRegion(
-      onHover: (event) {
+    // Listener kullan — MouseRegion'dan farklı olarak rebuild tetiklemez,
+    // sadece callback çağırır. Bu, FlutterMap children'ın gereksiz yere
+    // yeniden oluşturulmasını engeller.
+    return Listener(
+      onPointerHover: (event) {
         try {
           final camera = widget.mapController.camera;
           final point = camera.offsetToCrs(event.localPosition);
           widget.onHover?.call(point);
         } catch (_) {}
       },
-      onExit: (_) => widget.onExitRange?.call(),
       child: FlutterMap(
         key: _mapKey,
         mapController: widget.mapController,
@@ -127,7 +124,9 @@ class _MapViewState extends State<MapView> {
           backgroundColor: theme.mapBackgroundColor,
         ),
         children: [
-          // 1. Tile Layer
+          // ═══════════════════════════════════════════════════════════════
+          // 1. Base Tile Layer — her zaman aktif
+          // ═══════════════════════════════════════════════════════════════
           TileLayer(
             tileProvider: CancellableNetworkTileProvider(),
             urlTemplate: MapConstants.getTileUrl(widget.selectedBaseMap),
@@ -135,24 +134,28 @@ class _MapViewState extends State<MapView> {
             panBuffer: 1,
           ),
 
-          // 1.5 Vector Tile Layer (MVT) — su/baraj/enerji alanları
-          // Varsayılan KAPALI — kullanıcı harita kontrollerinden açabilir.
-          // VectorTileLayer yalnızca açıkken oluşturulur: her build()'de
-          // isolate patlamasını önlemek için theme static final'dır.
+          // ═══════════════════════════════════════════════════════════════
+          // 2. Görsel Overlay Katmanları — IgnorePointer ile korunmuş
+          //    Hit-test bunları atlar → "never been laid out" crash'i engellenir
+          // ═══════════════════════════════════════════════════════════════
+
+          // 2.1 Vector Tile Layer (MVT)
           if (mapViewModel.showVectorLayer)
-            VectorTileLayer(
-              theme: SrrpVectorStyle.theme,
-              backgroundTheme: null,
-              tileProviders: TileProviders({
-                'srrp_all': NetworkVectorTileProvider(
-                  urlTemplate:
-                      "http://localhost:8000/api/v1/tiles/{z}/{x}/{y}.pbf",
-                  maximumZoom: 14,
-                ),
-              }),
+            IgnorePointer(
+              child: VectorTileLayer(
+                theme: SrrpVectorStyle.theme,
+                backgroundTheme: null,
+                tileProviders: TileProviders({
+                  'srrp_all': NetworkVectorTileProvider(
+                    urlTemplate:
+                        "http://localhost:8000/api/v1/tiles/{z}/{x}/{y}.pbf",
+                    maximumZoom: 14,
+                  ),
+                }),
+              ),
             ),
 
-          // 1.8 Elevation Layer (OpenTopoMap)
+          // 2.2 Elevation Layer (OpenTopoMap)
           if (mapViewModel.showElevation)
             IgnorePointer(
               child: TileLayer(
@@ -165,34 +168,17 @@ class _MapViewState extends State<MapView> {
               ),
             ),
 
-          // 2. Heatmap Layer
+          // 2.3 Heatmap Layer (Rüzgar/Sıcaklık/Güneş ısı haritası)
           if (mapViewModel.currentLayer != MapLayerType.none)
-            Stack(
-              children: [
-                MapLayerWidget(
-                  data: mapViewModel.heatmapPoints,
-                  layerType: mapViewModel.currentLayer,
-                  opacity: mapViewModel.isHeatmapLoading ? 0.4 : 0.6,
-                ),
-                 if (mapViewModel.isHeatmapLoading)
-                  const Positioned(
-                    top: 20,
-                    right: 20,
-                    child: Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(8.0),
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+            IgnorePointer(
+              child: MapLayerWidget(
+                data: mapViewModel.heatmapPoints,
+                layerType: mapViewModel.currentLayer,
+                opacity: mapViewModel.isHeatmapLoading ? 0.4 : 0.6,
+              ),
             ),
 
-          // 2.05 Wind Particle Layer (animasyonlu rüzgar akışı)
+          // 2.4 Wind Particle Layer (animasyonlu rüzgar akışı)
           if (mapViewModel.showWindParticles && mapViewModel.windVectors.isNotEmpty)
             IgnorePointer(
               child: WindParticleLayer(
@@ -201,13 +187,17 @@ class _MapViewState extends State<MapView> {
               ),
             ),
 
-          // 2.1. Data Points Layer (Neon - herhangi bir katmanda veya katmansız gösterilir)
+          // 2.5 Data Points Layer (Neon noktalar)
           if (mapViewModel.showDataPoints)
-             DataPointsLayer(mapViewModel: mapViewModel),
+            IgnorePointer(
+              child: DataPointsLayer(mapViewModel: mapViewModel),
+            ),
 
-          // 3. User Selection & Restricted Areas
-          // TODO: Implement Restricted Areas drawing if needed locally or via VM
-          // For now handling selection polygons
+          // ═══════════════════════════════════════════════════════════════
+          // 3. Etkileşimli Katmanlar — IgnorePointer YOK (gesture gerekli)
+          // ═══════════════════════════════════════════════════════════════
+
+          // 3.1 Selection Polygon (görsel ama PolygonLayer hit-test güvenli)
           if (mapViewModel.selectionPoints.isNotEmpty)
              PolygonLayer(
                polygons: [
@@ -220,11 +210,11 @@ class _MapViewState extends State<MapView> {
                ],
              ),
 
-          // 4. Markers (pin görünürlüğü ayarına göre)
+          // 3.2 Pin Markers (tap gerekli)
           if (mapViewModel.showPins)
             MarkerLayer(markers: markers),
 
-          // 5. Selection Drag Handles
+          // 3.3 Selection Drag Handles (drag gerekli)
           if (mapViewModel.selectionPoints.isNotEmpty)
             MarkerLayer(markers: _buildSelectionPointMarkers(mapViewModel)),
         ],
