@@ -6,7 +6,6 @@ import 'package:frontend/features/map/viewmodels/map_viewmodel.dart'; // For fin
 import 'package:frontend/features/map/widgets/map_legend.dart';
 import 'package:frontend/features/map/overlays/map_dashboard.dart'; // For MapDashboard
 import 'package:frontend/features/map/widgets/map_date_picker.dart';
-import 'package:frontend/features/map/widgets/recommendations_panel.dart';
 
 
 class MapOverlays extends StatelessWidget {
@@ -63,17 +62,7 @@ class MapOverlays extends StatelessWidget {
             ),
           ),
 
-        // 5. Önerilen Bölgeler Paneli (Sağ alt)
-        Positioned(
-          bottom: 100,
-          right: 20,
-          child: RecommendationsPanel(
-            theme: theme,
-            mapViewModel: mapViewModel,
-          ),
-        ),
-
-        // 6. Legends (Bottom Right)
+        // 5. Legends (Bottom Right)
         if (mapViewModel.currentLayer == MapLayerType.irradiance)
           Positioned(
             bottom: 40,

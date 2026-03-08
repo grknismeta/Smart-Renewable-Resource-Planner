@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_animations/flutter_map_animations.dart';
 
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/core/theme/app_theme.dart';
@@ -13,6 +13,7 @@ import 'package:frontend/features/map/widgets/map_controls.dart';
 import 'package:frontend/features/map/widgets/layers_panel.dart';
 import 'package:frontend/features/map/overlays/map_overlays.dart';
 import 'package:frontend/features/map/overlays/selection_indicators.dart';
+import 'package:frontend/features/map/widgets/panels/recommendations/recommendations_side_panel.dart';
 
 // Sidebar & Dialogs
 import 'package:frontend/features/sidebar/map_bottom_sheet.dart';
@@ -26,17 +27,25 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
-  final MapController _mapController = MapController();
-  
-  // Local state for UI toggles (could be in VM but acceptable here for UI-only state)
+class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
+  late final AnimatedMapController _animatedMapController;
+
+  // Local state for UI toggles
   bool _showLayersPanel = false;
   String _selectedBaseMap = 'dark';
-  LatLng? _hoverPosition;
+
+  // Hover — ValueNotifier ile sadece MapOverlays rebuild oluyor,
+  // MapView/FlutterMap rebuild OLMUYOR.
+  final ValueNotifier<LatLng?> _hoverNotifier = ValueNotifier<LatLng?>(null);
 
   @override
   void initState() {
     super.initState();
+    _animatedMapController = AnimatedMapController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeInOutCubic,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
       // Load initial weather data
@@ -44,6 +53,13 @@ class _MapScreenState extends State<MapScreen> {
         DateTime.now().subtract(const Duration(hours: 1)),
       );
     });
+  }
+
+  @override
+  void dispose() {
+    _animatedMapController.dispose();
+    _hoverNotifier.dispose();
+    super.dispose();
   }
 
   @override
@@ -60,28 +76,33 @@ class _MapScreenState extends State<MapScreen> {
                    children: [
                      // 1. Map Engine (Bottom Layer)
                      MapView(
-                       mapController: _mapController,
+                       mapController: _animatedMapController.mapController,
                        selectedBaseMap: _selectedBaseMap,
                        onMapTap: (tapPosition, point) => _handleMapTap(mapViewModel, point),
-                       onHover: (point) => setState(() => _hoverPosition = point),
-                       onExitRange: () => setState(() => _hoverPosition = null),
+                       onHover: (point) => _hoverNotifier.value = point,
+                       onExitRange: () => _hoverNotifier.value = null,
                      ),
 
                      // 2. Overlays (Dashboard, Hover Info, Legends)
-                     MapOverlays(
-                       theme: theme,
-                       mapViewModel: mapViewModel,
-                       hoverPosition: _hoverPosition,
-                       layersPanel: _showLayersPanel 
-                          ? LayersPanel(
-                              theme: theme,
-                              mapViewModel: mapViewModel,
-                              selectedBaseMap: _selectedBaseMap,
-                              onBaseMapChanged: (val) => setState(() => _selectedBaseMap = val),
-                            )
-                          : null,
+                     ValueListenableBuilder<LatLng?>(
+                       valueListenable: _hoverNotifier,
+                       builder: (context, hoverPosition, _) {
+                         return MapOverlays(
+                           theme: theme,
+                           mapViewModel: mapViewModel,
+                           hoverPosition: hoverPosition,
+                           layersPanel: _showLayersPanel
+                              ? LayersPanel(
+                                  theme: theme,
+                                  mapViewModel: mapViewModel,
+                                  selectedBaseMap: _selectedBaseMap,
+                                  onBaseMapChanged: (val) => setState(() => _selectedBaseMap = val),
+                                )
+                              : null,
+                         );
+                       },
                      ),
-                     
+
                      // 3. Floating Controls (Buttons)
                       MapControls(
                         theme: theme,
@@ -101,12 +122,14 @@ class _MapScreenState extends State<MapScreen> {
                         isSelectingRegion: mapViewModel.isSelectingRegion,
                         isLayersPanelVisible: _showLayersPanel,
                         showVectorLayer: mapViewModel.showVectorLayer,
+                        onToggleRecommendations: () => mapViewModel.toggleRecommendationsPanel(),
+                        isRecommendationsPanelOpen: mapViewModel.isRecommendationsPanelOpen,
                       ),
 
                      // 4. Map Bottom Sheet (Persistent Sidebar Replacement)
                      const MapBottomSheet(),
 
-                     // 5. Contextual Action Indicators (e.g., "Click to place pin")
+                     // 5. Contextual Action Indicators
                      if (mapViewModel.placingPinType != null)
                       Positioned(
                         bottom: 180,
@@ -117,17 +140,34 @@ class _MapScreenState extends State<MapScreen> {
                           onCancel: mapViewModel.stopPlacingMarker,
                         ),
                       ),
-                      
+
                     if (mapViewModel.isSelectingRegion)
                       Positioned(
                         bottom: mapViewModel.placingPinType != null ? 280 : 180,
-                        left: 0, 
+                        left: 0,
                         right: 0,
                         child: RegionSelectionIndicator(
                           points: mapViewModel.selectionPoints,
                           onCancel: mapViewModel.clearRegionSelection,
                         ),
                       ),
+
+                     // 6. Recommendations Side Panel (slides from right)
+                     AnimatedPositioned(
+                       duration: const Duration(milliseconds: 350),
+                       curve: Curves.easeInOutCubic,
+                       top: 0,
+                       bottom: 0,
+                       right: mapViewModel.isRecommendationsPanelOpen ? 0 : -380,
+                       width: 380,
+                       child: RecommendationsSidePanel(
+                         theme: theme,
+                         mapViewModel: mapViewModel,
+                         onCityNavigate: (lat, lon) => _animateMapTo(
+                           LatLng(lat, lon), 10.0,
+                         ),
+                       ),
+                     ),
                    ],
                  ),
                ),
@@ -139,25 +179,17 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _handleMapTap(MapViewModel viewModel, LatLng point) {
-     // Delegate interactions to ViewModel logic
-     // Note: checkGeoSuitability needs BuildContext to show dialogs if staying in VM
-     // OR we move dialog triggering here. Use result from VM.
-     
      if (viewModel.isSelectingRegion) {
         viewModel.recordSelectionPoint(point);
         return;
      }
 
      if (viewModel.placingPinType != null) {
-        // Trigger Suitability Check
-        // Since logic was in MapScreen, we need to invoke the extracted logic or VM method
-        // For now, let's assume we invoke a method on VM that might return a Future result
         _checkGeoSuitability(viewModel, point);
      }
   }
 
   Future<void> _checkGeoSuitability(MapViewModel viewModel, LatLng point) async {
-     // Dialog kendi içinde geoCheck + uygunluk kontrolü yapıyor
      if (!context.mounted) return;
 
      final apiService = Provider.of<ApiService>(context, listen: false);
@@ -213,11 +245,17 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  void _animateMapTo(LatLng target, double zoom) {
+    _animatedMapController.animateTo(dest: target, zoom: zoom);
+  }
+
   void _zoomIn() {
-    _mapController.move(_mapController.camera.center, _mapController.camera.zoom + 1);
+    final mc = _animatedMapController.mapController;
+    mc.move(mc.camera.center, mc.camera.zoom + 1);
   }
 
   void _zoomOut() {
-    _mapController.move(_mapController.camera.center, _mapController.camera.zoom - 1);
+    final mc = _animatedMapController.mapController;
+    mc.move(mc.camera.center, mc.camera.zoom - 1);
   }
 }
