@@ -11,6 +11,8 @@ class MapControls extends StatelessWidget {
   final VoidCallback onZoomOut;
   final bool isSelectingRegion;
   final bool isLayersPanelVisible;
+  final VoidCallback? onToggleRecommendations;
+  final bool isRecommendationsPanelOpen;
 
   const MapControls({
     super.key,
@@ -22,6 +24,8 @@ class MapControls extends StatelessWidget {
     required this.onZoomOut,
     required this.isSelectingRegion,
     required this.isLayersPanelVisible,
+    this.onToggleRecommendations,
+    this.isRecommendationsPanelOpen = false,
   });
 
   @override
@@ -53,6 +57,19 @@ class MapControls extends StatelessWidget {
                 color: isLayersPanelVisible ? Colors.greenAccent : theme.textColor,
                 theme: theme,
               ),
+              const SizedBox(height: 16),
+
+              // Önerilen Bölgeler
+              if (onToggleRecommendations != null)
+                MapControlButton(
+                  icon: Icons.auto_awesome_rounded,
+                  tooltip: "Önerilen Bölgeler",
+                  onTap: onToggleRecommendations!,
+                  color: isRecommendationsPanelOpen
+                      ? Colors.purpleAccent
+                      : theme.textColor,
+                  theme: theme,
+                ),
             ],
           ),
         ),

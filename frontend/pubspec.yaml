@@ -47,6 +47,7 @@ dependencies:
 
   # --- Bağlantı Durumu ---
   connectivity_plus: ^6.1.3
+  flutter_map_animations: ^0.9.0
 
 dev_dependencies:
   flutter_test:

@@ -67,6 +67,13 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   bool _showVectorLayer = false; // MVT katmanı — varsayılan kapalı (render crash önleme)
   MapTimePeriod _selectedPeriod = MapTimePeriod.current;
 
+  // --- Önerilen Bölgeler Side Panel ---
+  bool _isRecommendationsPanelOpen = false;
+  RecommendedCity? _selectedRecommendedCity;
+  List<CityWeatherData>? _selectedCityHourlyData;
+  bool _isLoadingSelectedCityData = false;
+  int _cityDataRequestId = 0;
+
   List<Pin> get pins => _pins;
   PinType? get placingPinType => _placingPinType;
   PinCalculationResponse? get latestCalculationResult =>
@@ -102,6 +109,12 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   /// Pin için şehir adı (cache'ten)
   String pinCityName(int pinId) => _pinCityNames[pinId] ?? '';
 
+  // --- Önerilen Bölgeler Getters ---
+  bool get isRecommendationsPanelOpen => _isRecommendationsPanelOpen;
+  RecommendedCity? get selectedRecommendedCity => _selectedRecommendedCity;
+  List<CityWeatherData>? get selectedCityHourlyData => _selectedCityHourlyData;
+  bool get isLoadingSelectedCityData => _isLoadingSelectedCityData;
+
   void toggleDataPoints(bool value) {
     _showDataPoints = value;
     safeNotify();
@@ -123,6 +136,57 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     if (currentLayer != MapLayerType.none) {
       fetchHeatmapDataForLayer(currentLayer);
     }
+    safeNotify();
+  }
+
+  // --- Önerilen Bölgeler Panel Metodları ---
+
+  void toggleRecommendationsPanel() {
+    _isRecommendationsPanelOpen = !_isRecommendationsPanelOpen;
+    if (_isRecommendationsPanelOpen &&
+        _recommendations == null &&
+        !_isLoadingRecommendations) {
+      loadRecommendations();
+    }
+    safeNotify();
+  }
+
+  void closeRecommendationsPanel() {
+    _isRecommendationsPanelOpen = false;
+    safeNotify();
+  }
+
+  /// Önerilen bir şehri seç — saatlik hava verisini yükler.
+  /// _cityDataRequestId ile hızlı tıklama koruması sağlanır.
+  Future<void> selectRecommendedCity(RecommendedCity city) async {
+    _selectedRecommendedCity = city;
+    _isLoadingSelectedCityData = true;
+    final requestId = ++_cityDataRequestId;
+    notifyListeners();
+
+    try {
+      final hourlyData = await _apiService.weather.fetchCityHourly(
+        city.name,
+        hours: 168,
+      );
+      if (_cityDataRequestId != requestId || _disposed) return;
+      _selectedCityHourlyData = hourlyData;
+    } catch (e) {
+      if (_cityDataRequestId != requestId || _disposed) return;
+      debugPrint('[MapViewModel.selectRecommendedCity] Error: $e');
+      _selectedCityHourlyData = null;
+    } finally {
+      if (_cityDataRequestId == requestId && !_disposed) {
+        _isLoadingSelectedCityData = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  void clearSelectedCity() {
+    _selectedRecommendedCity = null;
+    _selectedCityHourlyData = null;
+    _isLoadingSelectedCityData = false;
     safeNotify();
   }
 

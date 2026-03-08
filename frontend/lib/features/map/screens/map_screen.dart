@@ -1,19 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_animations/flutter_map_animations.dart';
 
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
 
-// New Atomic Components
 import 'package:frontend/features/map/widgets/map_view.dart';
 import 'package:frontend/features/map/widgets/panels/map_overlays.dart';
-
-
+import 'package:frontend/features/map/widgets/panels/recommendations/recommendations_side_panel.dart';
 import 'package:frontend/features/map/widgets/panels/map_bottom_sheet.dart';
-import 'package:frontend/features/map/widgets/map_widgets.dart'; 
-// Import AddPinDialog
+import 'package:frontend/features/map/widgets/map_widgets.dart';
 
 
 class MapScreen extends StatefulWidget {
@@ -23,8 +20,8 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
-  final MapController _mapController = MapController();
+class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
+  late final AnimatedMapController _animatedMapController;
 
   // Local state for UI toggles (could be in VM but acceptable here for UI-only state)
   bool _showLayersPanel = false;
@@ -38,6 +35,11 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    _animatedMapController = AnimatedMapController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeInOutCubic,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
       // Load initial weather data
@@ -49,6 +51,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
+    _animatedMapController.dispose();
     _hoverNotifier.dispose();
     super.dispose();
   }
@@ -67,7 +70,7 @@ class _MapScreenState extends State<MapScreen> {
                    children: [
                      // 1. Map Engine (Bottom Layer)
                      MapView(
-                       mapController: _mapController,
+                       mapController: _animatedMapController.mapController,
                        selectedBaseMap: _selectedBaseMap,
                        onMapTap: (tapPosition, point) => _handleMapTap(mapViewModel, point),
                        onHover: (point) => _hoverNotifier.value = point,
@@ -112,6 +115,8 @@ class _MapScreenState extends State<MapScreen> {
                        onZoomOut: _zoomOut,
                        isSelectingRegion: mapViewModel.isSelectingRegion,
                        isLayersPanelVisible: _showLayersPanel,
+                       onToggleRecommendations: () => mapViewModel.toggleRecommendationsPanel(),
+                       isRecommendationsPanelOpen: mapViewModel.isRecommendationsPanelOpen,
                      ),
 
                      // 4. Map Bottom Sheet (Persistent Sidebar Replacement)
@@ -128,17 +133,34 @@ class _MapScreenState extends State<MapScreen> {
                           onCancel: mapViewModel.stopPlacingMarker,
                         ),
                       ),
-                      
+
                     if (mapViewModel.isSelectingRegion)
                       Positioned(
                         bottom: mapViewModel.placingPinType != null ? 280 : 180,
-                        left: 0, 
+                        left: 0,
                         right: 0,
                         child: RegionSelectionIndicator(
                           points: mapViewModel.selectionPoints,
                           onCancel: mapViewModel.clearRegionSelection,
                         ),
                       ),
+
+                     // 6. Recommendations Side Panel (slides from right)
+                     AnimatedPositioned(
+                       duration: const Duration(milliseconds: 350),
+                       curve: Curves.easeInOutCubic,
+                       top: 0,
+                       bottom: 0,
+                       right: mapViewModel.isRecommendationsPanelOpen ? 0 : -380,
+                       width: 380,
+                       child: RecommendationsSidePanel(
+                         theme: theme,
+                         mapViewModel: mapViewModel,
+                         onCityNavigate: (lat, lon) => _animateMapTo(
+                           LatLng(lat, lon), 10.0,
+                         ),
+                       ),
+                     ),
                    ],
                  ),
                ),
@@ -235,11 +257,17 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  void _animateMapTo(LatLng target, double zoom) {
+    _animatedMapController.animateTo(dest: target, zoom: zoom);
+  }
+
   void _zoomIn() {
-    _mapController.move(_mapController.camera.center, _mapController.camera.zoom + 1);
+    final mc = _animatedMapController.mapController;
+    mc.move(mc.camera.center, mc.camera.zoom + 1);
   }
 
   void _zoomOut() {
-    _mapController.move(_mapController.camera.center, _mapController.camera.zoom - 1);
+    final mc = _animatedMapController.mapController;
+    mc.move(mc.camera.center, mc.camera.zoom - 1);
   }
 }
