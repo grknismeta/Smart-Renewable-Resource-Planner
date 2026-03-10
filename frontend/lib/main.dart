@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 // Servisler
 import 'package:frontend/core/network/api_service.dart';
@@ -29,8 +30,11 @@ import 'package:frontend/features/onboarding/onboarding_screen.dart';
 // Shared
 import 'package:frontend/shared/widgets/offline_banner.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Türkçe tarih formatlamasını başlat — DateFormat('...', 'tr_TR') için zorunlu.
+  await initializeDateFormatting('tr_TR', null);
 
   // Tile provider'lardan (CancellableNetworkTileProvider, NetworkVectorTileProvider)
   // gelen kasıtlı "Cancelled" istisnalarını yakala ve bastır.
@@ -40,9 +44,9 @@ void main() {
       // Harita tile'ları iptal edildiğinde beklenen hata – görmezden gel.
       return true;
     }
-    // Gerçek hataları logla.
+    // Gerçek hataları logla ama uygulamayı durdurma.
     debugPrint('[Unhandled Exception] $error\n$stack');
-    return true;
+    return false; // false → Flutter kendi hata işleyicisini de çalıştırır
   };
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
