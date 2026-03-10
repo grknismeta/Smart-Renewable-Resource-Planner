@@ -19,7 +19,8 @@ dependencies:
   # --- Harita ---
   latlong2: ^0.9.1
   flutter_map: ^8.2.2
-  flutter_map_cancellable_tile_provider: ^3.1.1
+  # flutter_map_cancellable_tile_provider kaldırıldı — flutter_map 7.0+'dan
+  # itibaren CancellableNetworkTileProvider doğrudan flutter_map içinde mevcut.
   vector_map_tiles: ^9.0.0-beta.8
   vector_tile_renderer: ^6.0.0
 

@@ -41,17 +41,17 @@ Future<void> main() async {
     FlutterError.presentError(details);
   };
 
-  // Tile provider'lardan (CancellableNetworkTileProvider, NetworkVectorTileProvider)
-  // ve Dio'dan gelen kasıtlı iptal istisnalarını yakala ve bastır.
+  // NetworkVectorTileProvider'dan gelebilecek iptal istisnalarını yakala ve bastır.
+  // NOT: flutter_map_cancellable_tile_provider (Dio tabanlı) kaldırıldı;
+  //      artık flutter_map yerleşik NetworkTileProvider() kullanılıyor.
   // ÖNEMLI: Windows masaüstünde return false → process crash.
   //         Bu yüzden her durumda return true; hatalar ayrıca loglanıyor.
   PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
     final msg = error.toString().toLowerCase();
-    // Beklenen iptal hataları — tile provider, Dio cancel token
+    // Beklenen iptal hataları — vector tile provider cancel
     final isCancelError = msg.contains('cancelled') ||
         msg.contains('canceled') ||
-        msg.contains('[cancel]') ||   // DioException [cancel]: null
-        msg.contains('request cancel'); // "Request cancelled" / "Request canceled"
+        msg.contains('request cancel');
     if (!isCancelError) {
       // Gerçek hatayı logla — çökme değil, sadece kayıt
       debugPrint('[Unhandled Exception] $error');

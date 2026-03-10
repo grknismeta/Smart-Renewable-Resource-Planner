@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
@@ -128,7 +127,7 @@ class _MapViewState extends State<MapView> {
           // 1. Base Tile Layer — her zaman aktif
           // ═══════════════════════════════════════════════════════════════
           TileLayer(
-            tileProvider: CancellableNetworkTileProvider(),
+            tileProvider: NetworkTileProvider(),
             urlTemplate: MapConstants.getTileUrl(widget.selectedBaseMap),
             keepBuffer: 10,
             panBuffer: 1,
@@ -160,7 +159,7 @@ class _MapViewState extends State<MapView> {
             IgnorePointer(
               child: TileLayer(
                 urlTemplate: 'https://tile.opentopomap.org/{z}/{x}/{y}.png',
-                tileProvider: CancellableNetworkTileProvider(),
+                tileProvider: NetworkTileProvider(),
                 keepBuffer: 4,
                 tileBuilder: (context, tileWidget, tile) {
                   return Opacity(opacity: 0.65, child: tileWidget);
