@@ -149,8 +149,8 @@ class _MapDatePickerWidgetState extends State<MapDatePickerWidget>
     final theme = widget.theme;
     final vm = widget.mapViewModel;
     final selected = vm.selectedTime;
-    final isNow = DateTime.now().difference(selected).abs() <
-        const Duration(hours: 2);
+    final isNow =
+        DateTime.now().difference(selected).abs() < const Duration(hours: 2);
 
     return Container(
       decoration: BoxDecoration(
@@ -182,9 +182,7 @@ class _MapDatePickerWidgetState extends State<MapDatePickerWidget>
                   Icon(
                     Icons.access_time_rounded,
                     size: 16,
-                    color: isNow
-                        ? Colors.greenAccent
-                        : const Color(0xFF4ECDC4),
+                    color: isNow ? Colors.greenAccent : const Color(0xFF4ECDC4),
                   ),
                   const SizedBox(width: 8),
                   Column(
@@ -200,9 +198,13 @@ class _MapDatePickerWidgetState extends State<MapDatePickerWidget>
                         ),
                       ),
                       Text(
-                        isNow ? '${_timeFmt.format(selected)}  (Anlık)' : _timeFmt.format(selected),
+                        isNow
+                            ? '${_timeFmt.format(selected)}  (Anlık)'
+                            : _timeFmt.format(selected),
                         style: TextStyle(
-                          color: isNow ? Colors.greenAccent : theme.secondaryTextColor,
+                          color: isNow
+                              ? Colors.greenAccent
+                              : theme.secondaryTextColor,
                           fontSize: 11,
                         ),
                       ),
@@ -237,70 +239,76 @@ class _MapDatePickerWidgetState extends State<MapDatePickerWidget>
                   child: Column(
                     children: [
                       // Tarih ve saat seçiciler
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _DateTimeButton(
-                              label: 'Tarih',
-                              value: _dateFmt.format(selected),
-                              icon: Icons.calendar_today_rounded,
-                              color: const Color(0xFF4ECDC4),
-                              onTap: _pickDate,
-                              theme: theme,
+                      SizedBox(
+                        width: 250,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _DateTimeButton(
+                                label: 'Tarih',
+                                value: _dateFmt.format(selected),
+                                icon: Icons.calendar_today_rounded,
+                                color: const Color(0xFF4ECDC4),
+                                onTap: _pickDate,
+                                theme: theme,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _DateTimeButton(
-                              label: 'Saat',
-                              value: _timeFmt.format(selected),
-                              icon: Icons.schedule_rounded,
-                              color: const Color(0xFF56CCF2),
-                              onTap: _pickTime,
-                              theme: theme,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _DateTimeButton(
+                                label: 'Saat',
+                                value: _timeFmt.format(selected),
+                                icon: Icons.schedule_rounded,
+                                color: const Color(0xFF56CCF2),
+                                onTap: _pickTime,
+                                theme: theme,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
 
                       const SizedBox(height: 10),
 
                       // Gezinme butonları
-                      Row(
-                        children: [
-                          // ← Önceki gün
-                          Expanded(
-                            child: _NavButton(
-                              icon: Icons.chevron_left_rounded,
-                              label: '−1 gün',
-                              onTap: _goBackOneDay,
-                              theme: theme,
+                      SizedBox(
+                        width: 250,
+                        child: Row(
+                          children: [
+                            // ← Önceki gün
+                            Expanded(
+                              child: _NavButton(
+                                icon: Icons.chevron_left_rounded,
+                                label: '−1 gün',
+                                onTap: _goBackOneDay,
+                                theme: theme,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
+                            const SizedBox(width: 8),
 
-                          // Şimdi
-                          Expanded(
-                            child: _NavButton(
-                              icon: Icons.gps_fixed_rounded,
-                              label: 'Şimdi',
-                              onTap: _resetToNow,
-                              theme: theme,
-                              highlight: true,
+                            // Şimdi
+                            Expanded(
+                              child: _NavButton(
+                                icon: Icons.gps_fixed_rounded,
+                                label: 'Şimdi',
+                                onTap: _resetToNow,
+                                theme: theme,
+                                highlight: true,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
+                            const SizedBox(width: 8),
 
-                          // → Sonraki gün
-                          Expanded(
-                            child: _NavButton(
-                              icon: Icons.chevron_right_rounded,
-                              label: '+1 gün',
-                              onTap: _goForwardOneDay,
-                              theme: theme,
+                            // → Sonraki gün
+                            Expanded(
+                              child: _NavButton(
+                                icon: Icons.chevron_right_rounded,
+                                label: '+1 gün',
+                                onTap: _goForwardOneDay,
+                                theme: theme,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
 
                       // Yükleniyor göstergesi
@@ -434,17 +442,12 @@ class _NavButton extends StatelessWidget {
               ? Colors.greenAccent.withValues(alpha: 0.1)
               : theme.cardColor.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: color.withValues(alpha: 0.3),
-          ),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Column(
           children: [
             Icon(icon, size: 16, color: color),
-            Text(
-              label,
-              style: TextStyle(color: color, fontSize: 10),
-            ),
+            Text(label, style: TextStyle(color: color, fontSize: 10)),
           ],
         ),
       ),

@@ -17,12 +17,24 @@ class MapConstants {
   static const Color windFgColor = Color(0xFF18FFFF); // Neon Cam Göbeği
 
   // --- GÜNEŞ TEMA RENKLERİ (Sıcak Kehribar) ---
-  static const Color solarBgColor = Color.fromARGB(255, 0, 0, 0); // Koyu Kor Turuncu
-  static const Color solarFgColor = Color.fromARGB(197, 255, 188, 30); // Parlak Kehribar (Amber)
+  static const Color solarBgColor = Color.fromARGB(
+    255,
+    227,
+    252,
+    0,
+  ); // Koyu Kor Turuncu
+  static const Color solarFgColor = Color.fromARGB(
+    197,
+    255,
+    188,
+    30,
+  ); // Parlak Kehribar (Amber)
 
   // --- HES TEMA RENKLERİ (Elektrik Yeşili) ---
   static const Color hesBgColor = Color(0xFF1B5E20); // Yosun/Orman Yeşili
-  static const Color hesFgColor = Color(0xFF00E676); // Parlak Neon Zümrüt Yeşili
+  static const Color hesFgColor = Color(
+    0xFF00E676,
+  ); // Parlak Neon Zümrüt Yeşili
 
   // --- HARİTA SINIRLARI (TÜRKİYE) ---
   static const double turkeyMinLat = 34.0;
