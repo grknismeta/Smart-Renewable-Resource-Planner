@@ -36,17 +36,28 @@ Future<void> main() async {
   // Türkçe tarih formatlamasını başlat — DateFormat('...', 'tr_TR') için zorunlu.
   await initializeDateFormatting('tr_TR', null);
 
+  // Widget build hatalarını debug konsoluna yaz (red screen göster ama susturma).
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+  };
+
   // Tile provider'lardan (CancellableNetworkTileProvider, NetworkVectorTileProvider)
-  // gelen kasıtlı "Cancelled" istisnalarını yakala ve bastır.
+  // ve Dio'dan gelen kasıtlı iptal istisnalarını yakala ve bastır.
+  // ÖNEMLI: Windows masaüstünde return false → process crash.
+  //         Bu yüzden her durumda return true; hatalar ayrıca loglanıyor.
   PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
     final msg = error.toString().toLowerCase();
-    if (msg.contains('cancelled') || msg.contains('canceled')) {
-      // Harita tile'ları iptal edildiğinde beklenen hata – görmezden gel.
-      return true;
+    // Beklenen iptal hataları — tile provider, Dio cancel token
+    final isCancelError = msg.contains('cancelled') ||
+        msg.contains('canceled') ||
+        msg.contains('[cancel]') ||   // DioException [cancel]: null
+        msg.contains('request cancel'); // "Request cancelled" / "Request canceled"
+    if (!isCancelError) {
+      // Gerçek hatayı logla — çökme değil, sadece kayıt
+      debugPrint('[Unhandled Exception] $error');
+      if (kDebugMode) debugPrint(stack.toString());
     }
-    // Gerçek hataları logla ama uygulamayı durdurma.
-    debugPrint('[Unhandled Exception] $error\n$stack');
-    return false; // false → Flutter kendi hata işleyicisini de çalıştırır
+    return true; // Her zaman true — uygulama çalışmaya devam eder
   };
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
