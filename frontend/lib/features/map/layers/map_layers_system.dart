@@ -114,12 +114,13 @@ int _getTempColorInt(double t) {
   return _lerpInt(0xFFFFEB3B, 0xFFF44336, (t - 0.66) / 0.34);
 }
 
+/// MapLayerType enum sırası: none=0, wind=1, temp=2, irradiance=3
 int _colorInt(double normalized, int layerTypeIndex) {
   switch (layerTypeIndex) {
-    case 2: return _getSolarColorInt(normalized);
-    case 0: return _getWindColorInt(normalized);
-    case 1: return _getTempColorInt(normalized);
-    default: return 0x00000000;
+    case 1: return _getWindColorInt(normalized);      // wind
+    case 2: return _getTempColorInt(normalized);      // temp
+    case 3: return _getSolarColorInt(normalized);     // irradiance
+    default: return 0x00000000;                       // none veya bilinmeyen
   }
 }
 

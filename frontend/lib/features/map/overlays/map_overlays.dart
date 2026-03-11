@@ -52,9 +52,11 @@ class MapOverlays extends StatelessWidget {
            ),
 
         // 4. Tarih Seçici (Sol alt — hava katmanı açıkken görünür)
+        // bottom: 140 → zoom butonları (bottom:40, ~88px yükseklik, top≈128px)
+        // ile çakışmayı önler.
         if (mapViewModel.currentLayer != MapLayerType.none)
           Positioned(
-            bottom: 100,
+            bottom: 140,
             left: 20,
             child: MapDatePickerWidget(
               theme: theme,
