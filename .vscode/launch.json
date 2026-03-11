@@ -5,23 +5,29 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "frontend",
+      "name": "frontend (Windows Debug)",
       "cwd": "frontend",
-      "request": "launch",
-      "type": "dart"
-    },
-    {
-      "name": "frontend (profile mode)",
-      "cwd": "frontend",
+      "program": "lib/main.dart",
       "request": "launch",
       "type": "dart",
+      "deviceId": "windows"
+    },
+    {
+      "name": "frontend (Windows Profile)",
+      "cwd": "frontend",
+      "program": "lib/main.dart",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "windows",
       "flutterMode": "profile"
     },
     {
-      "name": "frontend (release mode)",
+      "name": "frontend (Windows Release)",
       "cwd": "frontend",
+      "program": "lib/main.dart",
       "request": "launch",
       "type": "dart",
+      "deviceId": "windows",
       "flutterMode": "release"
     }
   ]

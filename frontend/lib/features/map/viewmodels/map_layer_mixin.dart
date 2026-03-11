@@ -27,6 +27,11 @@ mixin MapLayerMixin on BaseViewModel {
   List<Map<String, dynamic>> _interpolatedData = [];
   bool _isHeatmapLoading = false;
 
+  // heatmapPoints cache — _interpolatedData değişince yenilenir,
+  // aksi hâlde aynı List referansı döner → MapLayerWidget gereksiz
+  // yeniden hesaplama yapmaz (didUpdateWidget: data != oldData = false).
+  List<HeatmapPoint>? _heatmapPointsCache;
+
   // ─── Rüzgar Parçacık + Yükseklik Katmanı State ──────────────────────────
   bool _showWindParticles = false;
   bool _isWindLoading = false;
@@ -47,15 +52,22 @@ mixin MapLayerMixin on BaseViewModel {
   bool get isHeatmapLoading => _isHeatmapLoading;
 
   // --- HEATMAP İÇİN VERİ DÖNÜŞÜMÜ ---
-  List<HeatmapPoint> get heatmapPoints {
-    if (_interpolatedData.isNotEmpty) {
-       return _interpolatedData.map((d) => HeatmapPoint(
-         latitude: d['lat'],
-         longitude: d['lon'],
-         value: d['value'],
-       )).toList();
+  /// Cache'li getter: _interpolatedData değişmediği sürece
+  /// aynı List[HeatmapPoint] referansını döndürür.
+  /// Böylece MapLayerWidget.didUpdateWidget her rebuild'de
+  /// _generateLayerPicture() tetiklemez.
+  List<HeatmapPoint> get heatmapPoints => _heatmapPointsCache ?? [];
+
+  void _rebuildHeatmapCache() {
+    if (_interpolatedData.isEmpty) {
+      _heatmapPointsCache = [];
+      return;
     }
-    return [];
+    _heatmapPointsCache = _interpolatedData.map((d) => HeatmapPoint(
+      latitude: (d['lat'] as num).toDouble(),
+      longitude: (d['lon'] as num).toDouble(),
+      value: (d['value'] as num).toDouble(),
+    )).toList();
   }
 
   void setLayer(MapLayerType layer) {
@@ -85,6 +97,7 @@ mixin MapLayerMixin on BaseViewModel {
   Future<void> fetchHeatmapDataForLayer(MapLayerType layer) async {
     if (layer == MapLayerType.none) {
       _interpolatedData = [];
+      _rebuildHeatmapCache();
       safeNotify();
       return;
     }
@@ -97,6 +110,7 @@ mixin MapLayerMixin on BaseViewModel {
       final apiType = layer.apiName;
       if (apiType != null) {
         _interpolatedData = await apiService.report.fetchInterpolatedMap(apiType);
+        _rebuildHeatmapCache(); // Cache yalnızca veri gerçekten değişince güncellenir
       }
     } catch (e) {
       debugPrint('Heatmap loading error: $e');

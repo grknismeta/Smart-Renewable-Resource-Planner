@@ -1,4 +1,6 @@
+import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -25,7 +27,7 @@ enum MapLayerType {
     }
   }
 
-  /// UI gösterim adları (İstenirse kullanılabilir)
+  /// UI gösterim adları
   String get displayName {
     switch (this) {
       case MapLayerType.wind:
@@ -40,8 +42,237 @@ enum MapLayerType {
   }
 }
 
+// ─── Isolate Input / Output ────────────────────────────────────────────────────
+
+/// [compute()] fonksiyonuna gönderilen düz veri.
+/// Tüm değerler Float32List içinde interleaved olarak taşınır:
+/// [lat0, lon0, val0, lat1, lon1, val1, ...]
+class _LayerComputeInput {
+  final Float32List data;
+  final int layerTypeIndex;
+  _LayerComputeInput(this.data, this.layerTypeIndex);
+}
+
+/// [compute()] sonucu — saf typed arrays.
+/// ui.Vertices.raw() direkt bu verileri tüketir.
+class _LayerComputeResult {
+  final Float32List positions; // [x, y, x, y, ...]
+  final Int32List colors;      // 0xAARRGGBB
+  final Uint16List indices;    // üçgen indeksleri
+  final double minLat, maxLat, minLon, maxLon;
+  final int cols, rows;
+
+  _LayerComputeResult({
+    required this.positions,
+    required this.colors,
+    required this.indices,
+    required this.minLat,
+    required this.maxLat,
+    required this.minLon,
+    required this.maxLon,
+    required this.cols,
+    required this.rows,
+  });
+
+  bool get isEmpty => positions.isEmpty;
+}
+
+_LayerComputeResult _emptyResult() => _LayerComputeResult(
+  positions: Float32List(0), colors: Int32List(0), indices: Uint16List(0),
+  minLat: 0, maxLat: 0, minLon: 0, maxLon: 0, cols: 0, rows: 0,
+);
+
+// ─── Renk yardımcıları — izolat uyumlu, saf int aritmetiği ───────────────────
+
+int _lerpByte(int a, int b, double t) =>
+    (a + (b - a) * t).round().clamp(0, 255);
+
+/// c1 / c2: 0xAARRGGBB
+int _lerpInt(int c1, int c2, double t) =>
+    (_lerpByte((c1 >> 24) & 0xFF, (c2 >> 24) & 0xFF, t) << 24) |
+    (_lerpByte((c1 >> 16) & 0xFF, (c2 >> 16) & 0xFF, t) << 16) |
+    (_lerpByte((c1 >> 8)  & 0xFF, (c2 >> 8)  & 0xFF, t) << 8)  |
+     _lerpByte( c1        & 0xFF,  c2        & 0xFF,  t);
+
+// Mevcut paleti int sabitlere dönüştürdük → Flutter framework gerektirmiyor
+int _getSolarColorInt(double t) {
+  if (t < 0.2) return _lerpInt(0x00000000, 0xCCFF6D00, t / 0.2);
+  if (t < 0.5) return _lerpInt(0xCCFF6D00, 0xFFD50000, (t - 0.2) / 0.3);
+  if (t < 0.8) return _lerpInt(0xFFD50000, 0xFFFFAB40, (t - 0.5) / 0.3);
+  return _lerpInt(0xFFFFAB40, 0xFFFFFFFF, (t - 0.8) / 0.2);
+}
+
+int _getWindColorInt(double t) {
+  if (t < 0.2) return _lerpInt(0x00000000, 0xCC2962FF, t / 0.2);
+  if (t < 0.6) return _lerpInt(0xCC2962FF, 0xFF64FFDA, (t - 0.2) / 0.4);
+  return _lerpInt(0xFF64FFDA, 0xFFFFFFFF, (t - 0.6) / 0.4);
+}
+
+int _getTempColorInt(double t) {
+  if (t < 0.33) return _lerpInt(0xFF2196F3, 0xFF4CAF50, t / 0.33);
+  if (t < 0.66) return _lerpInt(0xFF4CAF50, 0xFFFFEB3B, (t - 0.33) / 0.33);
+  return _lerpInt(0xFFFFEB3B, 0xFFF44336, (t - 0.66) / 0.34);
+}
+
+int _colorInt(double normalized, int layerTypeIndex) {
+  switch (layerTypeIndex) {
+    case 2: return _getSolarColorInt(normalized);
+    case 0: return _getWindColorInt(normalized);
+    case 1: return _getTempColorInt(normalized);
+    default: return 0x00000000;
+  }
+}
+
+// ─── Ağır hesaplama — izolat'te çalışır, UI thread'ini bloklamaz ──────────────
+
+/// Bu fonksiyon [compute()] aracılığıyla ayrı bir Dart izolatında çalışır.
+/// Gap-filling, Gaussian smoothing, vertex + index inşası burada yapılır.
+_LayerComputeResult _computeLayerData(_LayerComputeInput input) {
+  final int count = input.data.length ~/ 3;
+  if (count == 0) return _emptyResult();
+
+  // 1. Sınırları ve değer aralığını bul
+  double minLat = double.infinity, maxLat = double.negativeInfinity;
+  double minLon = double.infinity, maxLon = double.negativeInfinity;
+  double minVal = double.infinity, maxVal = double.negativeInfinity;
+
+  for (int i = 0; i < count; i++) {
+    final lat = input.data[i * 3];
+    final lon = input.data[i * 3 + 1];
+    final val = input.data[i * 3 + 2];
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+    if (val < minVal) minVal = val;
+    if (val > maxVal) maxVal = val;
+  }
+
+  if (minLat == double.infinity) return _emptyResult();
+  if (minVal == maxVal) maxVal += 0.1;
+
+  const double resolution = 0.1;
+  final int cols = ((maxLon - minLon) / resolution).round() + 1;
+  final int rows = ((maxLat - minLat) / resolution).round() + 1;
+  final int total = rows * cols;
+
+  // Uint16List maksimum indeks sınırı (65535 vertex)
+  if (total > 65535 || rows < 2 || cols < 2) return _emptyResult();
+
+  // 2. Veriyi düz grid listesine yerleştir
+  final grid = List<double?>.filled(total, null);
+  for (int i = 0; i < count; i++) {
+    final r = ((input.data[i * 3] - minLat) / resolution).round();
+    final c = ((input.data[i * 3 + 1] - minLon) / resolution).round();
+    if (r >= 0 && r < rows && c >= 0 && c < cols) {
+      grid[r * cols + c] = input.data[i * 3 + 2];
+    }
+  }
+
+  // 3. Gap filling — 5 geçiş diffusion
+  for (int pass = 0; pass < 5; pass++) {
+    final newGrid = List<double?>.from(grid);
+    bool changed = false;
+    for (int r = 0; r < rows; r++) {
+      for (int c = 0; c < cols; c++) {
+        if (grid[r * cols + c] != null) continue;
+        double sum = 0;
+        int cnt = 0;
+        for (int dr = -1; dr <= 1; dr++) {
+          for (int dc = -1; dc <= 1; dc++) {
+            if (dr == 0 && dc == 0) continue;
+            final nr = r + dr;
+            final nc = c + dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+              final v = grid[nr * cols + nc];
+              if (v != null) { sum += v; cnt++; }
+            }
+          }
+        }
+        if (cnt >= 2) { newGrid[r * cols + c] = sum / cnt; changed = true; }
+      }
+    }
+    for (int i = 0; i < total; i++) { grid[i] = newGrid[i]; }
+    if (!changed) break;
+  }
+
+  // 4. Gaussian-like smoothing — 3 geçiş
+  List<double?> currentGrid = grid;
+  for (int pass = 0; pass < 3; pass++) {
+    final nextGrid = List<double?>.filled(total, null);
+    for (int r = 0; r < rows; r++) {
+      for (int c = 0; c < cols; c++) {
+        final center = currentGrid[r * cols + c];
+        if (center == null) continue;
+        double sum = center * 2; // merkez ağırlıklı
+        double w = 2.0;
+        for (int dr = -1; dr <= 1; dr++) {
+          for (int dc = -1; dc <= 1; dc++) {
+            if (dr == 0 && dc == 0) continue;
+            final nr = r + dr;
+            final nc = c + dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+              final v = currentGrid[nr * cols + nc];
+              if (v != null) { sum += v; w += 1; }
+            }
+          }
+        }
+        nextGrid[r * cols + c] = sum / w;
+      }
+    }
+    currentGrid = nextGrid;
+  }
+
+  // 5. Vertex verisi — Float32List + Int32List (Vertices.raw için)
+  final positions = Float32List(total * 2);
+  final colors = Int32List(total);
+
+  for (int r = 0; r < rows; r++) {
+    for (int c = 0; c < cols; c++) {
+      final idx = r * cols + c;
+      positions[idx * 2] = c.toDouble();
+      positions[idx * 2 + 1] = (rows - 1 - r).toDouble();
+      final v = currentGrid[idx];
+      if (v != null) {
+        final norm = ((v - minVal) / (maxVal - minVal)).clamp(0.0, 1.0);
+        colors[idx] = _colorInt(norm, input.layerTypeIndex);
+      }
+      // null → 0x00000000 (transparan — Int32List default)
+    }
+  }
+
+  // 6. Üçgen indeksleri
+  final triCount = (rows - 1) * (cols - 1) * 6;
+  final indices = Uint16List(triCount);
+  int ii = 0;
+  for (int r = 0; r < rows - 1; r++) {
+    for (int c = 0; c < cols - 1; c++) {
+      final tl = r * cols + c;
+      final tr = r * cols + (c + 1);
+      final bl = (r + 1) * cols + c;
+      final br = (r + 1) * cols + (c + 1);
+      indices[ii++] = tl;
+      indices[ii++] = tr;
+      indices[ii++] = bl;
+      indices[ii++] = tr;
+      indices[ii++] = br;
+      indices[ii++] = bl;
+    }
+  }
+
+  return _LayerComputeResult(
+    positions: positions,
+    colors: colors,
+    indices: indices,
+    minLat: minLat, maxLat: maxLat,
+    minLon: minLon, maxLon: maxLon,
+    cols: cols, rows: rows,
+  );
+}
+
+// ─── Widget ────────────────────────────────────────────────────────────────────
+
 /// Tüm katman mantığını (logic + rendering) içeren ana widget.
-/// Eski `ResourceHeatmapLayer` yerine kullanılır.
 class MapLayerWidget extends StatefulWidget {
   final List<HeatmapPoint> data;
   final MapLayerType layerType;
@@ -64,222 +295,87 @@ class _MapLayerWidgetState extends State<MapLayerWidget> {
   double _imgWidth = 0;
   double _imgHeight = 0;
 
+  /// Stale check: widget güncellenirse eski compute sonucu görmezden gelinir.
+  int _computeVersion = 0;
+
   @override
   void initState() {
     super.initState();
-    _generateLayerPicture();
+    _scheduleCompute();
   }
 
   @override
   void didUpdateWidget(covariant MapLayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Cache fix: aynı List referansı ise hesaplama yapma
     if (widget.data != oldWidget.data || widget.layerType != oldWidget.layerType) {
-      _generateLayerPicture();
+      _scheduleCompute();
     }
   }
 
-  void _generateLayerPicture() {
+  void _scheduleCompute() {
+    final version = ++_computeVersion;
+    _runCompute(version);
+  }
+
+  Future<void> _runCompute(int version) async {
     if (widget.data.isEmpty || widget.layerType == MapLayerType.none) {
-      _cachedPicture = null;
+      if (mounted && _computeVersion == version) {
+        setState(() { _cachedPicture = null; _bounds = null; });
+      }
       return;
     }
 
-    // 1. Veri sınırlarını (Bounding Box) bul
-    double minLat = double.infinity;
-    double maxLat = double.negativeInfinity;
-    double minLon = double.infinity;
-    double maxLon = double.negativeInfinity;
-    
-    double minVal = double.infinity;
-    double maxVal = double.negativeInfinity;
-
-    for (var point in widget.data) {
-      if (point.latitude < minLat) minLat = point.latitude;
-      if (point.latitude > maxLat) maxLat = point.latitude;
-      if (point.longitude < minLon) minLon = point.longitude;
-      if (point.longitude > maxLon) maxLon = point.longitude;
-
-      if (point.value < minVal) minVal = point.value;
-      if (point.value > maxVal) maxVal = point.value;
+    // Flat Float32List oluştur — izolata gönderilir
+    final inputData = Float32List(widget.data.length * 3);
+    for (int i = 0; i < widget.data.length; i++) {
+      inputData[i * 3]     = widget.data[i].latitude;
+      inputData[i * 3 + 1] = widget.data[i].longitude;
+      inputData[i * 3 + 2] = widget.data[i].value;
     }
 
-    if (minLat == double.infinity) return;
-    if (minVal == maxVal) maxVal += 0.1;
-
-    // Grid çözünürlüğü (Backend 0.1 derece gönderiyor)
-    const double resolution = 0.1;
-
-    // Grid boyutlarını hesapla
-    // +1 ekleyerek kenar durumlarını kapsıyoruz (inclusive)
-    // floating point hatasından kaçınmak için round kullanıyoruz
-    final int cols = ((maxLon - minLon) / resolution).round() + 1;
-    final int rows = ((maxLat - minLat) / resolution).round() + 1;
-    
-    _bounds = LatLngBounds(
-      LatLng(minLat, minLon), 
-      LatLng(maxLat, maxLon), 
+    // Ağır hesaplama ayrı izolatta — UI thread serbest kalır
+    final result = await compute(
+      _computeLayerData,
+      _LayerComputeInput(inputData, widget.layerType.index),
     );
 
-    // Image boyutu grid boyutu kadar (her piksel bir vertex gibi düşünülebilir ama biz vertex çizeceğiz)
-    _imgWidth = cols.toDouble();
-    _imgHeight = rows.toDouble();
+    // Widget unmount olmuş veya daha yeni bir hesaplama başlamış
+    if (!mounted || _computeVersion != version) return;
 
-    // 2. Vertex'leri oluştur
-    // Veriyi hızlı erişim için 2D Array'e atalım
-    final grid = List.generate(rows, (_) => List<double?>.filled(cols, null));
-    
-    for (var point in widget.data) {
-       final r = ((point.latitude - minLat) / resolution).round();
-       final c = ((point.longitude - minLon) / resolution).round();
-       if (r >= 0 && r < rows && c >= 0 && c < cols) {
-         grid[r][c] = point.value;
-       }
+    if (result.isEmpty) {
+      setState(() { _cachedPicture = null; _bounds = null; });
+      return;
     }
 
-    // GAP FILLING (Boşlukları Doldurma - Diffusion)
-    // 5 geçişe çıkararak daha geniş boşlukları dolduruyoruz.
-    for (int pass = 0; pass < 5; pass++) {
-       final newGrid = List.generate(rows, (i) => List<double?>.from(grid[i]));
-       bool changed = false;
-       
-       for (int r = 0; r < rows; r++) {
-         for (int c = 0; c < cols; c++) {
-           if (grid[r][c] == null) {
-              double sum = 0;
-              int count = 0;
-              
-              // 3x3 Tam Komşuluk (Diagonaller dahil)
-              for (int dr = -1; dr <= 1; dr++) {
-                for (int dc = -1; dc <= 1; dc++) {
-                  if (dr == 0 && dc == 0) continue;
-                  final nr = r + dr;
-                  final nc = c + dc;
-                  if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] != null) {
-                    sum += grid[nr][nc]!;
-                    count++;
-                  }
-                }
-              }
-              
-              if (count >= 2) { // En az 2 komşu yeterli (daha agresif dolum)
-                 newGrid[r][c] = sum / count;
-                 changed = true;
-              }
-           }
-         }
-       }
-       
-       for(int r=0; r<rows; r++) {
-         for(int c=0; c<cols; c++) {
-            grid[r][c] = newGrid[r][c];
-         }
-       }
-       if (!changed) break;
-    }
-
-    // SMOOTHING (Gaussian-like Blur)
-    // 3 Geçişli Blur ile "Glow" etkisi yaratıyoruz
-    List<List<double?>> currentGrid = grid;
-    
-    for (int pass = 0; pass < 3; pass++) {
-        final nextGrid = List.generate(rows, (_) => List<double?>.filled(cols, null));
-        
-        for (int r = 0; r < rows; r++) {
-          for (int c = 0; c < cols; c++) {
-             if (currentGrid[r][c] != null) {
-                 double sum = currentGrid[r][c]! * 2; // Merkez ağırlıklı (2x)
-                 double weightTotal = 2.0;
-                 
-                 // 3x3 Box Blur
-                 for (int dr = -1; dr <= 1; dr++) {
-                    for (int dc = -1; dc <= 1; dc++) {
-                       if (dr == 0 && dc == 0) continue;
-                       final nr = r + dr;
-                       final nc = c + dc;
-                       if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && currentGrid[nr][nc] != null) {
-                          sum += currentGrid[nr][nc]!;
-                          weightTotal += 1.0;
-                       }
-                    }
-                 }
-                 nextGrid[r][c] = sum / weightTotal;
-             }
-          }
-        }
-        currentGrid = nextGrid;
-    }
-
-    final List<Offset> positions = [];
-    final List<Color> colors = [];
-    final List<int> indices = [];
-
-    // Vertexleri oluştur (Smoothed Grid kullanarak)
-    for (int r = 0; r < rows; r++) {
-      for (int c = 0; c < cols; c++) {
-        // Pozisyon: (c, rows - 1 - r) -> Y ekseni ters (Canvas vs Geo)
-        
-        positions.add(Offset(c.toDouble(), (rows - 1 - r).toDouble()));
-        
-        final val = currentGrid[r][c];
-        if (val != null) {
-          final normalized = _normalize(val, minVal, maxVal);
-          colors.add(_getColor(normalized, widget.layerType));
-        } else {
-          colors.add(Colors.transparent); 
-        }
-      }
-    }
-
-    // Üçgen indekslerini oluştur (Mesh)
-    for (int r = 0; r < rows - 1; r++) {
-      for (int c = 0; c < cols - 1; c++) {
-        // 4 köşe indeksi
-        final tl = r * cols + c;       // Top-Left (bizim loop sırasında r artıyor ama Y ters, neyse array sırası önemli)
-        final tr = r * cols + (c + 1);
-        final bl = (r + 1) * cols + c;
-        final br = (r + 1) * cols + (c + 1);
-        
-        // Aslında 'r' grid satırı.
-        // positions arrayine ekleme sırası: r=0 (minLat) .. r=rows-1 (maxLat).
-        // Y koordinatı: (rows - 1 - r).
-        // Yani r=0 -> Y=max (Bottom render), r=max -> Y=0 (Top render).
-        // Görsel olarak mesh doğru bağlansın yeter.
-        
-        // Triangle 1: tl - tr - bl
-        indices.add(tl);
-        indices.add(tr);
-        indices.add(bl);
-        
-        // Triangle 2: tr - br - bl
-        indices.add(tr);
-        indices.add(br);
-        indices.add(bl);
-      }
-    }
-
-    // 3. Picture Kaydet
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder); 
-    
-    final vertices = ui.Vertices(
+    // Ana thread'de: Vertices + Picture kaydı — < 2ms
+    final vertices = ui.Vertices.raw(
       ui.VertexMode.triangles,
-      positions,
-      colors: colors,
-      indices: indices,
+      result.positions,
+      colors: result.colors,
+      indices: result.indices,
     );
-    
-    final paint = Paint(); // BlendMode varsayılan
-    canvas.drawVertices(vertices, BlendMode.srcOver, paint);
-    
-    _cachedPicture = recorder.endRecording();
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawVertices(vertices, BlendMode.srcOver, Paint());
+    final picture = recorder.endRecording();
+
+    setState(() {
+      _cachedPicture = picture;
+      _bounds = LatLngBounds(
+        LatLng(result.minLat, result.minLon),
+        LatLng(result.maxLat, result.maxLon),
+      );
+      _imgWidth = result.cols.toDouble();
+      _imgHeight = result.rows.toDouble();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     if (_cachedPicture == null || _bounds == null) return const SizedBox.shrink();
 
-    // Opacity → CustomPaint (Stack kaldırıldı — gereksiz render object'i
-    // oluşturuyordu ve StackFit.loose ile CustomPaint boyutunu 0x0 yapıyordu)
     return Opacity(
       opacity: widget.opacity,
       child: CustomPaint(
@@ -293,59 +389,10 @@ class _MapLayerWidgetState extends State<MapLayerWidget> {
       ),
     );
   }
-
-  double _normalize(double val, double min, double max) {
-    return ((val - min) / (max - min)).clamp(0.0, 1.0);
-  }
-
-  Color _getColor(double t, MapLayerType type) {
-    switch (type) {
-      case MapLayerType.irradiance:
-        return _getSolarGradient(t);
-      case MapLayerType.wind:
-        return _getWindGradient(t);
-      case MapLayerType.temp:
-        return _getTempGradient(t);
-      case MapLayerType.none:
-        return Colors.transparent;
-    }
-  }
-
-  // --- Renk Paletleri ---
-  
-  Color _getSolarGradient(double t) {
-    // 0.0 - 0.2: Transparent Black -> Deep Neon Orange (Cyber Base)
-    if (t < 0.2) return Color.lerp(Colors.black.withValues(alpha: 0.0), Colors.deepOrangeAccent.shade400.withValues(alpha: 0.8), t/0.2)!;
-
-    // 0.2 - 0.5: Neon Orange -> Intense Red (Mid Range)
-    if (t < 0.5) return Color.lerp(Colors.deepOrangeAccent.shade400.withValues(alpha: 0.8), Colors.redAccent.shade700, (t-0.2)/0.3)!;
-    
-    // 0.5 - 0.8: Red -> Bright Neon Yellow (High Energy)
-    if (t < 0.8) return Color.lerp(Colors.redAccent.shade700, Colors.orangeAccent, (t-0.5)/0.3)!;
-    
-    // 0.8 - 1.0: Yellow -> White Hot Core (Peak)
-    return Color.lerp(Colors.orangeAccent, Colors.white, (t-0.8)/0.2)!;
-  }
-
-  Color _getWindGradient(double t) {
-    // 0.0 - 0.2: Transparent -> Neon Blue (Start)
-    if (t < 0.2) return Color.lerp(Colors.black.withValues(alpha: 0.0), Colors.blueAccent.shade700.withValues(alpha: 0.8), t/0.2)!;
-
-    // 0.2 - 0.6: Neon Blue -> Cyan (Mid Range)
-    if (t < 0.6) return Color.lerp(Colors.blueAccent.shade700.withValues(alpha: 0.8), Colors.cyanAccent, (t-0.2)/0.4)!;
-    
-    // 0.6 - 1.0: Cyan -> White (High Velocity)
-    return Color.lerp(Colors.cyanAccent, Colors.white, (t-0.6)/0.4)!;
-  }
-
-  Color _getTempGradient(double t) {
-    if (t < 0.33) return Color.lerp(Colors.blue, Colors.green, t/0.33)!;
-    if (t < 0.66) return Color.lerp(Colors.green, Colors.yellow, (t-0.33)/0.33)!;
-    return Color.lerp(Colors.yellow, Colors.red, (t-0.66)/0.34)!;
-  }
 }
 
-/// Resmi haritaya ölçekleyerek çizen Painter
+// ─── Painter — haritaya ölçekleyerek çizer ────────────────────────────────────
+
 class _CachedLayerPainter extends CustomPainter {
   final ui.Picture picture;
   final LatLngBounds bounds;
@@ -367,27 +414,22 @@ class _CachedLayerPainter extends CustomPainter {
     final southEast = mapCamera.getOffsetFromOrigin(bounds.southEast);
 
     final dstRect = Rect.fromLTRB(
-      northWest.dx, 
-      northWest.dy, 
-      southEast.dx, 
-      southEast.dy
+      northWest.dx, northWest.dy,
+      southEast.dx, southEast.dy,
     );
+
+    if (dstRect.width <= 0 || dstRect.height <= 0) return;
 
     canvas.save();
     canvas.translate(dstRect.left, dstRect.top);
-    
-    final scaleX = dstRect.width / imgWidth;
-    final scaleY = dstRect.height / imgHeight;
-    
-    canvas.scale(scaleX, scaleY);
+    canvas.scale(dstRect.width / imgWidth, dstRect.height / imgHeight);
     canvas.drawPicture(picture);
     canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant _CachedLayerPainter oldDelegate) {
-    return oldDelegate.mapCamera.zoom != mapCamera.zoom ||
-           oldDelegate.mapCamera.center != mapCamera.center ||
-           oldDelegate.picture != picture;
-  }
+  bool shouldRepaint(covariant _CachedLayerPainter oldDelegate) =>
+      oldDelegate.mapCamera.zoom != mapCamera.zoom ||
+      oldDelegate.mapCamera.center != mapCamera.center ||
+      oldDelegate.picture != picture;
 }
