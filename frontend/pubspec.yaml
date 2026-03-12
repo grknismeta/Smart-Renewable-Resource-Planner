@@ -24,6 +24,11 @@ dependencies:
   vector_map_tiles: ^9.0.0-beta.8
   vector_tile_renderer: ^6.0.0
 
+  # --- Harita (MapLibre-Beta) ---
+  # maplibre_gl ^0.21.0 kaldırıldı — web'de dart:ui_web uyumsuzluğu
+  # Yeni rewrite: maplibre (0.2.2) kullanılıyor
+  maplibre: ^0.2.2
+
   # --- State Management ---
   provider: ^6.1.5+1
 

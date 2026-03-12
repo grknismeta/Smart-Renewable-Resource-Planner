@@ -107,19 +107,21 @@ def update_scenario(
     if not db_scenario:
         raise HTTPException(status_code=404, detail="Senaryo bulunamadı")
 
-    # Pin sahipliği kontrolü
+    # Pin sahipliği kontrolü — silinmiş pin'leri sessizce listeden çıkar
+    valid_pin_ids = []
     for pin_id in scenario.pin_ids:
         db_pin = db.query(models.Pin).filter(models.Pin.id == pin_id).first()
         if not db_pin:
-             raise HTTPException(status_code=404, detail=f"Pin {pin_id} bulunamadı")
+            continue  # Silinmiş pin → atla
         if db_pin.owner_id != current_user.id:
-             raise HTTPException(status_code=403, detail=f"Pin {pin_id}'e erişim yetkiniz yok")
+            raise HTTPException(status_code=403, detail=f"Pin {pin_id}'e erişim yetkiniz yok")
+        valid_pin_ids.append(pin_id)
 
     db_scenario.name = scenario.name # type: ignore
     db_scenario.description = scenario.description # type: ignore
-    db_scenario.pin_ids = scenario.pin_ids # type: ignore
+    db_scenario.pin_ids = valid_pin_ids # type: ignore
     # Geriye dönük uyumluluk
-    db_scenario.pin_id = scenario.pin_ids[0] if scenario.pin_ids else None # type: ignore
+    db_scenario.pin_id = valid_pin_ids[0] if valid_pin_ids else None # type: ignore
     db_scenario.start_date = scenario.start_date # type: ignore
     db_scenario.end_date = scenario.end_date # type: ignore
     db_scenario.battery_capacity_kwh = scenario.battery_capacity_kwh # type: ignore

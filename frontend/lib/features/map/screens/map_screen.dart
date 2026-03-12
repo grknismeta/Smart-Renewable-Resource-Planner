@@ -7,7 +7,10 @@ import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
 import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:maplibre/maplibre.dart' as ml;
 import 'package:frontend/features/map/widgets/map_view.dart';
+import 'package:frontend/features/map/widgets/map_view_maplibre.dart';
 import 'package:frontend/features/map/widgets/panels/map_overlays.dart';
 import 'package:frontend/features/map/widgets/panels/recommendations/recommendations_side_panel.dart';
 import 'package:frontend/features/map/widgets/panels/map_bottom_sheet.dart';
@@ -30,6 +33,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   bool _showLayersPanel = false;
   bool _showScenariosPanel = false;
   String _selectedBaseMap = 'dark';
+
+  // MapLibre Beta toggle — web'de başlangıçta true, Windows'ta false
+  // --dart-define=USE_MAPLIBRE=true ile override edilebilir
+  static const bool _maplibreEnvFlag =
+      bool.fromEnvironment('USE_MAPLIBRE', defaultValue: false);
+  bool _useMapLibre = kIsWeb && _maplibreEnvFlag;
 
   // Hover — ValueNotifier ile sadece MapOverlays rebuild oluyor,
   // MapView/FlutterMap rebuild OLMUYOR. Bu, "Cannot hit test a render box
@@ -73,13 +82,23 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                  child: Stack(
                    children: [
                      // 1. Map Engine (Bottom Layer)
-                     MapView(
-                       mapController: _animatedMapController.mapController,
-                       selectedBaseMap: _selectedBaseMap,
-                       onMapTap: (tapPosition, point) => _handleMapTap(mapViewModel, point),
-                       onHover: (point) => _hoverNotifier.value = point,
-                       onExitRange: () => _hoverNotifier.value = null,
-                     ),
+                     // _useMapLibre: MapLibre GL (web/android) ya da flutter_map (windows)
+                     if (_useMapLibre)
+                       MapViewMapLibre(
+                         // ml.Position(lng,lat) → latlong2.LatLng dönüşümü
+                         onMapTap: (ml.Position p) => _handleMapTap(
+                           mapViewModel,
+                           LatLng(p.lat.toDouble(), p.lng.toDouble()),
+                         ),
+                       )
+                     else
+                       MapView(
+                         mapController: _animatedMapController.mapController,
+                         selectedBaseMap: _selectedBaseMap,
+                         onMapTap: (tapPosition, point) => _handleMapTap(mapViewModel, point),
+                         onHover: (point) => _hoverNotifier.value = point,
+                         onExitRange: () => _hoverNotifier.value = null,
+                       ),
 
                      // 2. Overlays (Dashboard, Hover Info, Legends)
                      // ValueListenableBuilder ile sadece overlay rebuild oluyor,
@@ -191,6 +210,55 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                          child: ScenarioMiniReportPanel(
                            theme: theme,
                            scenarioVM: scenarioVM,
+                         ),
+                       ),
+
+                     // 9. MapLibre Beta Toggle (sadece web'de görünür)
+                     if (kIsWeb)
+                       Positioned(
+                         top: 8,
+                         right: 8,
+                         child: Tooltip(
+                           message: _useMapLibre
+                               ? 'FlutterMap\'e geç'
+                               : 'MapLibre Beta\'ya geç',
+                           child: GestureDetector(
+                             onTap: () => setState(() => _useMapLibre = !_useMapLibre),
+                             child: Container(
+                               padding: const EdgeInsets.symmetric(
+                                   horizontal: 10, vertical: 6),
+                               decoration: BoxDecoration(
+                                 color: _useMapLibre
+                                     ? Colors.deepPurple.withValues(alpha: 0.9)
+                                     : Colors.black54,
+                                 borderRadius: BorderRadius.circular(8),
+                                 border: Border.all(
+                                   color: _useMapLibre
+                                       ? Colors.purpleAccent
+                                       : Colors.white24,
+                                 ),
+                               ),
+                               child: Row(
+                                 mainAxisSize: MainAxisSize.min,
+                                 children: [
+                                   Icon(
+                                     _useMapLibre ? Icons.map : Icons.science,
+                                     color: Colors.white,
+                                     size: 14,
+                                   ),
+                                   const SizedBox(width: 5),
+                                   Text(
+                                     _useMapLibre ? 'MapLibre' : 'flutter_map',
+                                     style: const TextStyle(
+                                       color: Colors.white,
+                                       fontSize: 11,
+                                       fontWeight: FontWeight.w600,
+                                     ),
+                                   ),
+                                 ],
+                               ),
+                             ),
+                           ),
                          ),
                        ),
                    ],

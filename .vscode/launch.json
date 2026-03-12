@@ -35,6 +35,16 @@
       "deviceId": "windows",
       "flutterMode": "release",
       "exceptionPausedMode": "Unhandled"
+    },
+    {
+      "name": "frontend (Chrome - MapLibre Beta)",
+      "cwd": "frontend",
+      "program": "lib/main.dart",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome",
+      "exceptionPausedMode": "Unhandled",
+      "args": ["--dart-define=USE_MAPLIBRE=true"]
     }
   ]
 }
