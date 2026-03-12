@@ -44,7 +44,10 @@ def create_scenario(
         owner_id=current_user.id,
         start_date=scenario.start_date,
         end_date=scenario.end_date,
-        result_data={} # Boş başlar, calculate ile doldurulur
+        result_data={},  # Boş başlar, calculate ile doldurulur
+        battery_capacity_kwh=scenario.battery_capacity_kwh,
+        battery_efficiency_pct=scenario.battery_efficiency_pct,
+        battery_cost_usd_per_kwh=scenario.battery_cost_usd_per_kwh,
     )
     
     db.add(db_scenario)
@@ -119,11 +122,11 @@ def update_scenario(
     db_scenario.pin_id = scenario.pin_ids[0] if scenario.pin_ids else None # type: ignore
     db_scenario.start_date = scenario.start_date # type: ignore
     db_scenario.end_date = scenario.end_date # type: ignore
-    
-    # Parametreler değiştiği için eski sonuçları geçersiz kılabiliriz veya tutabiliriz.
-    # Genelde parametre değişince yeniden hesaplama gerekir, bu yüzden sonucu temizleyebiliriz 
-    # veya kullanıcı hesapla diyene kadar eskiyi gösterebiliriz.
-    # Temizlemek daha güvenli:
+    db_scenario.battery_capacity_kwh = scenario.battery_capacity_kwh # type: ignore
+    db_scenario.battery_efficiency_pct = scenario.battery_efficiency_pct # type: ignore
+    db_scenario.battery_cost_usd_per_kwh = scenario.battery_cost_usd_per_kwh # type: ignore
+
+    # Parametreler değiştiği için eski sonuçları geçersiz kıl
     db_scenario.result_data = {} # type: ignore
 
     db.commit()

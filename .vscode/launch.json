@@ -10,7 +10,11 @@
       "program": "lib/main.dart",
       "request": "launch",
       "type": "dart",
-      "deviceId": "windows"
+      "deviceId": "windows",
+      // Sadece YAKALANMAMIŞ (gerçek) hataları durdur.
+      // Paket-içi caught exception'lar (vector_map_tiles, vs.) artık
+      // debugger'ı dondurmaz — uygulama akışı kesintisiz devam eder.
+      "exceptionPausedMode": "Unhandled"
     },
     {
       "name": "frontend (Windows Profile)",
@@ -19,7 +23,8 @@
       "request": "launch",
       "type": "dart",
       "deviceId": "windows",
-      "flutterMode": "profile"
+      "flutterMode": "profile",
+      "exceptionPausedMode": "Unhandled"
     },
     {
       "name": "frontend (Windows Release)",
@@ -28,7 +33,8 @@
       "request": "launch",
       "type": "dart",
       "deviceId": "windows",
-      "flutterMode": "release"
+      "flutterMode": "release",
+      "exceptionPausedMode": "Unhandled"
     }
   ]
 }

@@ -1,9 +1,13 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:frontend/core/utils/format_utils.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
+
+// CO₂ emisyon faktörü: Türkiye karma kaynak (kg CO₂/kWh)
+const double _kCo2PerKwh = 0.433;
 
 class ScenarioResultPanel extends StatelessWidget {
   final int scenarioId;
@@ -93,6 +97,17 @@ class ScenarioResultPanel extends StatelessWidget {
                         color: Colors.cyanAccent,
                       ),
                     ],
+                    const SizedBox(height: 12),
+                    // CO₂ tasarrufu
+                    ResultCard(
+                      label: 'CO₂ Tasarrufu',
+                      value: '${FormatUtils.formatDec1(totalKwh * _kCo2PerKwh / 1000)} ton/yıl',
+                      icon: Icons.eco,
+                      color: Colors.greenAccent,
+                    ),
+                    const SizedBox(height: 12),
+                    // Aylık üretim grafiği
+                    _MonthlyProductionChart(resultData: resultData),
                   ],
                 )
               else
@@ -177,6 +192,142 @@ class ScenarioResultPanel extends StatelessWidget {
                 ),
               );
             },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Aylık Üretim Grafiği ────────────────────────────────────────────────────
+class _MonthlyProductionChart extends StatelessWidget {
+  final Map<String, dynamic> resultData;
+
+  const _MonthlyProductionChart({required this.resultData});
+
+  /// pin_results[].history [{ds: "2024-01-15", y: 456.7}] → aylık toplam kWh
+  List<double> _buildMonthlyTotals() {
+    final monthly = List<double>.filled(12, 0.0);
+    final pinResults = resultData['pin_results'];
+    if (pinResults is! List) return monthly;
+
+    for (final pin in pinResults) {
+      final history = pin['history'];
+      if (history is! List) continue;
+      for (final entry in history) {
+        final ds = entry['ds'] as String?;
+        final y  = (entry['y']  as num?)?.toDouble() ?? 0.0;
+        if (ds == null || ds.length < 7) continue;
+        final monthIdx = (int.tryParse(ds.substring(5, 7)) ?? 1) - 1;
+        if (monthIdx >= 0 && monthIdx < 12) monthly[monthIdx] += y;
+      }
+    }
+    return monthly;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final monthly = _buildMonthlyTotals();
+    final maxVal = monthly.reduce((a, b) => a > b ? a : b);
+    if (maxVal == 0) return const SizedBox.shrink();
+
+    const monthLabels = ['O','Ş','M','N','M','H','T','A','E','E','K','A'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Aylık Üretim Dağılımı',
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 120,
+          child: BarChart(
+            BarChartData(
+              alignment: BarChartAlignment.spaceAround,
+              maxY: maxVal * 1.2,
+              barTouchData: BarTouchData(
+                enabled: true,
+                touchTooltipData: BarTouchTooltipData(
+                  getTooltipColor: (_) => const Color(0xFF1C2533),
+                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                    final kwh = rod.toY;
+                    final label = kwh >= 1000
+                        ? '${(kwh / 1000).toStringAsFixed(1)} MWh'
+                        : '${kwh.toStringAsFixed(0)} kWh';
+                    return BarTooltipItem(
+                      label,
+                      const TextStyle(color: Colors.white, fontSize: 11),
+                    );
+                  },
+                ),
+              ),
+              titlesData: FlTitlesData(
+                show: true,
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    getTitlesWidget: (value, meta) {
+                      final idx = value.toInt();
+                      if (idx < 0 || idx >= 12) return const SizedBox.shrink();
+                      return Text(
+                        monthLabels[idx],
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 9,
+                        ),
+                      );
+                    },
+                    reservedSize: 16,
+                  ),
+                ),
+                leftTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+              ),
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                getDrawingHorizontalLine: (_) => const FlLine(
+                  color: Colors.white10,
+                  strokeWidth: 1,
+                ),
+              ),
+              borderData: FlBorderData(show: false),
+              barGroups: List.generate(12, (i) {
+                return BarChartGroupData(
+                  x: i,
+                  barRods: [
+                    BarChartRodData(
+                      toY: monthly[i],
+                      width: 10,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(3),
+                      ),
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.greenAccent.withValues(alpha: 0.9),
+                          Colors.tealAccent.withValues(alpha: 0.6),
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ),
           ),
         ),
       ],

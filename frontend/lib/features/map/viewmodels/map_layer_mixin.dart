@@ -32,6 +32,12 @@ mixin MapLayerMixin on BaseViewModel {
   // yeniden hesaplama yapmaz (didUpdateWidget: data != oldData = false).
   List<HeatmapPoint>? _heatmapPointsCache;
 
+  // Katman verisi önbelleği: her layer türü için {data, fetchTime}
+  // 5 dakika içinde aynı layer tekrar açılırsa API'ye gidilmez.
+  final Map<MapLayerType, List<Map<String, dynamic>>> _layerDataCache = {};
+  final Map<MapLayerType, DateTime> _layerCacheTime = {};
+  static const Duration _layerCacheTtl = Duration(minutes: 5);
+
   // ─── Rüzgar Parçacık + Yükseklik Katmanı State ──────────────────────────
   bool _showWindParticles = false;
   bool _isWindLoading = false;
@@ -94,9 +100,23 @@ mixin MapLayerMixin on BaseViewModel {
     }
   }
 
-  Future<void> fetchHeatmapDataForLayer(MapLayerType layer) async {
+  Future<void> fetchHeatmapDataForLayer(MapLayerType layer, {bool forceRefresh = false}) async {
     if (layer == MapLayerType.none) {
       _interpolatedData = [];
+      _rebuildHeatmapCache();
+      safeNotify();
+      return;
+    }
+
+    // Önbellek kontrolü: 5 dakika içinde yüklendiyse API'ye gitme
+    final cached = _layerDataCache[layer];
+    final cacheTime = _layerCacheTime[layer];
+    final cacheValid = cached != null &&
+        cacheTime != null &&
+        DateTime.now().difference(cacheTime) < _layerCacheTtl;
+
+    if (!forceRefresh && cacheValid) {
+      _interpolatedData = cached;
       _rebuildHeatmapCache();
       safeNotify();
       return;
@@ -109,8 +129,12 @@ mixin MapLayerMixin on BaseViewModel {
     try {
       final apiType = layer.apiName;
       if (apiType != null) {
-        _interpolatedData = await apiService.report.fetchInterpolatedMap(apiType);
-        _rebuildHeatmapCache(); // Cache yalnızca veri gerçekten değişince güncellenir
+        final data = await apiService.report.fetchInterpolatedMap(apiType);
+        _interpolatedData = data;
+        // Önbelleğe kaydet
+        _layerDataCache[layer] = data;
+        _layerCacheTime[layer] = DateTime.now();
+        _rebuildHeatmapCache();
       }
     } catch (e) {
       debugPrint('Heatmap loading error: $e');

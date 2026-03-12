@@ -193,14 +193,50 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              _isEditing ? '${_currentPin.name} Kaynağını Güncelle' : _currentPin.name,
-              style: TextStyle(
-                color: theme.textColor,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _isEditing ? '${_currentPin.name} Kaynağını Güncelle' : _currentPin.name,
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                // Şehir / İlçe etiketi
+                if (_currentPin.locationLabel.isNotEmpty)
+                  Row(
+                    children: [
+                      Icon(Icons.location_on, size: 11, color: theme.secondaryTextColor.withValues(alpha: 0.7)),
+                      const SizedBox(width: 2),
+                      Flexible(
+                        child: Text(
+                          _currentPin.locationLabel,
+                          style: TextStyle(
+                            color: theme.secondaryTextColor.withValues(alpha: 0.85),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // HES için göl/nehir adı
+                      if (_currentPin.waterBodyName != null && _currentPin.waterBodyName!.isNotEmpty)
+                        Flexible(
+                          child: Text(
+                            ' · ${_currentPin.waterBodyName}',
+                            style: TextStyle(
+                              color: Colors.teal.withValues(alpha: 0.85),
+                              fontSize: 11,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                  ),
+              ],
             ),
           ),
           IconButton(

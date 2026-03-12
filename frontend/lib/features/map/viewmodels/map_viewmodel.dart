@@ -438,7 +438,16 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   void _fetchMissingCityNames() {
     if (_cityFetchRunning) return;
-    final missing = _pins.where((p) => !_pinCityNames.containsKey(p.id)).toList();
+    // DB'de kayıtlı konum bilgisi olan pinleri atla — sadece eksik olanları çek
+    final missing = _pins.where((p) {
+      if (_pinCityNames.containsKey(p.id)) return false;
+      // Pin'in kendi modelinde şehir bilgisi varsa cache'e yaz, API'ye gitme
+      if (p.locationLabel.isNotEmpty) {
+        _pinCityNames[p.id] = p.locationLabel;
+        return false;
+      }
+      return true;
+    }).toList();
     if (missing.isEmpty) return;
     _cityFetchRunning = true;
     _fetchCityNamesSequential(missing);
@@ -489,6 +498,19 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     double? basinAreaKm2,
   }) async {
     try {
+      // Pin oluşturulmadan önce şehir/ilçe bilgisini çek (bir kez, DB'ye kaydedilir)
+      String? city;
+      String? district;
+      try {
+        final geoInfo = await _apiService.geo.getCityForCoords(
+          point.latitude, point.longitude,
+        ).timeout(const Duration(seconds: 5));
+        city = geoInfo['province'];
+        district = geoInfo['district'];
+      } catch (_) {
+        // Geo servisi kapalıysa devam et — konum bilgisi boş kalır
+      }
+
       final newPin = await _apiService.resource.addPin(
         point,
         name,
@@ -499,6 +521,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         flowRate: flowRate,
         headHeight: headHeight,
         basinAreaKm2: basinAreaKm2,
+        city: city,
+        district: district,
       );
       await fetchPins();
       return newPin;

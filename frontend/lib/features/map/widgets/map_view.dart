@@ -13,6 +13,7 @@ import 'package:frontend/features/map/dialogs/map_dialogs.dart';
 import 'package:frontend/features/map/widgets/map_markers.dart';
 import 'package:frontend/features/map/layers/vector_style.dart';
 import 'package:frontend/features/map/widgets/layers/wind_particle_layer.dart';
+import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 
 /// The core map engine widget using FlutterMap
@@ -47,17 +48,28 @@ class _MapViewState extends State<MapView> {
   Widget build(BuildContext context) {
     final theme = Provider.of<ThemeViewModel>(context);
     final mapViewModel = Provider.of<MapViewModel>(context);
+    final scenarioVM = Provider.of<ScenarioViewModel>(context);
+
+    // Pin opacity: seçili senaryo varsa o senaryonun pinleri tam,
+    // diğerleri soluk görünür.
+    final hasScenarioSelection = scenarioVM.hasSelection;
+    final selectedPinIds = scenarioVM.selectedPinIds;
 
     // Prepare data
     final pins = mapViewModel.pins;
     final markers = pins.map((pin) {
+      final isHighlighted = !hasScenarioSelection || selectedPinIds.contains(pin.id);
       return Marker(
         width: 50.0,
         height: 50.0,
         point: LatLng(pin.latitude, pin.longitude),
-        child: GestureDetector(
-          onTap: () => MapDialogs.showPinActionsDialog(context, pin),
-          child: MapMarkerIcon(type: pin.type),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 250),
+          opacity: isHighlighted ? 1.0 : 0.25,
+          child: GestureDetector(
+            onTap: () => MapDialogs.showPinActionsDialog(context, pin),
+            child: MapMarkerIcon(type: pin.type),
+          ),
         ),
       );
     }).toList();

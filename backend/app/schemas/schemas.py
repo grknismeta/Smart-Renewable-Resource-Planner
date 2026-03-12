@@ -53,6 +53,10 @@ class PinBase(BaseModel):
     flow_rate: Optional[float] = None          # Debi (m³/s)
     head_height: Optional[float] = None        # Düşü yüksekliği (m)
     basin_area_km2: Optional[float] = None     # Havza alanı (km²)
+    # Konum bilgisi (reverse geocoding — pin oluşturulurken frontend gönderir)
+    city: Optional[str] = None                 # İl
+    district: Optional[str] = None            # İlçe
+    water_body_name: Optional[str] = None     # HES için göl/nehir adı
 
 class PinCreate(PinBase):
     pass
@@ -198,6 +202,10 @@ class ScenarioCreate(BaseModel):
     pin_ids: List[int] = []  # Artık birden fazla pin desteklenir
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    # Enerji depolama
+    battery_capacity_kwh: Optional[float] = None
+    battery_efficiency_pct: Optional[float] = None
+    battery_cost_usd_per_kwh: Optional[float] = None
 
 class ScenarioResponse(BaseModel):
     id: int
@@ -211,6 +219,10 @@ class ScenarioResponse(BaseModel):
     end_date: Optional[datetime] = None
     result_data: Optional[Dict[str, Any]] = None
     created_at: Optional[datetime] = None
-    
+    # Enerji depolama
+    battery_capacity_kwh: Optional[float] = None
+    battery_efficiency_pct: Optional[float] = None
+    battery_cost_usd_per_kwh: Optional[float] = None
+
     class Config:
         from_attributes = True

@@ -26,6 +26,12 @@ class _ScenarioCreateDialogState extends State<ScenarioCreateDialog> {
   late List<int> _selectedPinIds;
   DateTime? _startDate;
   DateTime? _endDate;
+  // Enerji depolama
+  bool _batteryEnabled = false;
+  bool _isSaving = false;
+  late TextEditingController _batteryCapController;
+  late TextEditingController _batteryEffController;
+  late TextEditingController _batteryCostController;
 
   @override
   void initState() {
@@ -45,12 +51,29 @@ class _ScenarioCreateDialogState extends State<ScenarioCreateDialog> {
         widget.scenarioToEdit?.startDate ??
         DateTime.now().add(const Duration(days: -365));
     _endDate = widget.scenarioToEdit?.endDate ?? DateTime.now();
+
+    // Enerji depolama — mevcut senaryo varsa yükle
+    final existing = widget.scenarioToEdit;
+    _batteryEnabled = existing?.batteryCapacityKwh != null &&
+        (existing?.batteryCapacityKwh ?? 0) > 0;
+    _batteryCapController = TextEditingController(
+      text: existing?.batteryCapacityKwh?.toStringAsFixed(0) ?? '100',
+    );
+    _batteryEffController = TextEditingController(
+      text: existing?.batteryEfficiencyPct?.toStringAsFixed(0) ?? '90',
+    );
+    _batteryCostController = TextEditingController(
+      text: existing?.batteryCostUsdPerKwh?.toStringAsFixed(0) ?? '300',
+    );
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _descController.dispose();
+    _batteryCapController.dispose();
+    _batteryEffController.dispose();
+    _batteryCostController.dispose();
     super.dispose();
   }
 
@@ -251,6 +274,82 @@ class _ScenarioCreateDialogState extends State<ScenarioCreateDialog> {
                         }
                       },
                     ),
+                    const SizedBox(height: 16),
+                    // ── Enerji Depolama Bölümü ─────────────────────────
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: _batteryEnabled
+                              ? Colors.greenAccent.withValues(alpha: 0.4)
+                              : theme.secondaryTextColor.withValues(alpha: 0.2),
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.battery_charging_full,
+                                size: 16,
+                                color: _batteryEnabled
+                                    ? Colors.greenAccent
+                                    : theme.secondaryTextColor,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Enerji Depolama (Opsiyonel)',
+                                  style: TextStyle(
+                                    color: theme.textColor,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              Switch(
+                                value: _batteryEnabled,
+                                activeColor: Colors.greenAccent,
+                                onChanged: (v) =>
+                                    setState(() => _batteryEnabled = v),
+                              ),
+                            ],
+                          ),
+                          if (_batteryEnabled) ...[
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildNumberField(
+                                    controller: _batteryCapController,
+                                    label: 'Kapasite (kWh)',
+                                    theme: theme,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _buildNumberField(
+                                    controller: _batteryEffController,
+                                    label: 'Verim (%)',
+                                    theme: theme,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _buildNumberField(
+                                    controller: _batteryCostController,
+                                    label: 'Maliyet (\$/kWh)',
+                                    theme: theme,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -274,11 +373,20 @@ class _ScenarioCreateDialogState extends State<ScenarioCreateDialog> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  onPressed: _handleSave,
-                  child: Text(
-                    widget.scenarioToEdit != null ? 'Güncelle' : 'Oluştur',
-                    style: const TextStyle(color: Colors.white),
-                  ),
+                  onPressed: _isSaving ? null : _handleSave,
+                  child: _isSaving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          widget.scenarioToEdit != null ? 'Güncelle' : 'Oluştur',
+                          style: const TextStyle(color: Colors.white),
+                        ),
                 ),
               ],
             ),
@@ -303,28 +411,29 @@ class _ScenarioCreateDialogState extends State<ScenarioCreateDialog> {
       listen: false,
     );
 
+    final battCap = _batteryEnabled
+        ? double.tryParse(_batteryCapController.text)
+        : null;
+    final battEff = _batteryEnabled
+        ? double.tryParse(_batteryEffController.text)
+        : null;
+    final battCost = _batteryEnabled
+        ? double.tryParse(_batteryCostController.text)
+        : null;
+
     final scenarioCreate = ScenarioCreate(
       name: _nameController.text,
       description: _descController.text.isEmpty ? null : _descController.text,
       pinIds: _selectedPinIds,
       startDate: _startDate,
       endDate: _endDate,
+      batteryCapacityKwh:   battCap,
+      batteryEfficiencyPct: battEff,
+      batteryCostUsdPerKwh: battCost,
     );
 
+    setState(() => _isSaving = true);
     try {
-      Navigator.pop(context); // Close dialog first
-
-      // Show temporary loading snackbar
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.scenarioToEdit != null
-                ? 'Senaryo güncelleniyor...'
-                : 'Senaryo oluşturuluyor...',
-          ),
-        ),
-      );
-
       if (widget.scenarioToEdit != null) {
         await scenarioViewModel.updateScenario(
           widget.scenarioToEdit!.id,
@@ -345,13 +454,38 @@ class _ScenarioCreateDialogState extends State<ScenarioCreateDialog> {
             backgroundColor: Colors.green,
           ),
         );
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Hata: $e')),
         );
       }
     }
+  }
+
+  Widget _buildNumberField({
+    required TextEditingController controller,
+    required String label,
+    required ThemeViewModel theme,
+  }) {
+    return TextField(
+      controller: controller,
+      style: TextStyle(color: theme.textColor, fontSize: 13),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: theme.secondaryTextColor, fontSize: 11),
+        isDense: true,
+        enabledBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: Colors.greenAccent.withValues(alpha: 0.4)),
+        ),
+        focusedBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: Colors.greenAccent),
+        ),
+      ),
+    );
   }
 }

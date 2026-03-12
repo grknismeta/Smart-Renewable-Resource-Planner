@@ -21,7 +21,7 @@ import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 // Ekranlar
 import 'package:frontend/features/auth/splash_screen.dart';
 import 'package:frontend/features/auth/auth_screen.dart';
-import 'package:frontend/features/map/map_screen.dart';
+import 'package:frontend/features/map/screens/map_screen.dart';
 import 'package:frontend/features/reports/report_screen.dart';
 import 'package:frontend/features/scenarios/scenario_screen.dart';
 import 'package:frontend/features/scenarios/scenario_compare_screen.dart';

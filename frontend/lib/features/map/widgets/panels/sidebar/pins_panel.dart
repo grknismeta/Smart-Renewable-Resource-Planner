@@ -209,7 +209,10 @@ class _PinsPanelState extends State<PinsPanel> {
   }
 
   Widget _buildPinItem(BuildContext context, Pin pin, Color accentColor) {
-    final cityName = widget.mapViewModel.pinCityName(pin.id);
+    // DB'de kayıtlı konum bilgisi varsa onu kullan, yoksa cache'e bak
+    final cityName = pin.locationLabel.isNotEmpty
+        ? pin.locationLabel
+        : widget.mapViewModel.pinCityName(pin.id);
     final coords = '(${pin.latitude.toStringAsFixed(3)}, ${pin.longitude.toStringAsFixed(3)})';
 
     return Container(

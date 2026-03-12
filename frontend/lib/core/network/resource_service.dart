@@ -40,6 +40,9 @@ class ResourceService extends BaseService {
     double? flowRate,
     double? headHeight,
     double? basinAreaKm2,
+    String? city,
+    String? district,
+    String? waterBodyName,
   }) async {
     final Map<String, dynamic> pinData = {
       'latitude': point.latitude,
@@ -52,6 +55,9 @@ class ResourceService extends BaseService {
       if (flowRate != null) 'flow_rate': flowRate,
       if (headHeight != null) 'head_height': headHeight,
       if (basinAreaKm2 != null) 'basin_area_km2': basinAreaKm2,
+      if (city != null && city.isNotEmpty) 'city': city,
+      if (district != null && district.isNotEmpty) 'district': district,
+      if (waterBodyName != null && waterBodyName.isNotEmpty) 'water_body_name': waterBodyName,
     };
 
     final response = await http.post(
@@ -78,6 +84,9 @@ class ResourceService extends BaseService {
     double? flowRate,
     double? headHeight,
     double? basinAreaKm2,
+    String? city,
+    String? district,
+    String? waterBodyName,
   }) async {
     final Map<String, dynamic> pinData = {
       'latitude': point.latitude,
@@ -90,6 +99,9 @@ class ResourceService extends BaseService {
       if (flowRate != null) 'flow_rate': flowRate,
       if (headHeight != null) 'head_height': headHeight,
       if (basinAreaKm2 != null) 'basin_area_km2': basinAreaKm2,
+      if (city != null && city.isNotEmpty) 'city': city,
+      if (district != null && district.isNotEmpty) 'district': district,
+      if (waterBodyName != null && waterBodyName.isNotEmpty) 'water_body_name': waterBodyName,
     };
 
     final response = await http.put(

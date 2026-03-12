@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
-import 'package:frontend/features/auth/viewmodels/auth_view_model.dart';
+import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:frontend/features/help/help_dialog.dart';
 import 'package:frontend/features/settings/settings_dialog.dart';
 

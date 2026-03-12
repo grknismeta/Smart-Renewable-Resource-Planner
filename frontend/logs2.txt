@@ -1,0 +1,5 @@
+Launching lib\main.dart on Windows in debug mode...
+Building Windows application...                                    12,7s
+√ Built build\windows\x64\runner\Debug\frontend.exe
+Error waiting for a debug connection: The log reader stopped unexpectedly, or never started.
+Error launching application on Windows.

@@ -4,11 +4,13 @@ import 'dart:ui' as ui; // Import dart:ui
 import 'package:frontend/features/map/widgets/panels/sidebar/sidebar_widgets.dart'; // Barrel export for DataPanel, ScenarioButton etc.
 import 'package:frontend/features/map/widgets/panels/sidebar/report_button.dart'; // Explicit import if not in barrel? Checked: it's not in barrel list I saw (it had sidebar_header, footer, data, scenario, pins, launcher). Wait, sidebar_widgets.dart didn't list report_button.dart.
 import 'package:frontend/features/map/viewmodels/map_view_model.dart';
-import 'package:frontend/features/auth/viewmodels/auth_view_model.dart';
+import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
 
 class MapBottomSheet extends StatelessWidget {
-  const MapBottomSheet({super.key});
+  final VoidCallback? onScenariosTap;
+
+  const MapBottomSheet({super.key, this.onScenariosTap});
 
   @override
   Widget build(BuildContext context) {
@@ -19,21 +21,21 @@ class MapBottomSheet extends StatelessWidget {
     final mq = MediaQuery.of(context);
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.03, 
+      initialChildSize: 0.03,
       minChildSize: 0.03,
       maxChildSize: 0.6,
       snap: true,
       snapSizes: const [0.03, 0.4, 0.6],
       builder: (context, scrollController) {
         return ScrollConfiguration(
-           behavior: ScrollConfiguration.of(context).copyWith(
-             dragDevices: {
-               ui.PointerDeviceKind.touch,
-               ui.PointerDeviceKind.mouse,
-               ui.PointerDeviceKind.trackpad,
-             },
-           ),
-           child: Container(
+          behavior: ScrollConfiguration.of(context).copyWith(
+            dragDevices: {
+              ui.PointerDeviceKind.touch,
+              ui.PointerDeviceKind.mouse,
+              ui.PointerDeviceKind.trackpad,
+            },
+          ),
+          child: Container(
             decoration: BoxDecoration(
               color: theme.cardColor.withValues(alpha: 0.98),
               borderRadius: const BorderRadius.vertical(
@@ -65,7 +67,7 @@ class MapBottomSheet extends StatelessWidget {
                       ),
                     ),
                   ),
-                  
+
                   // 2. Content
                   Padding(
                     padding: EdgeInsets.only(
@@ -84,6 +86,7 @@ class MapBottomSheet extends StatelessWidget {
                                 theme: theme,
                                 isGuest: isGuest,
                                 isCollapsed: false,
+                                onTap: onScenariosTap,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -95,7 +98,7 @@ class MapBottomSheet extends StatelessWidget {
                             ),
                           ],
                         ),
-                        
+
                         const SizedBox(height: 16),
                         DataPanel(
                           theme: theme,
@@ -115,11 +118,15 @@ class MapBottomSheet extends StatelessWidget {
                           isCollapsed: false,
                           onAuthAction: () async {
                             if (isGuest) {
-                              Navigator.of(context).pushReplacementNamed('/auth');
+                              Navigator.of(
+                                context,
+                              ).pushReplacementNamed('/auth');
                             } else {
                               await authViewModel.logout();
                               if (!context.mounted) return;
-                              Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                              Navigator.of(
+                                context,
+                              ).pushNamedAndRemoveUntil('/', (route) => false);
                             }
                           },
                         ),

@@ -64,9 +64,10 @@ class CityWeatherData {
     );
   }
 
-  /// Günlük ışınım değeri (kWh/m²)
+  /// Anlık ışınım gücü (kW/m²) — saatlik veri noktası.
+  /// Gece (shortwaveRadiation == 0) için null döner → göstergede 0 gösterilmez.
   double? get dailyIrradianceKwhM2 {
-    if (shortwaveRadiation == null) return null;
+    if (shortwaveRadiation == null || shortwaveRadiation! <= 0) return null;
     return shortwaveRadiation! / 1000.0;
   }
 
@@ -188,12 +189,10 @@ class IrradianceData {
     };
   }
 
-  /// Günlük toplam ışınım (kWh/m²)
-  /// shortwaveRadiation W/m² cinsinden saatlik veridir
-  /// Günlük toplam için tüm saatlerin toplamını alıp 1000'e bölmek gerekir
+  /// Anlık ışınım gücü (kW/m²) — saatlik veri noktası.
+  /// Gece (shortwaveRadiation == 0) için null döner → göstergede 0 gösterilmez.
   double? get dailyIrradianceKwhM2 {
-    if (shortwaveRadiation == null) return null;
-    // Tek saatlik veri için kWh/m² dönüşümü
+    if (shortwaveRadiation == null || shortwaveRadiation! <= 0) return null;
     return shortwaveRadiation! / 1000.0;
   }
 

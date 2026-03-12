@@ -14,6 +14,7 @@ import 'package:frontend/features/reports/widgets/report_list_panel.dart';
 import 'package:frontend/features/reports/widgets/report_map.dart';
 import 'package:frontend/features/reports/widgets/scenario_map_in_report.dart';
 import 'package:frontend/features/reports/widgets/scenario_result_panel.dart';
+import 'package:frontend/features/reports/widgets/turkey_energy_panel.dart';
 
 class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key});
@@ -28,6 +29,7 @@ class _ReportScreenState extends State<ReportScreen> {
   String _type = 'Wind';
   String _timeInterval = 'Yıllık'; // Varsayılan: Yıllık
   int? _selectedScenarioId; // Yeni: Seçili senaryo
+  bool _showTurkeyEnergy = false; // Türkiye enerji paneli
 
   @override
   void initState() {
@@ -79,13 +81,15 @@ class _ReportScreenState extends State<ReportScreen> {
                           Expanded(
                             flex: 1,
                             child: GlassContainer(
-                              child: _selectedScenarioId == null
-                                  ? ReportListPanel(
-                                      onSiteSelected: _onSiteFocused,
-                                    )
-                                  : ScenarioResultPanel(
-                                      scenarioId: _selectedScenarioId!,
-                                    ),
+                              child: _showTurkeyEnergy
+                                  ? const TurkeyEnergyPanel()
+                                  : _selectedScenarioId == null
+                                      ? ReportListPanel(
+                                          onSiteSelected: _onSiteFocused,
+                                        )
+                                      : ScenarioResultPanel(
+                                          scenarioId: _selectedScenarioId!,
+                                        ),
                             ),
                           ),
                         ],
@@ -203,10 +207,52 @@ class _ReportScreenState extends State<ReportScreen> {
                   ).fetchReport(region: _region, type: val);
                 },
               ),
+              const SizedBox(width: 12),
+              // Türkiye Enerji Verisi toggle
+              _buildToggleChip(
+                label: '🇹🇷 Türkiye Verisi',
+                active: _showTurkeyEnergy,
+                onTap: () => setState(
+                  () => _showTurkeyEnergy = !_showTurkeyEnergy,
+                ),
+              ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildToggleChip({
+    required String label,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: active
+              ? Colors.redAccent.withValues(alpha: 0.2)
+              : Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: active
+                ? Colors.redAccent.withValues(alpha: 0.5)
+                : Colors.white.withValues(alpha: 0.08),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? Colors.redAccent : Colors.white70,
+            fontSize: 12,
+            fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
     );
   }
 

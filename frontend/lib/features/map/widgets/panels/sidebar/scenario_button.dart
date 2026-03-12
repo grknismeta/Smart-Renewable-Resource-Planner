@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
-import 'package:frontend/features/scenarios/scenario_screen.dart';
 
 /// Senaryo yönetimi butonu - Sidebar'da görünen
 class ScenarioButton extends StatelessWidget {
   final ThemeViewModel theme;
   final bool isGuest;
   final bool isCollapsed;
+  final VoidCallback? onTap;
 
   const ScenarioButton({
     super.key,
     required this.theme,
     required this.isGuest,
     required this.isCollapsed,
+    this.onTap,
   });
 
   @override
@@ -63,12 +64,7 @@ class ScenarioButton extends StatelessWidget {
 
   Widget _buildAuthenticatedView(BuildContext context) {
     return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => ScenarioScreen()),
-        );
-      },
+      onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         height: 50,

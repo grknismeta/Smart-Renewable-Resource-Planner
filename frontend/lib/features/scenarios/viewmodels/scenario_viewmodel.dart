@@ -11,8 +11,40 @@ class ScenarioViewModel extends BaseViewModel {
   List<Scenario> _scenarios = [];
   Scenario? _selectedScenario;
 
+  // Multi-select support
+  final Set<int> _selectedScenarioIds = {};
+
   List<Scenario> get scenarios => _scenarios;
   Scenario? get selectedScenario => _selectedScenario;
+  Set<int> get selectedScenarioIds => _selectedScenarioIds;
+  bool get hasSelection => _selectedScenarioIds.isNotEmpty;
+  bool isSelected(int id) => _selectedScenarioIds.contains(id);
+
+  /// Pin IDs from all currently selected scenarios
+  Set<int> get selectedPinIds {
+    if (_selectedScenarioIds.isEmpty) return {};
+    final result = <int>{};
+    for (final s in _scenarios) {
+      if (_selectedScenarioIds.contains(s.id)) {
+        result.addAll(s.pinIds);
+      }
+    }
+    return result;
+  }
+
+  void toggleScenario(int id) {
+    if (_selectedScenarioIds.contains(id)) {
+      _selectedScenarioIds.remove(id);
+    } else {
+      _selectedScenarioIds.add(id);
+    }
+    notifyListeners();
+  }
+
+  void clearAllSelections() {
+    _selectedScenarioIds.clear();
+    notifyListeners();
+  }
 
   Future<void> loadScenarios() async {
     setBusy(true);

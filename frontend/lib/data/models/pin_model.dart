@@ -29,6 +29,11 @@ class Pin {
   final double? headHeight;     // Düşü yüksekliği (m)
   final double? basinAreaKm2;   // Havza alanı (km²)
 
+  // Konum bilgisi (reverse geocoding — pin oluşturulurken bir kez kaydedilir)
+  final String? city;           // İl (örn. "Adıyaman")
+  final String? district;       // İlçe (örn. "Merkez")
+  final String? waterBodyName;  // HES için göl/nehir adı
+
   Pin({
     required this.id,
     required this.latitude,
@@ -49,7 +54,20 @@ class Pin {
     this.flowRate,
     this.headHeight,
     this.basinAreaKm2,
+    this.city,
+    this.district,
+    this.waterBodyName,
   });
+
+  /// Şehir/ilçe gösterim etiketi — her iki kaynaktan oluşturulur.
+  /// DB'den gelen [city]/[district] önceliklidir, yoksa boş string döner.
+  String get locationLabel {
+    if (city != null && city!.isNotEmpty) {
+      final d = district != null && district!.isNotEmpty ? district! : '';
+      return d.isNotEmpty ? '$d / $city' : city!;
+    }
+    return '';
+  }
 
   // Backend'e (PUT /pins/{id}) göndermek için — backend PinBase schema ile eşleşir
   Map<String, dynamic> toJson() {
@@ -65,6 +83,10 @@ class Pin {
       if (flowRate != null) 'flow_rate': flowRate,
       if (headHeight != null) 'head_height': headHeight,
       if (basinAreaKm2 != null) 'basin_area_km2': basinAreaKm2,
+      // Konum bilgisi
+      if (city != null) 'city': city,
+      if (district != null) 'district': district,
+      if (waterBodyName != null) 'water_body_name': waterBodyName,
     };
   }
 
@@ -95,6 +117,10 @@ class Pin {
       flowRate: (json['flow_rate'] as num?)?.toDouble(),
       headHeight: (json['head_height'] as num?)?.toDouble(),
       basinAreaKm2: (json['basin_area_km2'] as num?)?.toDouble(),
+      // Konum bilgisi
+      city: json['city'] as String?,
+      district: json['district'] as String?,
+      waterBodyName: json['water_body_name'] as String?,
     );
   }
 }

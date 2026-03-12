@@ -36,6 +36,11 @@ class Pin(UserBase):
     head_height = Column(Float, nullable=True)      # Düşü yüksekliği (m)
     basin_area_km2 = Column(Float, nullable=True)   # Havza alanı (km²)
 
+    # Konum bilgisi (Reverse geocoding — pin oluşturulurken bir kez kaydedilir)
+    city = Column(String, nullable=True)           # İl (örn. "Adıyaman")
+    district = Column(String, nullable=True)       # İlçe (örn. "Merkez")
+    water_body_name = Column(String, nullable=True) # HES için göl/nehir adı
+
     # Equipment (SystemDB) ile ilişki ID üzerinden manuel kurulacak
     equipment_id = Column(Integer, nullable=True)
 
@@ -75,8 +80,13 @@ class Scenario(UserBase):
     owner = relationship("User", back_populates="scenarios")
     start_date = Column(DateTime, nullable=True)
     end_date = Column(DateTime, nullable=True)
-    result_data = Column(JSON) 
+    result_data = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Enerji depolama (Feature E)
+    battery_capacity_kwh = Column(Float, nullable=True)      # kWh — 0 veya None = depolama yok
+    battery_efficiency_pct = Column(Float, nullable=True)    # Şarj/deşarj verimi (0-100), tipik 90
+    battery_cost_usd_per_kwh = Column(Float, nullable=True)  # Maliyet $/kWh, tipik 300
 
 # ===============================================
 # B) SİSTEM VERİTABANI (SystemBase) Modelleri

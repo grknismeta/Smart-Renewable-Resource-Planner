@@ -5,12 +5,15 @@ import 'package:flutter_map_animations/flutter_map_animations.dart';
 
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
+import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 
 import 'package:frontend/features/map/widgets/map_view.dart';
 import 'package:frontend/features/map/widgets/panels/map_overlays.dart';
 import 'package:frontend/features/map/widgets/panels/recommendations/recommendations_side_panel.dart';
 import 'package:frontend/features/map/widgets/panels/map_bottom_sheet.dart';
 import 'package:frontend/features/map/widgets/map_widgets.dart';
+import 'package:frontend/features/scenarios/widgets/scenario_side_panel.dart';
+import 'package:frontend/features/scenarios/widgets/scenario_mini_report_panel.dart';
 
 
 class MapScreen extends StatefulWidget {
@@ -25,6 +28,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   // Local state for UI toggles (could be in VM but acceptable here for UI-only state)
   bool _showLayersPanel = false;
+  bool _showScenariosPanel = false;
   String _selectedBaseMap = 'dark';
 
   // Hover — ValueNotifier ile sadece MapOverlays rebuild oluyor,
@@ -60,8 +64,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final theme = Provider.of<ThemeViewModel>(context);
     // Use Consumer to rebuild when MapViewModel changes
-    return Consumer<MapViewModel>(
-      builder: (context, mapViewModel, child) {
+    return Consumer2<MapViewModel, ScenarioViewModel>(
+      builder: (context, mapViewModel, scenarioVM, child) {
          return Scaffold(
            body: Row(
              children: [
@@ -120,7 +124,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                      ),
 
                      // 4. Map Bottom Sheet (Persistent Sidebar Replacement)
-                     const MapBottomSheet(),
+                     MapBottomSheet(
+                       onScenariosTap: () => setState(() =>
+                         _showScenariosPanel = !_showScenariosPanel),
+                     ),
 
                      // 5. Contextual Action Indicators (e.g., "Click to place pin")
                      if (mapViewModel.placingPinType != null)
@@ -161,6 +168,31 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                          ),
                        ),
                      ),
+
+                     // 7. Scenarios Side Panel (slides from left)
+                     AnimatedPositioned(
+                       duration: const Duration(milliseconds: 350),
+                       curve: Curves.easeInOutCubic,
+                       top: 0,
+                       bottom: 0,
+                       left: _showScenariosPanel ? 0 : -330,
+                       width: 320,
+                       child: ScenarioSidePanel(
+                         theme: theme,
+                         onClose: () => setState(() => _showScenariosPanel = false),
+                       ),
+                     ),
+
+                     // 8. Senaryo Mini Rapor Paneli (senaryo seçiliyken görünür)
+                     if (scenarioVM.hasSelection)
+                       Positioned(
+                         bottom: 180,
+                         right: 20,
+                         child: ScenarioMiniReportPanel(
+                           theme: theme,
+                           scenarioVM: scenarioVM,
+                         ),
+                       ),
                    ],
                  ),
                ),
@@ -270,4 +302,5 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final mc = _animatedMapController.mapController;
     mc.move(mc.camera.center, mc.camera.zoom - 1);
   }
+
 }

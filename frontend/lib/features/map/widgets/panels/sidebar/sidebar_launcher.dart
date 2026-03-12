@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend/features/map/widgets/panels/sidebar/sidebar_widgets.dart';
 import 'package:frontend/features/map/widgets/panels/sidebar/report_button.dart';
 import 'package:frontend/features/map/viewmodels/map_view_model.dart';
-import 'package:frontend/features/auth/viewmodels/auth_view_model.dart';
+import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
 
 class SidebarLauncher extends StatelessWidget {

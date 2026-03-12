@@ -93,6 +93,49 @@ models.SystemBase.metadata.create_all(bind=SystemEngine)
 models.UserBase.metadata.create_all(bind=UserEngine)
 models.UserPinsBase.metadata.create_all(bind=UserPinsEngine)
 
+# SQLite migration: pins tablosuna yeni sütunlar ekle (mevcut DB için)
+def _migrate_pins_table():
+    """SQLite ALTER TABLE — sütun yoksa ekler, varsa atlar."""
+    from sqlalchemy import text
+    new_cols = [
+        ("city",            "TEXT"),
+        ("district",        "TEXT"),
+        ("water_body_name", "TEXT"),
+    ]
+    try:
+        with UserEngine.connect() as conn:
+            existing = {row[1] for row in conn.execute(text("PRAGMA table_info(pins)"))}
+            for col_name, col_type in new_cols:
+                if col_name not in existing:
+                    conn.execute(text(f"ALTER TABLE pins ADD COLUMN {col_name} {col_type}"))
+            conn.commit()
+    except Exception as e:
+        print(f"[Migration] pins tablosu güncelleme hatası: {e}")
+
+_migrate_pins_table()
+
+
+# SQLite migration: scenarios tablosuna battery sütunları ekle
+def _migrate_scenarios_table():
+    """Battery storage sütunları yoksa ekler."""
+    from sqlalchemy import text
+    new_cols = [
+        ("battery_capacity_kwh",     "REAL"),
+        ("battery_efficiency_pct",   "REAL"),
+        ("battery_cost_usd_per_kwh", "REAL"),
+    ]
+    try:
+        with UserEngine.connect() as conn:
+            existing = {row[1] for row in conn.execute(text("PRAGMA table_info(scenarios)"))}
+            for col_name, col_type in new_cols:
+                if col_name not in existing:
+                    conn.execute(text(f"ALTER TABLE scenarios ADD COLUMN {col_name} {col_type}"))
+            conn.commit()
+    except Exception as e:
+        print(f"[Migration] scenarios tablosu güncelleme hatası: {e}")
+
+_migrate_scenarios_table()
+
 
 # ─── STARTUP / SHUTDOWN ───────────────────────────────────────────────────────
 @asynccontextmanager

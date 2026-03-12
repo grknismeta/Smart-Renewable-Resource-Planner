@@ -86,6 +86,27 @@ class LayersPanel extends StatelessWidget {
               _buildLayerSwitch("Rüzgar Hızı", MapLayerType.wind),
               _buildLayerSwitch("Sıcaklık", MapLayerType.temp),
               _buildLayerSwitch("Güneş Işınımı", MapLayerType.irradiance),
+              // Güneş katmanı aktifken açıklama notu göster
+              if (mapViewModel.currentLayer == MapLayerType.irradiance)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2, left: 4, bottom: 2),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 11, color: Colors.orangeAccent.withValues(alpha: 0.7)),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          "Yıllık ortalama güneş potansiyeli — anlık değil",
+                          style: TextStyle(
+                            color: theme.secondaryTextColor.withValues(alpha: 0.65),
+                            fontSize: 9.5,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
               // Time Period Selector (Only if layer active)
               if (mapViewModel.currentLayer != MapLayerType.none) ...[

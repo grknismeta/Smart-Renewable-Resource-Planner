@@ -13,6 +13,10 @@ class Scenario {
   final DateTime? endDate;
   final Map<String, dynamic>? resultData;
   final DateTime? createdAt;
+  // Enerji depolama (Feature E)
+  final double? batteryCapacityKwh;     // kWh — null/0 = depolama yok
+  final double? batteryEfficiencyPct;   // 0-100, tipik 90
+  final double? batteryCostUsdPerKwh;   // $/kWh, tipik 300
 
   Scenario({
     required this.id,
@@ -25,6 +29,9 @@ class Scenario {
     this.endDate,
     this.resultData,
     this.createdAt,
+    this.batteryCapacityKwh,
+    this.batteryEfficiencyPct,
+    this.batteryCostUsdPerKwh,
   });
 
   factory Scenario.fromJson(Map<String, dynamic> json) {
@@ -70,6 +77,9 @@ class Scenario {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
+      batteryCapacityKwh:   (json['battery_capacity_kwh']     as num?)?.toDouble(),
+      batteryEfficiencyPct: (json['battery_efficiency_pct']   as num?)?.toDouble(),
+      batteryCostUsdPerKwh: (json['battery_cost_usd_per_kwh'] as num?)?.toDouble(),
     );
   }
 
@@ -85,6 +95,9 @@ class Scenario {
       'end_date': endDate?.toIso8601String(),
       'result_data': resultData,
       'created_at': createdAt?.toIso8601String(),
+      if (batteryCapacityKwh != null)   'battery_capacity_kwh':     batteryCapacityKwh,
+      if (batteryEfficiencyPct != null) 'battery_efficiency_pct':   batteryEfficiencyPct,
+      if (batteryCostUsdPerKwh != null) 'battery_cost_usd_per_kwh': batteryCostUsdPerKwh,
     };
   }
 }
@@ -95,6 +108,10 @@ class ScenarioCreate {
   final List<int> pinIds;
   final DateTime? startDate;
   final DateTime? endDate;
+  // Enerji depolama
+  final double? batteryCapacityKwh;
+  final double? batteryEfficiencyPct;
+  final double? batteryCostUsdPerKwh;
 
   ScenarioCreate({
     required this.name,
@@ -102,6 +119,9 @@ class ScenarioCreate {
     this.pinIds = const [],
     this.startDate,
     this.endDate,
+    this.batteryCapacityKwh,
+    this.batteryEfficiencyPct,
+    this.batteryCostUsdPerKwh,
   });
 
   Map<String, dynamic> toJson() {
@@ -111,6 +131,9 @@ class ScenarioCreate {
       'pin_ids': pinIds,
       'start_date': startDate?.toIso8601String(),
       'end_date': endDate?.toIso8601String(),
+      if (batteryCapacityKwh != null)   'battery_capacity_kwh':     batteryCapacityKwh,
+      if (batteryEfficiencyPct != null) 'battery_efficiency_pct':   batteryEfficiencyPct,
+      if (batteryCostUsdPerKwh != null) 'battery_cost_usd_per_kwh': batteryCostUsdPerKwh,
     };
   }
 }
