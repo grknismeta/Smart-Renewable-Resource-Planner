@@ -48,3 +48,8 @@ app.*.map.json
 analyze_*.txt
 err*.txt
 errors.txt
+
+# Environment Variables
+.env
+.env.*
+*.env
