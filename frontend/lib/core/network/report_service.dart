@@ -11,10 +11,18 @@ class ReportService extends BaseService {
     required String type,
     String interval = 'Yıllık',
     int limit = 400,
+    String? province,
   }) async {
-    final uri = Uri.parse('$baseUrl/reports/regional').replace(
-      queryParameters: {'region': region, 'type': type, 'interval': interval, 'limit': '$limit'},
-    );
+    final params = <String, String>{
+      'region': region,
+      'type': type,
+      'interval': interval,
+      'limit': '$limit',
+    };
+    if (province != null && province.isNotEmpty) {
+      params['province'] = province;
+    }
+    final uri = Uri.parse('$baseUrl/reports/regional').replace(queryParameters: params);
 
     final response = await http.get(uri, headers: await getHeaders());
     final data = processResponse(response);

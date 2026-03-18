@@ -44,6 +44,8 @@ class Pin(UserBase):
     # Equipment (SystemDB) ile ilişki ID üzerinden manuel kurulacak
     equipment_id = Column(Integer, nullable=True)
 
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
     owner_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="pins")
     
@@ -119,14 +121,18 @@ class GridAnalysis(SystemBase):
 # --- EKLENEN KISIM: Veri Çekme Motoru İçin Gerekli ---
 class WeatherData(SystemBase):
     __tablename__ = "weather_data"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     latitude = Column(Float, index=True)
     longitude = Column(Float, index=True)
     date = Column(Date, index=True)
-    
+
+    # Konum (backfill scripti ve merge tarafından doldurulur)
+    province_name = Column(String, index=True, nullable=True)
+    district_name = Column(String, index=True, nullable=True)
+
     # Güneş
-    shortwave_radiation_sum = Column(Float) 
+    shortwave_radiation_sum = Column(Float)
     # Rüzgar
     wind_speed_mean = Column(Float)
     wind_speed_max = Column(Float)

@@ -1,14 +1,66 @@
 """
-SRRP v2.0 — Redis Cache Servisi
+SRRP v2.0 — Cache Servisi
 Ağır endpoint sonuçlarını önbelleğe alarak performansı artırır.
+
+Katmanlı strateji:
+  1. Redis (üretim ortamı — REDIS_URL env değişkeni gerekli)
+  2. In-memory TTL cache (Redis yoksa otomatik devreye girer)
+
+Her iki katman da aynı API ile kullanılır; uygulama kodu
+Redis varlığından haberdar olmak zorunda değildir.
 """
 import json
 import os
+import time
 import logging
-from typing import Optional, Any
+from threading import Lock
+from typing import Optional, Any, Tuple
 from functools import wraps
 
 logger = logging.getLogger(__name__)
+
+# ─── In-Memory TTL Cache ────────────────────────────────────────────────────
+# Yapı: { key: (value, expire_at_float) }
+# Thread-safe: Lock ile korunur.
+_mem_store: dict = {}
+_mem_lock = Lock()
+
+
+def _mem_get(key: str) -> Optional[Any]:
+    with _mem_lock:
+        entry = _mem_store.get(key)
+        if entry is None:
+            return None
+        value, expire_at = entry
+        if time.monotonic() > expire_at:
+            del _mem_store[key]
+            return None
+        return value
+
+
+def _mem_set(key: str, value: Any, ttl_seconds: int) -> None:
+    with _mem_lock:
+        _mem_store[key] = (value, time.monotonic() + ttl_seconds)
+
+
+def _mem_delete(key: str) -> None:
+    with _mem_lock:
+        _mem_store.pop(key, None)
+
+
+def _mem_flush() -> None:
+    with _mem_lock:
+        _mem_store.clear()
+
+
+def _mem_delete_pattern(pattern: str) -> int:
+    """Basit glob-style wildcard: 'prefix:*' şeklindeki pattern'leri destekler."""
+    prefix = pattern.rstrip("*")
+    with _mem_lock:
+        keys_to_del = [k for k in _mem_store if k.startswith(prefix)]
+        for k in keys_to_del:
+            del _mem_store[k]
+    return len(keys_to_del)
 
 # --- Redis Bağlantısı ---
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
@@ -27,67 +79,70 @@ except Exception as e:
 
 
 # --- Cache İşlemleri ---
+# Her fonksiyon: Redis varsa Redis kullan, yoksa in-memory fallback.
 
 def cache_get(key: str) -> Optional[Any]:
-    """Cache'den veri oku. Redis yoksa None döner."""
-    if not REDIS_AVAILABLE:
-        return None
-    try:
-        data = redis_client.get(key)
-        if data:
-            return json.loads(data)
-    except Exception as e:
-        logger.error(f"Cache okuma hatası: {e}")
-    return None
+    """Cache'den veri oku. Redis → in-memory fallback zinciri."""
+    if REDIS_AVAILABLE:
+        try:
+            data = redis_client.get(key)
+            if data:
+                return json.loads(data)
+        except Exception as e:
+            logger.error(f"Redis okuma hatası: {e}")
+    # In-memory fallback
+    return _mem_get(key)
 
 
 def cache_set(key: str, value: Any, ttl_seconds: int = 3600) -> bool:
-    """Cache'e veri yaz. Varsayılan TTL: 1 saat."""
-    if not REDIS_AVAILABLE:
-        return False
-    try:
-        redis_client.setex(key, ttl_seconds, json.dumps(value, default=str))
-        return True
-    except Exception as e:
-        logger.error(f"Cache yazma hatası: {e}")
-        return False
+    """Cache'e veri yaz. Varsayılan TTL: 1 saat. Her iki katmana da yazar."""
+    if REDIS_AVAILABLE:
+        try:
+            redis_client.setex(key, ttl_seconds, json.dumps(value, default=str))
+            return True
+        except Exception as e:
+            logger.error(f"Redis yazma hatası: {e}")
+    # In-memory fallback (Redis başarısız olsa da yazar)
+    _mem_set(key, value, ttl_seconds)
+    return True
 
 
 def cache_delete(key: str) -> bool:
-    """Cache'den veri sil."""
-    if not REDIS_AVAILABLE:
-        return False
-    try:
-        redis_client.delete(key)
-        return True
-    except Exception as e:
-        logger.error(f"Cache silme hatası: {e}")
-        return False
+    """Cache'den veri sil (her iki katmandan)."""
+    deleted = False
+    if REDIS_AVAILABLE:
+        try:
+            redis_client.delete(key)
+            deleted = True
+        except Exception as e:
+            logger.error(f"Redis silme hatası: {e}")
+    _mem_delete(key)
+    return deleted
 
 
 def cache_delete_pattern(pattern: str) -> int:
-    """Belirli bir pattern'e uyan tüm key'leri sil."""
-    if not REDIS_AVAILABLE:
-        return 0
-    try:
-        keys = redis_client.keys(pattern)
-        if keys:
-            return redis_client.delete(*keys)
-    except Exception as e:
-        logger.error(f"Cache pattern silme hatası: {e}")
-    return 0
+    """Belirli bir pattern'e uyan tüm key'leri sil ('prefix:*' formatı)."""
+    count = _mem_delete_pattern(pattern)
+    if REDIS_AVAILABLE:
+        try:
+            keys = redis_client.keys(pattern)
+            if keys:
+                count += redis_client.delete(*keys)
+        except Exception as e:
+            logger.error(f"Redis pattern silme hatası: {e}")
+    return count
 
 
 def cache_flush() -> bool:
-    """Tüm cache'i temizle."""
-    if not REDIS_AVAILABLE:
-        return False
-    try:
-        redis_client.flushdb()
-        return True
-    except Exception as e:
-        logger.error(f"Cache flush hatası: {e}")
-        return False
+    """Tüm cache'i temizle (her iki katman)."""
+    _mem_flush()
+    if REDIS_AVAILABLE:
+        try:
+            redis_client.flushdb()
+        except Exception as e:
+            logger.error(f"Redis flush hatası: {e}")
+            return False
+    return True
 
 
 # --- Dekoratör ---

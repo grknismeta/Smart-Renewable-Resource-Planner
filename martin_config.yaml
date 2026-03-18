@@ -1,0 +1,23 @@
+# ─── Martin Tile Server Config ───────────────────────────────────────────────
+# Smart Renewable Resource Planner — Rust tabanlı MVT tile server
+# https://maplibre.org/martin/
+#
+# Başlatmak için: docker compose up martin
+# Tile URL: http://localhost:3000/public.weather_tiles/{z}/{x}/{y}
+# TileJSON:  http://localhost:3000/public.weather_tiles
+# ─────────────────────────────────────────────────────────────────────────────
+
+listen_addresses: '0.0.0.0:3000'
+
+# Bağlantı havuzu
+max_connections_per_db: 5
+
+postgres:
+  - connection_string: '${DATABASE_URL}'
+    # Tüm public schema geometry view/tablolarını otomatik keşfet
+    auto_publish:
+      from_schemas: [public]
+      tables:
+        from_schemas: [public]
+      views:
+        from_schemas: [public]

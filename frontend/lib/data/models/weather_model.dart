@@ -124,6 +124,96 @@ class CityWeatherSummary {
   }
 }
 
+/// İl (province) bazlı özet hava durumu verisi
+class ProvinceSummary {
+  final String provinceName;
+  final double? avgWindSpeed;
+  final double? avgRadiation;
+  final double? avgTemperature;
+  final int recordCount;
+
+  const ProvinceSummary({
+    required this.provinceName,
+    this.avgWindSpeed,
+    this.avgRadiation,
+    this.avgTemperature,
+    required this.recordCount,
+  });
+
+  factory ProvinceSummary.fromJson(Map<String, dynamic> json) {
+    return ProvinceSummary(
+      provinceName: json['province_name'] as String,
+      avgWindSpeed: (json['avg_wind_speed'] as num?)?.toDouble(),
+      avgRadiation: (json['avg_radiation'] as num?)?.toDouble(),
+      avgTemperature: (json['avg_temperature'] as num?)?.toDouble(),
+      recordCount: (json['record_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// İlçe bazlı hava durumu özeti (7 gün ortalaması)
+class DistrictSummary {
+  final String districtName;
+  final String provinceName;
+  final double? lat;
+  final double? lon;
+  final double? avgWindSpeed;
+  final double? avgRadiation;
+  final double? avgTemperature;
+  final int recordCount;
+
+  const DistrictSummary({
+    required this.districtName,
+    required this.provinceName,
+    this.lat,
+    this.lon,
+    this.avgWindSpeed,
+    this.avgRadiation,
+    this.avgTemperature,
+    required this.recordCount,
+  });
+
+  factory DistrictSummary.fromJson(Map<String, dynamic> json) {
+    return DistrictSummary(
+      districtName: json['district_name'] as String,
+      provinceName: json['province_name'] as String,
+      lat: (json['lat'] as num?)?.toDouble(),
+      lon: (json['lon'] as num?)?.toDouble(),
+      avgWindSpeed: (json['avg_wind_speed'] as num?)?.toDouble(),
+      avgRadiation: (json['avg_radiation'] as num?)?.toDouble(),
+      avgTemperature: (json['avg_temperature'] as num?)?.toDouble(),
+      recordCount: (json['record_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// 7 coğrafi bölge bazlı hava durumu özeti
+class RegionSummary {
+  final String regionName;
+  final int provinceCount;
+  final double? avgWindSpeed;
+  final double? avgRadiation;
+  final double? avgTemperature;
+
+  const RegionSummary({
+    required this.regionName,
+    required this.provinceCount,
+    this.avgWindSpeed,
+    this.avgRadiation,
+    this.avgTemperature,
+  });
+
+  factory RegionSummary.fromJson(Map<String, dynamic> json) {
+    return RegionSummary(
+      regionName: json['region_name'] as String,
+      provinceCount: (json['province_count'] as num?)?.toInt() ?? 0,
+      avgWindSpeed: (json['avg_wind_speed'] as num?)?.toDouble(),
+      avgRadiation: (json['avg_radiation'] as num?)?.toDouble(),
+      avgTemperature: (json['avg_temperature'] as num?)?.toDouble(),
+    );
+  }
+}
+
 /// Işınım (Irradiance) Veri Modeli
 /// Backend'den gelen güneş ışınım verilerini temsil eder
 class IrradianceData {

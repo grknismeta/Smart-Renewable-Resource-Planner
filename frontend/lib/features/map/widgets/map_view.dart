@@ -186,6 +186,7 @@ class _MapViewState extends State<MapView> {
                 data: mapViewModel.heatmapPoints,
                 layerType: mapViewModel.currentLayer,
                 opacity: mapViewModel.isHeatmapLoading ? 0.4 : 0.6,
+                fastMode: mapViewModel.isAnimationMode,
               ),
             ),
 

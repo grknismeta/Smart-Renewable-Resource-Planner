@@ -1,5 +1,6 @@
 import pandas as pd
 from sqlalchemy import select, func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from datetime import date, datetime, timedelta
 from typing import List, Tuple
@@ -15,10 +16,15 @@ from .base import setup_client, ARCHIVE_API_URL, FORECAST_API_URL, HISTORICAL_FO
 # Constants
 LAT_MIN, LAT_MAX = 36.0, 42.0
 LON_MIN, LON_MAX = 26.0, 45.0
-GRID_STEP = 0.5 
-BATCH_SIZE = 10
-YEARS_TO_FETCH = list(range(2015, 2025)) 
+GRID_STEP = 0.5
+BATCH_SIZE = 50
+YEARS_TO_FETCH = list(range(2015, 2025))
 FETCH_2025 = True
+
+# Daily updater — rolling window & deep backfill settings
+ROLLING_DAYS = 100               # Her startup'ta son 100 gün idempotent olarak çekilir
+DEEP_BACKFILL_START = date(2025, 1, 1)  # Bu tarihten rolling_start-1'e kadar boşluk kontrol edilir
+COMPLETENESS_THRESHOLD = 0.90    # %90 dolu ise deep backfill atlanır
 
 def generate_grid_points() -> List[Tuple[float, float]]:
     """Generates grid points over Turkey."""
@@ -34,7 +40,7 @@ def generate_grid_points() -> List[Tuple[float, float]]:
 def save_response_to_db(db: Session, response, lat, lon):
     """Parses Open-Meteo Binary response and saves to DB."""
     daily = response.Daily()
-    
+
     daily_temp_mean = daily.Variables(0).ValuesAsNumpy()
     daily_wind_max = daily.Variables(1).ValuesAsNumpy()
     daily_wind_mean = daily.Variables(2).ValuesAsNumpy()
@@ -47,35 +53,46 @@ def save_response_to_db(db: Session, response, lat, lon):
         freq=pd.Timedelta(seconds=daily.Interval()),
         inclusive="left"
     )
-    
-    weather_objects = []
-    for i in range(len(dates)):
-        # Handle NaN values
-        temp = float(daily_temp_mean[i]) if not pd.isna(daily_temp_mean[i]) else None
-        
-        if temp is None: # Basic validation
-            continue
 
-        w_obj = WeatherData(
-            latitude=lat,
-            longitude=lon,
-            date=dates[i].date(),
-            temperature_mean=temp,
-            wind_speed_max=float(daily_wind_max[i]) if not pd.isna(daily_wind_max[i]) else 0.0,
-            wind_speed_mean=float(daily_wind_mean[i]) if not pd.isna(daily_wind_mean[i]) else 0.0,
-            wind_direction_dominant=float(daily_wind_dir[i]) if not pd.isna(daily_wind_dir[i]) else 0.0,
-            shortwave_radiation_sum=float(daily_rad_sum[i]) if not pd.isna(daily_rad_sum[i]) else 0.0
-        )
-        weather_objects.append(w_obj)
-        
-    if weather_objects:
-        db.bulk_save_objects(weather_objects)
+    record_dicts = []
+    for i in range(len(dates)):
+        temp = float(daily_temp_mean[i]) if not pd.isna(daily_temp_mean[i]) else None
+        if temp is None:
+            continue
+        record_dicts.append({
+            'latitude': lat,
+            'longitude': lon,
+            'date': dates[i].date(),
+            'temperature_mean': temp,
+            'wind_speed_max': float(daily_wind_max[i]) if not pd.isna(daily_wind_max[i]) else 0.0,
+            'wind_speed_mean': float(daily_wind_mean[i]) if not pd.isna(daily_wind_mean[i]) else 0.0,
+            'wind_direction_dominant': float(daily_wind_dir[i]) if not pd.isna(daily_wind_dir[i]) else 0.0,
+            'shortwave_radiation_sum': float(daily_rad_sum[i]) if not pd.isna(daily_rad_sum[i]) else 0.0,
+            'province_name': None,
+            'district_name': None,
+        })
+
+    return record_dicts
 
 def save_batch_responses_to_db(db: Session, responses, batch_points):
-    """Saves a batch of API responses to DB."""
+    """Saves a batch of API responses to DB using ON CONFLICT DO NOTHING.
+
+    This prevents UniqueViolation when grid points overlap with existing
+    bulk-imported province/district coordinates.
+    """
+    all_dicts = []
     for idx, response in enumerate(responses):
         lat, lon = batch_points[idx]
-        save_response_to_db(db, response, lat, lon)
+        all_dicts.extend(save_response_to_db(db, response, lat, lon))
+
+    if not all_dicts:
+        return
+
+    stmt = pg_insert(WeatherData).values(all_dicts)
+    stmt = stmt.on_conflict_do_nothing(
+        index_elements=['latitude', 'longitude', 'date']
+    )
+    db.execute(stmt)
     db.commit()
 
 # --- BULK HISTORICAL FETCH (from data_collector.py) ---
@@ -109,7 +126,7 @@ def fetch_year_data(openmeteo, db: Session, points: list, year: int, api_url: st
     
     print(f"   📥 {year}: Fetching {len(points_to_fetch)} points")
     
-    current_batch_size = 3 if year == 2025 else BATCH_SIZE
+    current_batch_size = 20 if year == 2025 else BATCH_SIZE
     
     batches = [points_to_fetch[i:i + current_batch_size] for i in range(0, len(points_to_fetch), current_batch_size)]
     total_batches = len(batches)
@@ -146,7 +163,7 @@ def fetch_year_data(openmeteo, db: Session, points: list, year: int, api_url: st
                 
             except Exception as e:
                 error_str = str(e)
-                if "rate limit" in error_str.lower() or "limit exceeded" in error_str.lower():
+                if "rate limit" in error_str.lower() or "limit exceeded" in error_str.lower() or "minutely" in error_str.lower():
                     wait_time = 60 + (attempt * 30)
                     print(f"      ⏳ Rate limit! Waiting {wait_time}s... (Attempt {attempt+1}/{max_retries})")
                     time.sleep(wait_time)
@@ -187,93 +204,129 @@ def fetch_historical_grid_data():
 
 # --- DAILY UPDATE (from daily_updater.py) ---
 
-def get_last_date_in_db(db: Session) -> date | None:
-    """Returns the date of the latest record in DB."""
-    result = db.execute(
-        select(func.max(WeatherData.date))
-    ).scalar()
-    return result
+def fetch_missing_days(start_date: date, end_date: date,
+                        api_url: str | None = None) -> int:
+    """Fetches missing days for all grid points.
 
-def fetch_missing_days(start_date: date, end_date: date) -> int:
-    """Fetches missing days for all grid points."""
+    Args:
+        start_date: First date to fetch (inclusive).
+        end_date:   Last date to fetch (inclusive).
+        api_url:    Open-Meteo endpoint to use.  Defaults to FORECAST_API_URL
+                    for the last ~92 days; pass HISTORICAL_FORECAST_API_URL
+                    for older dates (supported back to 2022-01-01).
+    """
+    if api_url is None:
+        api_url = FORECAST_API_URL
+
     openmeteo = setup_client(cache_name='.cache_daily')
     points = generate_grid_points()
     db = SystemSessionLocal()
-    
+
     days_fetched = 0
-    
+
     try:
-        # Batching
-        update_batch_size = 15 # Larger batch for forecast API
-        batches = [points[i:i + update_batch_size] for i in range(0, len(points), update_batch_size)]
-        
+        update_batch_size = 50
+        batches = [points[i:i + update_batch_size]
+                   for i in range(0, len(points), update_batch_size)]
+
         for batch_idx, batch_points in enumerate(batches):
             lats = [p[0] for p in batch_points]
             lons = [p[1] for p in batch_points]
-            
+
             params = {
                 "latitude": lats,
                 "longitude": lons,
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
-                "daily": ["temperature_2m_mean", "wind_speed_10m_max", "wind_speed_10m_mean", 
+                "daily": ["temperature_2m_mean", "wind_speed_10m_max", "wind_speed_10m_mean",
                           "wind_direction_10m_dominant", "shortwave_radiation_sum"],
                 "timezone": "auto"
             }
-            
+
             try:
-                responses = openmeteo.weather_api(FORECAST_API_URL, params=params)
+                responses = openmeteo.weather_api(api_url, params=params)
                 save_batch_responses_to_db(db, responses, batch_points)
-                
+
                 if batch_idx == 0:
                     days_fetched = (end_date - start_date).days + 1
-                    
-                print(f"[DailyUpdater] Batch {batch_idx + 1}/{len(batches)}: {len(batch_points)} points processed & saved.")
-                time.sleep(1) # Rate limit protection
-                
+
+                print(f"[DailyUpdater] Batch {batch_idx + 1}/{len(batches)}: "
+                      f"{len(batch_points)} points processed & saved.")
+                time.sleep(1)
+
             except Exception as e:
-                print(f"[DailyUpdater] Batch {batch_idx+1} error: {e}")
-                time.sleep(5)
+                err_str = str(e).lower()
+                is_rate = "rate" in err_str or "minutely" in err_str or "limit exceeded" in err_str
+                wait = 65 if is_rate else 5
+                print(f"[DailyUpdater] Batch {batch_idx + 1} error ({'rate limit' if is_rate else 'genel'}): {e} — {wait}s bekleniyor")
+                time.sleep(wait)
                 continue
-                
+
     finally:
         db.close()
-    
+
     return days_fetched
+
+def _check_gap_completeness(db: Session, start: date, end: date) -> float:
+    """[start, end] aralığındaki coverage oranını döndürür (0.0–1.0).
+
+    İlk grid point üzerinden örnekleme yapar (hızlı).
+    """
+    first_point = generate_grid_points()[0]
+    lat, lon = first_point
+    expected_days = (end - start).days + 1
+    actual = db.execute(
+        select(func.count(WeatherData.id)).where(
+            WeatherData.latitude == lat,
+            WeatherData.longitude == lon,
+            WeatherData.date >= start,
+            WeatherData.date <= end,
+        )
+    ).scalar() or 0
+    return actual / expected_days if expected_days > 0 else 1.0
+
 
 def update_daily_grid_data() -> str:
     """
-    Checks DB and fills missing days up to today.
-    Called on backend startup.
+    Startup'ta çalışır. İki adım:
+    1. Rolling window: Son ROLLING_DAYS günü idempotent olarak çek (her zaman)
+    2. Deep backfill: DEEP_BACKFILL_START'tan rolling_start-1'e kadar boşluk varsa doldur
     """
     db = SystemSessionLocal()
-    
     try:
-        last_date = get_last_date_in_db(db)
-        
-        if last_date is None:
-            return "⚠️ Database empty. Please run 'python -m backend.services.collectors.historical' first."
-        
         today = date.today()
-        target_date = today - timedelta(days=2) # Forecast reliable up to 2 days ago
-        
-        if last_date >= target_date:
-            return f"✅ Grid data up-to-date (Last: {last_date})"
-        
-        missing_days = (target_date - last_date).days
-        
-        if missing_days <= 0:
-            return f"✅ Grid data up-to-date (Last: {last_date})"
-        
-        print(f"[DailyUpdater] {missing_days} missing days found. Updating...")
-        
-        start = last_date + timedelta(days=1)
-        days_fetched = fetch_missing_days(start, target_date)
-        
-        return f"✅ {days_fetched} days updated ({start} → {target_date})"
-        
+        yesterday = today - timedelta(days=1)
+        results = []
+
+        # ── Adım 1: Rolling Window (son ROLLING_DAYS gün, her startup) ───────
+        rolling_start = today - timedelta(days=ROLLING_DAYS)
+        print(f"[DailyUpdater] Rolling window: {rolling_start} → {yesterday}")
+        fetched = fetch_missing_days(rolling_start, yesterday,
+                                     api_url=HISTORICAL_FORECAST_API_URL)
+        results.append(f"Rolling {ROLLING_DAYS}d: {fetched} days refreshed")
+
+        # ── Adım 2: Deep Backfill (DEEP_BACKFILL_START → rolling_start-1) ───
+        deep_end = rolling_start - timedelta(days=1)
+        if DEEP_BACKFILL_START <= deep_end:
+            coverage = _check_gap_completeness(db, DEEP_BACKFILL_START, deep_end)
+            if coverage < COMPLETENESS_THRESHOLD:
+                print(
+                    f"[DailyUpdater] Deep gap {DEEP_BACKFILL_START}→{deep_end} "
+                    f"coverage={coverage:.1%} < {COMPLETENESS_THRESHOLD:.0%}, backfilling..."
+                )
+                fetched2 = fetch_missing_days(DEEP_BACKFILL_START, deep_end,
+                                              api_url=HISTORICAL_FORECAST_API_URL)
+                results.append(f"Deep backfill: {fetched2} days filled")
+            else:
+                results.append(
+                    f"Deep gap {DEEP_BACKFILL_START}→{deep_end} already "
+                    f"{coverage:.1%} complete, skipped"
+                )
+
+        return "[OK] " + " | ".join(results)
+
     except Exception as e:
-        return f"❌ Update error: {e}"
+        return f"[ERROR] {e}"
     finally:
         db.close()
 
@@ -281,7 +334,10 @@ async def async_update_daily_grid_data():
     """Async wrapper for startup task."""
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, update_daily_grid_data)
-    print(f"[HistoricalCollector] {result}")
+    try:
+        print(f"[HistoricalCollector] {result}")
+    except UnicodeEncodeError:
+        print(f"[HistoricalCollector] {result.encode('ascii', errors='replace').decode('ascii')}")
     return result
 
 if __name__ == "__main__":

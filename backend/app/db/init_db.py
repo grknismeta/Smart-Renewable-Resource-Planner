@@ -1,5 +1,5 @@
-from .db.database import SystemEngine, SystemBase, SystemSessionLocal, UserEngine, UserBase, UserSessionLocal, UserPinsEngine, UserPinsBase
-from .db import models
+from .database import SystemEngine, SystemBase, SystemSessionLocal, UserEngine, UserBase, UserSessionLocal, UserPinsEngine, UserPinsBase
+from . import models
 
 def init_db():
     # 1. User DB (Pinler, Kullanıcılar, Senaryolar) tablolarını oluştur

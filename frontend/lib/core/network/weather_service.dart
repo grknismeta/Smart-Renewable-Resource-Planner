@@ -80,6 +80,45 @@ class WeatherService extends BaseService {
     );
   }
 
+  Future<List<ProvinceSummary>> fetchProvinceSummary({int hours = 168}) async {
+    final uri = Uri.parse(
+      '$baseUrl/weather/province-summary',
+    ).replace(queryParameters: {'hours': '$hours'});
+    final response = await http.get(uri);
+    final data = processResponse(response);
+    if (data is List) {
+      return data.map((e) => ProvinceSummary.fromJson(e)).toList();
+    }
+    return [];
+  }
+
+  Future<List<DistrictSummary>> fetchDistrictSummary({
+    required String province,
+    int hours = 168,
+  }) async {
+    final uri = Uri.parse(
+      '$baseUrl/weather/district-summary',
+    ).replace(queryParameters: {'province': province, 'hours': '$hours'});
+    final response = await http.get(uri);
+    final data = processResponse(response);
+    if (data is List) {
+      return data.map((e) => DistrictSummary.fromJson(e)).toList();
+    }
+    return [];
+  }
+
+  Future<List<RegionSummary>> fetchRegionSummary({int hours = 168}) async {
+    final uri = Uri.parse(
+      '$baseUrl/weather/region-summary',
+    ).replace(queryParameters: {'hours': '$hours'});
+    final response = await http.get(uri);
+    final data = processResponse(response);
+    if (data is List) {
+      return data.map((e) => RegionSummary.fromJson(e)).toList();
+    }
+    return [];
+  }
+
   Future<List<Map<String, dynamic>>> fetchBestSolarCities({
     int limit = 400,
   }) async {
@@ -100,6 +139,42 @@ class WeatherService extends BaseService {
      throw Exception(
       'En iyi güneş şehirleri alınamadı (status: ${response.statusCode})',
     );
+  }
+
+  /// Animasyon için kullanılabilir veri tarih aralığını döndürür.
+  /// { daily_min, daily_max, hourly_min, hourly_max }
+  Future<Map<String, dynamic>> fetchAnimationRange() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/weather/animation/range'),
+    );
+    final data = processResponse(response);
+    if (data is Map<String, dynamic>) return data;
+    throw Exception('Animasyon aralığı alınamadı');
+  }
+
+  /// Animasyon frame verisi döndürür.
+  ///
+  /// [start] / [end]: "YYYY-MM-DD"
+  /// [metric]: "wind" | "temperature" | "radiation"
+  /// [interval]: "daily" | "hourly"
+  Future<Map<String, dynamic>> fetchAnimationData({
+    required String start,
+    required String end,
+    required String metric,
+    required String interval,
+  }) async {
+    final uri = Uri.parse('$baseUrl/weather/animation').replace(
+      queryParameters: {
+        'start': start,
+        'end': end,
+        'metric': metric,
+        'interval': interval,
+      },
+    );
+    final response = await http.get(uri);
+    final data = processResponse(response);
+    if (data is Map<String, dynamic>) return data;
+    throw Exception('Animasyon verisi alınamadı');
   }
 
   Future<List<CitySolarSummary>> fetchSolarSummary({int hours = 168}) async {

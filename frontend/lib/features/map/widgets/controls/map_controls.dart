@@ -13,6 +13,14 @@ class MapControls extends StatelessWidget {
   final bool isLayersPanelVisible;
   final VoidCallback? onToggleRecommendations;
   final bool isRecommendationsPanelOpen;
+  final VoidCallback? onToggleProvinceMode; // geriye dönük uyumluluk
+  final bool isProvinceModeActive;          // geriye dönük uyumluluk
+  final VoidCallback? onOpenProvincesMode;
+  final bool isProvincesModeActive;
+  final VoidCallback? onOpenDistrictsMode;
+  final bool isDistrictsModeActive;
+  final VoidCallback? onToggleAnimation;
+  final bool isAnimationMode;
 
   const MapControls({
     super.key,
@@ -26,6 +34,14 @@ class MapControls extends StatelessWidget {
     required this.isLayersPanelVisible,
     this.onToggleRecommendations,
     this.isRecommendationsPanelOpen = false,
+    this.onToggleProvinceMode,
+    this.isProvinceModeActive = false,
+    this.onOpenProvincesMode,
+    this.isProvincesModeActive = false,
+    this.onOpenDistrictsMode,
+    this.isDistrictsModeActive = false,
+    this.onToggleAnimation,
+    this.isAnimationMode = false,
   });
 
   @override
@@ -67,6 +83,45 @@ class MapControls extends StatelessWidget {
                   onTap: onToggleRecommendations!,
                   color: isRecommendationsPanelOpen
                       ? Colors.purpleAccent
+                      : theme.textColor,
+                  theme: theme,
+                ),
+              const SizedBox(height: 16),
+
+              // İl Modu — Tüm 81 ili doğrudan göster
+              if (onOpenProvincesMode != null)
+                MapControlButton(
+                  icon: Icons.apartment_rounded,
+                  tooltip: "İl Modu",
+                  onTap: onOpenProvincesMode!,
+                  color: isProvincesModeActive
+                      ? Colors.tealAccent
+                      : theme.textColor,
+                  theme: theme,
+                ),
+              const SizedBox(height: 16),
+
+              // İlçe Modu — Tüm Türkiye ilçelerini doğrudan göster
+              if (onOpenDistrictsMode != null)
+                MapControlButton(
+                  icon: Icons.grid_view_rounded,
+                  tooltip: "İlçe Modu",
+                  onTap: onOpenDistrictsMode!,
+                  color: isDistrictsModeActive
+                      ? Colors.orangeAccent
+                      : theme.textColor,
+                  theme: theme,
+                ),
+              const SizedBox(height: 16),
+
+              // Zaman Simülasyonu
+              if (onToggleAnimation != null)
+                MapControlButton(
+                  icon: Icons.play_circle_outline_rounded,
+                  tooltip: "Zaman Simülasyonu",
+                  onTap: onToggleAnimation!,
+                  color: isAnimationMode
+                      ? Colors.cyanAccent
                       : theme.textColor,
                   theme: theme,
                 ),

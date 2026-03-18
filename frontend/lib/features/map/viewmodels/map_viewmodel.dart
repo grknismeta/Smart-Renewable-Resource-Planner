@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
@@ -12,9 +13,12 @@ import 'package:frontend/data/models/weather_model.dart';
 import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:frontend/features/map/viewmodels/map_layer_mixin.dart';
 import 'package:frontend/features/map/layers/map_layers_system.dart';
+import 'package:frontend/features/map/models/map_models.dart';
 import 'package:frontend/data/models/recommendation_model.dart';
 export 'package:frontend/features/map/layers/map_layers_system.dart'
     show MapLayerType;
+export 'package:frontend/features/map/models/map_models.dart'
+    show MapMode, MlHeatmapMode, MlBaseStyle, HeatmapPalette;
 
 // SharedPreferences key prefix — versiyonlu, schema değişirse eski cache invalidate olur
 const _kCityPrefix = 'city_v2_';
@@ -23,6 +27,9 @@ const _kCityPrefix = 'city_v2_';
 typedef PinType = String;
 
 enum MapTimePeriod { current, monthly, annual }
+
+/// 3 seviyeli coğrafi seçim hiyerarşisi
+enum SelectionLevel { none, region, province, district }
 
 class MapViewModel extends BaseViewModel with MapLayerMixin {
   final ApiService _apiService;
@@ -61,11 +68,35 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   // Pin şehir adı cache: {pinId: "İl / İlçe"}
   final Map<int, String> _pinCityNames = {};
 
+  // Eşzamanlı fetchPins koruması — aynı anda birden fazla çağrıyı engeller
+  bool _fetchingPins = false;
+
   // --- Harita katman zaman dönemi ve neon toggle ---
   bool _showDataPoints = false;
   bool _showPins = true;
   bool _showVectorLayer = false; // MVT katmanı — varsayılan kapalı (render crash önleme)
   MapTimePeriod _selectedPeriod = MapTimePeriod.current;
+
+  // --- MapLibre 3D Modu ---
+  MapMode _mapMode = MapMode.standard;
+  MlHeatmapMode _mlHeatmapMode = MlHeatmapMode.none;
+  MlBaseStyle _mlBaseStyle = MlBaseStyle.darkMatter;
+  bool _show3DTurbines = false;
+  bool _showGlobe = false;
+  bool _show3DBuildings = false;
+  bool _show3DTerrain = false;
+
+  // Isı haritası parametreleri
+  double _heatmapRadius = 40.0;
+  double _heatmapIntensity = 1.0;
+  HeatmapPalette _heatmapPalette = HeatmapPalette.classic;
+
+  // Pin kümeleme
+  bool _showPinClusters = false;
+
+  // Pin filtresi
+  final Set<String> _pinTypeFilter = {};
+  double? _pinMinCapacityMw;
 
   // --- Önerilen Bölgeler Side Panel ---
   bool _isRecommendationsPanelOpen = false;
@@ -74,7 +105,36 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   bool _isLoadingSelectedCityData = false;
   int _cityDataRequestId = 0;
 
+  // --- Coğrafi Seçim Modu (Bölge / İl / İlçe) ---
+  bool _isProvinceModeActive = false;
+  SelectionLevel _selectionLevel = SelectionLevel.none;
+  String? _selectedRegionName;
+  String? _selectedProvinceName;
+  String? _selectedDistrictName;
+  List<ProvinceSummary> _provinceSummaries = [];
+  bool _isLoadingProvinceSummaries = false;
+
+  List<DistrictSummary> _districtSummaries = [];
+  bool _isLoadingDistrictSummaries = false;
+
+  List<RegionSummary> _regionSummaries = [];
+  bool _isLoadingRegionSummaries = false;
+
   List<Pin> get pins => _pins;
+
+  /// Pin filtresi uygulanmış pin listesi (haritada gösterilecek)
+  List<Pin> get filteredPins {
+    if (_pinTypeFilter.isEmpty && _pinMinCapacityMw == null) return _pins;
+    return _pins.where((p) {
+      if (_pinTypeFilter.isNotEmpty && !_pinTypeFilter.contains(p.type)) return false;
+      if (_pinMinCapacityMw != null && p.capacityMw < _pinMinCapacityMw!) return false;
+      return true;
+    }).toList();
+  }
+
+  Set<String> get pinTypeFilter => Set.unmodifiable(_pinTypeFilter);
+  double? get pinMinCapacity => _pinMinCapacityMw;
+  bool get hasPinFilter => _pinTypeFilter.isNotEmpty || _pinMinCapacityMw != null;
   PinType? get placingPinType => _placingPinType;
   PinCalculationResponse? get latestCalculationResult =>
       _latestCalculationResult;
@@ -83,6 +143,23 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   bool get showPins => _showPins;
   bool get showVectorLayer => _showVectorLayer;
   MapTimePeriod get selectedPeriod => _selectedPeriod;
+
+  // MapLibre 3D getters
+  MapMode get mapMode => _mapMode;
+  MlHeatmapMode get mlHeatmapMode => _mlHeatmapMode;
+  MlBaseStyle get mlBaseStyle => _mlBaseStyle;
+  bool get show3DTurbines => _show3DTurbines;
+  bool get showGlobe => _showGlobe;
+  bool get show3DBuildings => _show3DBuildings;
+  bool get show3DTerrain => _show3DTerrain;
+
+  // Isı haritası parametreleri getters
+  double get heatmapRadius => _heatmapRadius;
+  double get heatmapIntensity => _heatmapIntensity;
+  HeatmapPalette get heatmapPalette => _heatmapPalette;
+
+  // Pin kümeleme getter
+  bool get showPinClusters => _showPinClusters;
 
   List<CityWeatherData> get weatherData => _weatherData;
   DateTime get selectedTime => _selectedTime;
@@ -115,6 +192,69 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   List<CityWeatherData>? get selectedCityHourlyData => _selectedCityHourlyData;
   bool get isLoadingSelectedCityData => _isLoadingSelectedCityData;
 
+  // --- Coğrafi Seçim Modu Getters ---
+  bool get isProvinceModeActive => _isProvinceModeActive;
+  SelectionLevel get selectionLevel => _selectionLevel;
+
+  /// İl modu aktif mi? (province seviyesinde + provinceFilter yok)
+  bool get isProvincesModeActive =>
+      _isProvinceModeActive && _selectionLevel == SelectionLevel.province;
+
+  /// İlçe modu aktif mi? (district seviyesinde + province filtresi yok)
+  bool get isDistrictsModeActive =>
+      _isProvinceModeActive &&
+      _selectionLevel == SelectionLevel.district &&
+      _selectedProvinceName == null;
+  String? get selectedRegionName => _selectedRegionName;
+  String? get selectedProvinceName => _selectedProvinceName;
+  String? get selectedDistrictName => _selectedDistrictName;
+  List<ProvinceSummary> get provinceSummaries => _provinceSummaries;
+  bool get isLoadingProvinceSummaries => _isLoadingProvinceSummaries;
+  List<DistrictSummary> get districtSummaries => _districtSummaries;
+  bool get isLoadingDistrictSummaries => _isLoadingDistrictSummaries;
+  List<RegionSummary> get regionSummaries => _regionSummaries;
+  bool get isLoadingRegionSummaries => _isLoadingRegionSummaries;
+
+  /// GADM NAME_1 ("Istanbul") ile DB city_name ("İstanbul") arasındaki
+  /// diacritic/case farklarını gidererek karşılaştırma yapar.
+  static String _normalizeProvinceName(String name) {
+    return name
+        .toLowerCase()
+        .replaceAll('ı', 'i')
+        .replaceAll('ş', 's')
+        .replaceAll('ğ', 'g')
+        .replaceAll('ü', 'u')
+        .replaceAll('ö', 'o')
+        .replaceAll('ç', 'c')
+        .replaceAll('â', 'a')
+        .replaceAll('. ', ' '); // "K. Maras" → "k maras"
+  }
+
+  ProvinceSummary? get selectedProvinceSummary {
+    if (_selectedProvinceName == null || _provinceSummaries.isEmpty) return null;
+    final normalizedSelected = _normalizeProvinceName(_selectedProvinceName!);
+    try {
+      return _provinceSummaries.firstWhere(
+        (p) => _normalizeProvinceName(p.provinceName) == normalizedSelected,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Seçili ilçenin hava özeti — district-summary listesinden eşleştirme.
+  DistrictSummary? get selectedDistrictSummary {
+    if (_selectedDistrictName == null || _districtSummaries.isEmpty) return null;
+    final nameNorm = _normalizeProvinceName(_selectedDistrictName!);
+    try {
+      return _districtSummaries.firstWhere(
+        (d) => _normalizeProvinceName(d.districtName) == nameNorm,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   void toggleDataPoints(bool value) {
     _showDataPoints = value;
     safeNotify();
@@ -136,6 +276,91 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     if (currentLayer != MapLayerType.none) {
       fetchHeatmapDataForLayer(currentLayer);
     }
+    safeNotify();
+  }
+
+  // --- MapLibre 3D Modu Metodları ---
+
+  void setMapMode(MapMode mode) {
+    if (_mapMode == mode) return;
+    _mapMode = mode;
+    safeNotify();
+  }
+
+  void setMlHeatmapMode(MlHeatmapMode mode) {
+    _mlHeatmapMode = mode;
+    // Isı haritası için summary verisi gerekli
+    if (mode != MlHeatmapMode.none && _weatherSummary.isEmpty) {
+      _loadWeatherSummarySafe();
+    }
+    safeNotify();
+  }
+
+  void setMlBaseStyle(MlBaseStyle style) {
+    _mlBaseStyle = style;
+    safeNotify();
+  }
+
+  // Isı haritası parametre setters
+  void setHeatmapRadius(double v) {
+    _heatmapRadius = v.clamp(10.0, 100.0);
+    safeNotify();
+  }
+
+  void setHeatmapIntensity(double v) {
+    _heatmapIntensity = v.clamp(0.2, 5.0);
+    safeNotify();
+  }
+
+  void setHeatmapPalette(HeatmapPalette p) {
+    _heatmapPalette = p;
+    safeNotify();
+  }
+
+  // Pin kümeleme toggle
+  void togglePinClustering() {
+    _showPinClusters = !_showPinClusters;
+    safeNotify();
+  }
+
+  // Pin filtre metodları
+  void togglePinTypeFilter(String type) {
+    if (_pinTypeFilter.contains(type)) {
+      _pinTypeFilter.remove(type);
+    } else {
+      _pinTypeFilter.add(type);
+    }
+    safeNotify();
+  }
+
+  void setPinMinCapacity(double? v) {
+    _pinMinCapacityMw = v;
+    safeNotify();
+  }
+
+  void clearPinFilter() {
+    _pinTypeFilter.clear();
+    _pinMinCapacityMw = null;
+    safeNotify();
+  }
+
+  void toggleShow3DTurbines() {
+    _show3DTurbines = !_show3DTurbines;
+    safeNotify();
+  }
+
+  void toggleShowGlobe() {
+    _showGlobe = !_showGlobe;
+    safeNotify();
+  }
+
+  void toggleShow3DBuildings() {
+    _show3DBuildings = !_show3DBuildings;
+    safeNotify();
+  }
+
+  void toggleShow3DTerrain() {
+    _show3DTerrain = !_show3DTerrain;
     safeNotify();
   }
 
@@ -188,6 +413,172 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     _selectedCityHourlyData = null;
     _isLoadingSelectedCityData = false;
     safeNotify();
+  }
+
+  // --- Coğrafi Seçim Modu Metodları ---
+
+  /// Seçim modunu kapat.
+  void closeSelectionMode() {
+    _isProvinceModeActive = false;
+    _selectionLevel       = SelectionLevel.none;
+    _selectedRegionName   = null;
+    _selectedProvinceName = null;
+    _selectedDistrictName = null;
+    safeNotify();
+  }
+
+  /// İl modunu aç/kapat. Tüm 81 ili doğrudan gösterir; bölge filtresi isteğe bağlıdır.
+  void openProvincesMode() {
+    if (_isProvinceModeActive && _selectionLevel == SelectionLevel.province) {
+      closeSelectionMode();
+      return;
+    }
+    _isProvinceModeActive = true;
+    _selectionLevel       = SelectionLevel.province;
+    _selectedRegionName   = null;
+    _selectedProvinceName = null;
+    _selectedDistrictName = null;
+    _districtSummaries    = [];
+    safeNotify();
+    if (_provinceSummaries.isEmpty) loadProvinceSummaries();
+    if (_regionSummaries.isEmpty) loadRegionSummaries();
+  }
+
+  /// İlçe modunu aç/kapat. Tüm Türkiye ilçelerini doğrudan gösterir (il filtresi yok).
+  void openDistrictsMode() {
+    if (isDistrictsModeActive) {
+      closeSelectionMode();
+      return;
+    }
+    _isProvinceModeActive = true;
+    _selectionLevel       = SelectionLevel.district;
+    _selectedRegionName   = null;
+    _selectedProvinceName = null;
+    _selectedDistrictName = null;
+    _districtSummaries    = [];
+    safeNotify();
+    if (_provinceSummaries.isEmpty) loadProvinceSummaries();
+    if (_regionSummaries.isEmpty) loadRegionSummaries();
+  }
+
+  /// Geriye dönük uyumluluk — İl modunu açar/kapatır.
+  void toggleProvinceMode() => openProvincesMode();
+
+  /// Bölge seçildi → il seviyesine geç.
+  void selectRegion(String regionName) {
+    _selectedRegionName   = regionName;
+    _selectedProvinceName = null;
+    _selectedDistrictName = null;
+    _selectionLevel       = SelectionLevel.province;
+    safeNotify();
+  }
+
+  /// İl seçildi → ilçe seviyesine geç. İlçe verisini arka planda yükle.
+  void selectProvince(String provinceName) {
+    _selectedProvinceName = provinceName;
+    _selectedDistrictName = null;
+    _districtSummaries    = [];   // önceki ilin ilçelerini temizle
+    _selectionLevel       = SelectionLevel.district;
+    safeNotify();
+    loadDistrictSummaries(provinceName); // arka planda yükle
+  }
+
+  /// İlçe seçildi.
+  void selectDistrict(String districtName) {
+    _selectedDistrictName = districtName;
+    safeNotify();
+  }
+
+  /// İlçe seçimini temizle (il seviyesinde kal, bölge korunur).
+  void clearSelectedDistrict() {
+    _selectedDistrictName = null;
+    // selectionLevel stays at district (showing districts in province)
+    safeNotify();
+  }
+
+  /// İl seçimini temizle → il listesine geri dön (bölge filtresi korunur).
+  void clearSelectedProvince() {
+    _selectedProvinceName = null;
+    _selectedDistrictName = null;
+    _districtSummaries    = [];
+    _selectionLevel       = SelectionLevel.province;
+    safeNotify();
+  }
+
+  /// Bölge filtresini temizle → tüm iller gösterilir.
+  void clearRegionFilter() {
+    _selectedRegionName   = null;
+    _selectedProvinceName = null;
+    _selectedDistrictName = null;
+    _selectionLevel       = SelectionLevel.province;
+    safeNotify();
+  }
+
+  /// Bölge seçimini temizle → il listesine geri dön (geriye dönük uyumluluk).
+  void clearSelectedRegion() => clearRegionFilter();
+
+  /// Tüm seçimi temizle → il listesine sıfırla.
+  void clearAllSelection() {
+    _selectedRegionName   = null;
+    _selectedProvinceName = null;
+    _selectedDistrictName = null;
+    _districtSummaries    = [];
+    _selectionLevel = _isProvinceModeActive
+        ? SelectionLevel.province
+        : SelectionLevel.none;
+    safeNotify();
+  }
+
+  Future<void> loadProvinceSummaries({int hours = 168}) async {
+    if (_isLoadingProvinceSummaries) return;
+    _isLoadingProvinceSummaries = true;
+    safeNotify();
+    try {
+      _provinceSummaries = await _apiService.weather.fetchProvinceSummary(
+        hours: hours,
+      );
+    } catch (e) {
+      debugPrint('[MapViewModel.loadProvinceSummaries] Hata: $e');
+      _provinceSummaries = [];
+    } finally {
+      _isLoadingProvinceSummaries = false;
+      safeNotify();
+    }
+  }
+
+  Future<void> loadDistrictSummaries(String province, {int hours = 168}) async {
+    if (_isLoadingDistrictSummaries) return;
+    _isLoadingDistrictSummaries = true;
+    safeNotify();
+    try {
+      _districtSummaries = await _apiService.weather.fetchDistrictSummary(
+        province: province,
+        hours: hours,
+      );
+    } catch (e) {
+      debugPrint('[MapViewModel.loadDistrictSummaries] Hata: $e');
+      _districtSummaries = [];
+    } finally {
+      _isLoadingDistrictSummaries = false;
+      safeNotify();
+    }
+  }
+
+  Future<void> loadRegionSummaries({int hours = 168}) async {
+    if (_isLoadingRegionSummaries) return;
+    _isLoadingRegionSummaries = true;
+    safeNotify();
+    try {
+      _regionSummaries = await _apiService.weather.fetchRegionSummary(
+        hours: hours,
+      );
+    } catch (e) {
+      debugPrint('[MapViewModel.loadRegionSummaries] Hata: $e');
+      _regionSummaries = [];
+    } finally {
+      _isLoadingRegionSummaries = false;
+      safeNotify();
+    }
   }
 
   MapViewModel(this._apiService, this._authViewModel) {
@@ -392,6 +783,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   // --- API İşlemleri ---
   Future<void> fetchPins() async {
     if (_authViewModel.isLoggedIn != true) return;
+    if (_fetchingPins) return; // Eşzamanlı çağrıyı engelle
+    _fetchingPins = true;
     setBusy(true);
     try {
       _pins = await _apiService.resource.fetchPins();
@@ -402,6 +795,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     } catch (e) {
       debugPrint('[MapViewModel] Pin yüklenirken hata: $e');
     } finally {
+      _fetchingPins = false;
       setBusy(false);
     }
   }
@@ -678,6 +1072,36 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     return nearest;
   }
 
+  /// En yakın şehir adını bul — katman-bağımsız hover için.
+  /// weatherData (at-time) yoksa weatherSummary'den (7-gün) fallback kullanır.
+  String? findNearestCityName(LatLng position) {
+    // Önce at-time snapshot'a bak
+    final city = findNearestCity(position);
+    if (city != null) return city.cityName;
+
+    // Fallback: 7-günlük özet verisi
+    if (_weatherSummary.isEmpty) return null;
+
+    CityWeatherSummary? nearest;
+    double minDistance = double.infinity;
+
+    for (final s in _weatherSummary) {
+      final d = _calculateDistance(
+        position.latitude,
+        position.longitude,
+        s.lat,
+        s.lon,
+      );
+      if (d < minDistance) {
+        minDistance = d;
+        nearest = s;
+      }
+    }
+
+    if (minDistance > 100) return null;
+    return nearest?.cityName;
+  }
+
   /// İki nokta arası mesafe (km)
   double _calculateDistance(
     double lat1,
@@ -874,4 +1298,317 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     _recommendationError = null;
     notifyListeners();
   }
+
+  // ─── Zaman Simülasyonu (Animasyon) State ───────────────────────────────────
+
+  bool _isAnimationMode   = false;
+  bool _animIsPlaying     = false;
+  bool _animIsLoading     = false;
+  int  _animCurrentFrame  = 0;
+  int  _animTotalFrames   = 0;
+  String _animCurrentTimestamp = '';
+  String _animMetric      = 'wind';       // wind | temperature | radiation
+  String _animInterval    = 'daily';      // daily | hourly
+  double _animSpeedFps    = 5.0;
+  DateTime _animStartDate = DateTime(2024, 1, 1);
+  DateTime _animEndDate   = DateTime(2024, 12, 31);
+  String? _animError;
+  String _animRangeInfo   = '';  // "Günlük: 2015–2024 · Saatlik: 2024–2025" gibi
+
+  // Standard harita için frame verisi + timer
+  List<dynamic>? _animFrames;       // frames[i] = {"ts": "...", "pts": [[lat,lon,val], ...]}
+  double _animMetricMin = 0.0;
+  double _animMetricMax = 1.0;
+  Timer? _animTimer;
+
+  bool   get isAnimationMode        => _isAnimationMode;
+  bool   get animIsPlaying          => _animIsPlaying;
+  bool   get animIsLoading          => _animIsLoading;
+  int    get animCurrentFrame       => _animCurrentFrame;
+  int    get animTotalFrames        => _animTotalFrames;
+  String get animCurrentTimestamp   => _animCurrentTimestamp;
+  String get animMetric             => _animMetric;
+  String get animInterval           => _animInterval;
+  double get animSpeedFps           => _animSpeedFps;
+  DateTime get animStartDate        => _animStartDate;
+  DateTime get animEndDate          => _animEndDate;
+  String? get animError             => _animError;
+  String get animRangeInfo          => _animRangeInfo;
+
+  /// Animasyon modunu aç/kapat.
+  void toggleAnimationMode() {
+    if (_isAnimationMode) {
+      // Kapat: animasyonu durdur, heatmap'i sıfırla
+      _animTimer?.cancel();
+      _animTimer = null;
+      _jsAnimStop();
+      _isAnimationMode  = false;
+      _animIsPlaying    = false;
+      _animCurrentFrame = 0;
+      _animTotalFrames  = 0;
+      _animCurrentTimestamp = '';
+      _animError        = null;
+      _animFrames       = null;
+    } else {
+      _isAnimationMode = true;
+      // Açılışta mevcut veri aralığını arka planda çek
+      _fetchAnimationRange();
+    }
+    safeNotify();
+  }
+
+  /// Backend'den kullanılabilir tarih aralığını çekip `_animRangeInfo`'ya yaz.
+  Future<void> _fetchAnimationRange() async {
+    try {
+      final data = await _apiService.weather.fetchAnimationRange();
+      final dMin = data['daily_min']  ?? '?';
+      final dMax = data['daily_max']  ?? '?';
+      final hMin = data['hourly_min'] ?? '?';
+      final hMax = data['hourly_max'] ?? '?';
+      // Yıl kısmını kısalt: "2015-12-31" → "2015"
+      String _yr(String s) => s.length >= 4 ? s.substring(0, 4) : s;
+      _animRangeInfo = 'Günlük: ${_yr(dMin)}–${_yr(dMax)}  ·  Saatlik: ${_yr(hMin)}–${_yr(hMax)}';
+    } catch (e) {
+      _animRangeInfo = '';
+    }
+    safeNotify();
+  }
+
+  /// Frame verisini backend'den çekip standard harita + MapLibre için hazırlar.
+  Future<void> loadAnimationData() async {
+    if (_animIsLoading) return;
+    _animTimer?.cancel();
+    _animTimer = null;
+    _animIsLoading = true;
+    _animError     = null;
+    _animIsPlaying = false;
+    _animCurrentFrame     = 0;
+    _animTotalFrames      = 0;
+    _animCurrentTimestamp = '';
+    _animFrames           = null;
+    _jsAnimStop();
+    safeNotify();
+
+    try {
+      final start = '${_animStartDate.year.toString().padLeft(4, '0')}'
+          '-${_animStartDate.month.toString().padLeft(2, '0')}'
+          '-${_animStartDate.day.toString().padLeft(2, '0')}';
+      final end = '${_animEndDate.year.toString().padLeft(4, '0')}'
+          '-${_animEndDate.month.toString().padLeft(2, '0')}'
+          '-${_animEndDate.day.toString().padLeft(2, '0')}';
+
+      final data = await _apiService.weather.fetchAnimationData(
+        start: start,
+        end: end,
+        metric: _animMetric,
+        interval: _animInterval,
+      );
+
+      _animTotalFrames = (data['total_frames'] as num?)?.toInt() ?? 0;
+      if (_animTotalFrames == 0) {
+        _animError = 'Seçilen tarih aralığında veri bulunamadı.';
+      } else {
+        // Metriğe göre MapLibre heatmap modunu ayarla
+        final targetMode = _animMetric == 'wind'
+            ? MlHeatmapMode.wind
+            : _animMetric == 'temperature'
+                ? MlHeatmapMode.temperature
+                : MlHeatmapMode.solar;
+        setMlHeatmapMode(targetMode);
+
+        // MapLibre için JS'e tam JSON gönder (sadece MapLibre modunda)
+        if (_mapMode == MapMode.maplibre3d) {
+          _jsLoadAnimationData(jsonEncode(data));
+        }
+
+        // Standard harita için frame verisini sakla
+        _animFrames    = data['frames'] as List?;
+        _animMetricMin = (data['metric_min'] as num?)?.toDouble() ?? 0.0;
+        _animMetricMax = (data['metric_max'] as num?)?.toDouble() ?? 1.0;
+
+        // İlk frame'i hemen render et (her iki haritada)
+        if (_animFrames != null && _animFrames!.isNotEmpty) {
+          _animCurrentTimestamp = (_animFrames![0] as Map)['ts'] ?? '';
+          _renderStandardMapFrame(0);
+        }
+      }
+    } catch (e) {
+      // processResponse zaten FastAPI detail mesajını Exception içine koyuyor
+      _animError = e.toString().replaceFirst('Exception: ', '');
+      debugPrint('[MapViewModel.loadAnimationData] $e');
+    } finally {
+      _animIsLoading = false;
+      safeNotify();
+    }
+  }
+
+  /// Standard harita: belirtilen frame'i FlutterMap heatmap'e yazar.
+  void _renderStandardMapFrame(int frame) {
+    if (_animFrames == null || frame < 0 || frame >= _animFrames!.length) return;
+    final frameData = _animFrames![frame] as Map;
+    final pts = frameData['pts'] as List? ?? [];
+    final layerType = _animMetric == 'wind'
+        ? MapLayerType.wind
+        : _animMetric == 'temperature'
+            ? MapLayerType.temp
+            : MapLayerType.irradiance;
+    setAnimFrameData(pts, layerType, _animMetricMin, _animMetricMax);
+  }
+
+  /// Animasyonu oynat — MapLibre: JS timer; Standard: Dart Timer.
+  void playAnimation() {
+    if (_animTotalFrames == 0) return;
+    _animIsPlaying = true;
+    if (_mapMode == MapMode.maplibre3d) {
+      // MapLibre: JS setInterval üzerinden animasyon
+      _jsAnimPlay(_animSpeedFps);
+    } else {
+      // Standard harita: Dart Timer ile frame ilerlet
+      _animTimer?.cancel();
+      final intervalMs = (1000.0 / _animSpeedFps).round();
+      _animTimer = Timer.periodic(Duration(milliseconds: intervalMs), (_) {
+        final next = (_animCurrentFrame + 1) % _animTotalFrames;
+        _animCurrentFrame = next;
+        _animCurrentTimestamp = (_animFrames != null && next < _animFrames!.length)
+            ? ((_animFrames![next] as Map)['ts'] ?? '')
+            : '';
+        _renderStandardMapFrame(next);
+        // safeNotify() yerine doğrudan çağır — timer zaten main thread dışında değil,
+        // post-frame callback pile-up'ı önler
+        notifyListeners();
+      });
+    }
+    safeNotify();
+  }
+
+  /// Animasyonu durdur.
+  void pauseAnimation() {
+    _animIsPlaying = false;
+    _animTimer?.cancel();
+    _animTimer = null;
+    if (_mapMode == MapMode.maplibre3d) _jsAnimStop();
+    safeNotify();
+  }
+
+  /// Belirli frame indeksine atla.
+  void seekAnimation(int frame) {
+    if (_animTotalFrames == 0) return;
+    _animCurrentFrame = frame.clamp(0, _animTotalFrames - 1);
+    if (_mapMode == MapMode.maplibre3d) {
+      _jsAnimSeek(_animCurrentFrame);
+    }
+    // Standard harita
+    if (_animFrames != null) {
+      _animCurrentTimestamp = (_animCurrentFrame < _animFrames!.length)
+          ? ((_animFrames![_animCurrentFrame] as Map)['ts'] ?? '')
+          : '';
+      _renderStandardMapFrame(_animCurrentFrame);
+    }
+    safeNotify();
+  }
+
+  /// Metrik değiştir (wind | temperature | radiation).
+  void setAnimMetric(String m) {
+    if (_animMetric == m) return;
+    _animMetric = m;
+    safeNotify();
+  }
+
+  /// Aralık değiştir (daily | hourly).
+  /// Saatlik moda geçince end date otomatik olarak 30 günle sınırlanır.
+  void setAnimInterval(String i) {
+    if (_animInterval == i) return;
+    _animInterval = i;
+    _clampAnimEndDate();
+    safeNotify();
+  }
+
+  /// FPS hızını değiştir.
+  void setAnimSpeed(double fps) {
+    _animSpeedFps = fps.clamp(1.0, 20.0);
+    if (_animIsPlaying) {
+      if (_mapMode == MapMode.maplibre3d) {
+        _jsAnimStop();
+        _jsAnimPlay(_animSpeedFps);
+      } else {
+        // Standard harita — timer'ı yeni hızla yeniden başlat
+        _animTimer?.cancel();
+        final intervalMs = (1000.0 / _animSpeedFps).round();
+        _animTimer = Timer.periodic(Duration(milliseconds: intervalMs), (_) {
+          final next = (_animCurrentFrame + 1) % _animTotalFrames;
+          _animCurrentFrame = next;
+          _animCurrentTimestamp = (_animFrames != null && next < _animFrames!.length)
+              ? ((_animFrames![next] as Map)['ts'] ?? '')
+              : '';
+          _renderStandardMapFrame(next);
+          notifyListeners();
+        });
+      }
+    }
+    safeNotify();
+  }
+
+  // ── Validasyon yardımcıları ───────────────────────────────────────────────
+
+  static const int _hourlyMaxDays = 30;
+  static const int _dailyMaxDays  = 365;
+
+  int get _animMaxDays => _animInterval == 'hourly' ? _hourlyMaxDays : _dailyMaxDays;
+
+  /// Seçilen aralık geçerliyse null, değilse kullanıcıya gösterilecek mesaj.
+  String? get animDateRangeError {
+    final diff = _animEndDate.difference(_animStartDate).inDays;
+    if (diff < 1) return 'En az 1 gün seçilmeli';
+    if (diff > _animMaxDays) {
+      return _animInterval == 'hourly'
+          ? 'Saatlik modda maksimum $_hourlyMaxDays gün seçilebilir'
+          : 'Günlük modda maksimum $_dailyMaxDays gün seçilebilir';
+    }
+    return null;
+  }
+
+  void _clampAnimEndDate() {
+    final maxEnd = _animStartDate.add(Duration(days: _animMaxDays));
+    if (_animEndDate.isAfter(maxEnd)) _animEndDate = maxEnd;
+  }
+
+  /// Tarih aralığını güncelle (end date otomatik kısıtlanır).
+  void setAnimDateRange(DateTime start, DateTime end) {
+    _animStartDate = start;
+    _animEndDate   = end;
+    _clampAnimEndDate();
+    safeNotify();
+  }
+
+  /// JS animasyon callback'inden çağrılır — frame index + timestamp günceller.
+  void onAnimFrameChanged(int index, String ts) {
+    _animCurrentFrame     = index;
+    _animCurrentTimestamp = ts;
+    safeNotify();
+  }
+
+  // ── JS bridge stub'ları — map_view_maplibre_web.dart set eder ──────────────
+  // map_view_maplibre_web.dart initState'de bu closure'ları doldurur.
+  // Bu şekilde ViewModel → JS bağımlılığı tersine çevrilmiş olur.
+  void Function(String json)? _jsLoadFn;
+  void Function(double fps)?  _jsPlayFn;
+  void Function()?            _jsStopFn;
+  void Function(int frame)?   _jsSeekFn;
+
+  void registerJsBridge({
+    required void Function(String json) loadFn,
+    required void Function(double fps)  playFn,
+    required void Function()            stopFn,
+    required void Function(int frame)   seekFn,
+  }) {
+    _jsLoadFn = loadFn;
+    _jsPlayFn = playFn;
+    _jsStopFn = stopFn;
+    _jsSeekFn = seekFn;
+  }
+
+  void _jsLoadAnimationData(String json)  => _jsLoadFn?.call(json);
+  void _jsAnimPlay(double fps)            => _jsPlayFn?.call(fps);
+  void _jsAnimStop()                      => _jsStopFn?.call();
+  void _jsAnimSeek(int frame)             => _jsSeekFn?.call(frame);
 }

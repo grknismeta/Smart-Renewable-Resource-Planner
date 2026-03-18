@@ -8,6 +8,7 @@ import 'package:frontend/core/network/api_service.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
 import 'package:frontend/features/map/viewmodels/map_view_model.dart';
 import 'package:frontend/features/pins/viewmodels/pin_dialog_viewmodel.dart';
+import 'package:frontend/features/reports/report_screen.dart';
 
 import 'package:frontend/core/widgets/themed_inputs.dart';
 import 'package:frontend/features/pins/widgets/equipment_selector.dart';
@@ -205,36 +206,59 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
-                // Şehir / İlçe etiketi
-                if (_currentPin.locationLabel.isNotEmpty)
-                  Row(
-                    children: [
-                      Icon(Icons.location_on, size: 11, color: theme.secondaryTextColor.withValues(alpha: 0.7)),
-                      const SizedBox(width: 2),
+                // Şehir / İlçe etiketi (her zaman göster — lokasyon yoksa koordinat)
+                Row(
+                  children: [
+                    Icon(Icons.location_on, size: 11,
+                        color: theme.secondaryTextColor.withValues(alpha: 0.7)),
+                    const SizedBox(width: 2),
+                    Flexible(
+                      child: Text(
+                        _currentPin.locationLabel.isNotEmpty
+                            ? _currentPin.locationLabel
+                            : '${_currentPin.latitude.toStringAsFixed(4)}, ${_currentPin.longitude.toStringAsFixed(4)}',
+                        style: TextStyle(
+                          color: theme.secondaryTextColor.withValues(alpha: 0.85),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // HES için göl/nehir adı
+                    if (_currentPin.waterBodyName != null &&
+                        _currentPin.waterBodyName!.isNotEmpty)
                       Flexible(
                         child: Text(
-                          _currentPin.locationLabel,
+                          ' · ${_currentPin.waterBodyName}',
                           style: TextStyle(
-                            color: theme.secondaryTextColor.withValues(alpha: 0.85),
+                            color: Colors.teal.withValues(alpha: 0.85),
                             fontSize: 11,
-                            fontWeight: FontWeight.w500,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      // HES için göl/nehir adı
-                      if (_currentPin.waterBodyName != null && _currentPin.waterBodyName!.isNotEmpty)
-                        Flexible(
-                          child: Text(
-                            ' · ${_currentPin.waterBodyName}',
-                            style: TextStyle(
-                              color: Colors.teal.withValues(alpha: 0.85),
-                              fontSize: 11,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                  ],
+                ),
+                // Koordinatlar (lokasyon etiketi varsa ayrı satırda)
+                if (_currentPin.locationLabel.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      children: [
+                        Icon(Icons.gps_fixed, size: 10,
+                            color: theme.secondaryTextColor.withValues(alpha: 0.5)),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${_currentPin.latitude.toStringAsFixed(4)}, '
+                          '${_currentPin.longitude.toStringAsFixed(4)}',
+                          style: TextStyle(
+                            color: theme.secondaryTextColor.withValues(alpha: 0.55),
+                            fontSize: 10,
                           ),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
               ],
             ),
@@ -255,7 +279,29 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           EnergyOutputWidget(result: _currentPin.analysis!, theme: theme),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
+          // Raporlara Git butonu (analiz varsa öne çıkar)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ReportScreen()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green.withValues(alpha: 0.15),
+                foregroundColor: Colors.greenAccent,
+                elevation: 0,
+                side: BorderSide(color: Colors.greenAccent.withValues(alpha: 0.4)),
+              ),
+              icon: const Icon(Icons.description_outlined, size: 16),
+              label: const Text("Raporlara Git"),
+            ),
+          ),
+          const SizedBox(height: 12),
           // Actions Row
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -269,8 +315,8 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                     elevation: 0,
                     side: BorderSide(color: theme.secondaryTextColor.withValues(alpha: 0.2)),
                   ),
-                  icon: _isAnalyzing 
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
+                  icon: _isAnalyzing
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.refresh, size: 18),
                   label: Text(_isAnalyzing ? "..." : "Güncelle"),
                ),
@@ -292,7 +338,7 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                ElevatedButton.icon(
                   onPressed: () => _handleDelete(),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.withValues(alpha: 0.2), 
+                    backgroundColor: Colors.red.withValues(alpha: 0.2),
                     foregroundColor: Colors.redAccent,
                     elevation: 0,
                     side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.3)),

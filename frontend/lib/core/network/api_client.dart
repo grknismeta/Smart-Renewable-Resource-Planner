@@ -13,7 +13,7 @@ class BaseService {
     if (kIsWeb) {
       return 'http://127.0.0.1:8000';
     } else if (Platform.isAndroid) {
-      return 'http://192.168.1.166:8000';
+      return 'http://192.168.1.7:8000';
     } else {
       return 'http://127.0.0.1:8000';
     }
@@ -39,6 +39,17 @@ class BaseService {
        // Throw specific exceptions based on status code if needed
       if (response.statusCode == 401) {
         throw Exception('Yetki hatası. Lütfen tekrar giriş yapın.');
+      }
+      // FastAPI'nin {"detail": "..."} mesajını kullanıcıya göster
+      if (response.body.isNotEmpty) {
+        try {
+          final body = json.decode(utf8.decode(response.bodyBytes));
+          if (body is Map && body['detail'] != null) {
+            throw Exception('${body['detail']}');
+          }
+        } catch (e) {
+          if (e is Exception) rethrow;
+        }
       }
       throw Exception('API isteği başarısız: ${response.statusCode}');
     }

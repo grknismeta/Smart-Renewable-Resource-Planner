@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
@@ -50,7 +51,10 @@ enum MapLayerType {
 class _LayerComputeInput {
   final Float32List data;
   final int layerTypeIndex;
-  _LayerComputeInput(this.data, this.layerTypeIndex);
+  /// fastMode: animasyon sırasında kullanılır — coarser grid + azaltılmış
+  /// smoothing. Compute süresi ~100ms → ~8ms, animasyon pile-up önlenir.
+  final bool fastMode;
+  _LayerComputeInput(this.data, this.layerTypeIndex, {this.fastMode = false});
 }
 
 /// [compute()] sonucu — saf typed arrays.
@@ -152,7 +156,8 @@ _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
   if (minLat == double.infinity) return _emptyResult();
   if (minVal == maxVal) maxVal += 0.1;
 
-  const double resolution = 0.1;
+  // fastMode: animasyon için daha kaba grid → compute ~12x hızlı
+  final double resolution = input.fastMode ? 0.25 : 0.1;
   final int cols = ((maxLon - minLon) / resolution).round() + 1;
   final int rows = ((maxLat - minLat) / resolution).round() + 1;
   final int total = rows * cols;
@@ -170,8 +175,9 @@ _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
     }
   }
 
-  // 3. Gap filling — 5 geçiş diffusion
-  for (int pass = 0; pass < 5; pass++) {
+  // 3. Gap filling — normal: 5 geçiş; fastMode: 2 geçiş
+  final int gapPasses = input.fastMode ? 2 : 5;
+  for (int pass = 0; pass < gapPasses; pass++) {
     final newGrid = List<double?>.from(grid);
     bool changed = false;
     for (int r = 0; r < rows; r++) {
@@ -197,9 +203,10 @@ _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
     if (!changed) break;
   }
 
-  // 4. Gaussian-like smoothing — 3 geçiş
+  // 4. Gaussian-like smoothing — normal: 3 geçiş; fastMode: 1 geçiş
+  final int smoothPasses = input.fastMode ? 1 : 3;
   List<double?> currentGrid = grid;
-  for (int pass = 0; pass < 3; pass++) {
+  for (int pass = 0; pass < smoothPasses; pass++) {
     final nextGrid = List<double?>.filled(total, null);
     for (int r = 0; r < rows; r++) {
       for (int c = 0; c < cols; c++) {
@@ -271,6 +278,69 @@ _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
   );
 }
 
+// ─── Raster PNG Export (MapLibre overlay için) ────────────────────────────────
+
+/// `computeLayerPng()` dönüş tipi.
+class MapLayerRasterResult {
+  final String base64Png;
+  final double minLon, minLat, maxLon, maxLat;
+  const MapLayerRasterResult({
+    required this.base64Png,
+    required this.minLon,
+    required this.minLat,
+    required this.maxLon,
+    required this.maxLat,
+  });
+}
+
+/// Heatmap noktalarını standart haritayla AYNI pipeline ile hesaplar ve
+/// PNG base64 olarak döndürür. MapLibre'de `image source + raster layer`
+/// olarak kullanılır → standart haritayla birebir aynı görsel.
+Future<MapLayerRasterResult?> computeLayerPng(
+  List<HeatmapPoint> data,
+  MapLayerType layerType, {
+  bool fastMode = false,
+}) async {
+  if (data.isEmpty || layerType == MapLayerType.none) return null;
+
+  final inputData = Float32List(data.length * 3);
+  for (int i = 0; i < data.length; i++) {
+    inputData[i * 3]     = data[i].latitude;
+    inputData[i * 3 + 1] = data[i].longitude;
+    inputData[i * 3 + 2] = data[i].value;
+  }
+
+  final result = await compute(
+    _computeLayerData,
+    _LayerComputeInput(inputData, layerType.index, fastMode: fastMode),
+  );
+  if (result.isEmpty) return null;
+
+  final vertices = ui.Vertices.raw(
+    ui.VertexMode.triangles,
+    result.positions,
+    colors: result.colors,
+    indices: result.indices,
+  );
+
+  final recorder = ui.PictureRecorder();
+  Canvas(recorder).drawVertices(vertices, BlendMode.srcOver, Paint());
+  final picture = recorder.endRecording();
+
+  final image = await picture.toImage(result.cols, result.rows);
+  final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+  if (byteData == null) return null;
+
+  final base64Png = base64Encode(byteData.buffer.asUint8List());
+  return MapLayerRasterResult(
+    base64Png: base64Png,
+    minLon: result.minLon,
+    minLat: result.minLat,
+    maxLon: result.maxLon,
+    maxLat: result.maxLat,
+  );
+}
+
 // ─── Widget ────────────────────────────────────────────────────────────────────
 
 /// Tüm katman mantığını (logic + rendering) içeren ana widget.
@@ -278,12 +348,15 @@ class MapLayerWidget extends StatefulWidget {
   final List<HeatmapPoint> data;
   final MapLayerType layerType;
   final double opacity;
+  /// Animasyon modunda true — coarser grid ile hızlı render.
+  final bool fastMode;
 
   const MapLayerWidget({
     super.key,
     required this.data,
     required this.layerType,
     this.opacity = 0.5,
+    this.fastMode = false,
   });
 
   @override
@@ -309,7 +382,9 @@ class _MapLayerWidgetState extends State<MapLayerWidget> {
   void didUpdateWidget(covariant MapLayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Cache fix: aynı List referansı ise hesaplama yapma
-    if (widget.data != oldWidget.data || widget.layerType != oldWidget.layerType) {
+    if (widget.data != oldWidget.data ||
+        widget.layerType != oldWidget.layerType ||
+        widget.fastMode != oldWidget.fastMode) {
       _scheduleCompute();
     }
   }
@@ -338,7 +413,7 @@ class _MapLayerWidgetState extends State<MapLayerWidget> {
     // Ağır hesaplama ayrı izolatta — UI thread serbest kalır
     final result = await compute(
       _computeLayerData,
-      _LayerComputeInput(inputData, widget.layerType.index),
+      _LayerComputeInput(inputData, widget.layerType.index, fastMode: widget.fastMode),
     );
 
     // Widget unmount olmuş veya daha yeni bir hesaplama başlamış

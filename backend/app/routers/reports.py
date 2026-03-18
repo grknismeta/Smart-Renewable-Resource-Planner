@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import List, Dict, cast
+from typing import List, Dict, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -10,56 +10,12 @@ from app.db import models
 from app.schemas import schemas
 from app.db.database import get_system_db, get_db
 # Yeni yapıdaki fonksiyonları ve veri setini import ediyoruz
-from app.core.constants import TURKEY_CITIES, get_location_by_name
+from app.core.constants import (
+    TURKEY_CITIES, get_location_by_name,
+    REGION_CITIES, CITY_TO_REGION, REGION_ALIASES,  # tek kaynak
+)
 
 router = APIRouter(prefix="/reports")
-
-# Bölge -> İl listesi haritası (Yeni province alanıyla eşleşir)
-REGION_CITIES: Dict[str, List[str]] = {
-    "marmara": [
-        "İstanbul", "Edirne", "Kırklareli", "Tekirdağ", "Kocaeli",
-        "Sakarya", "Yalova", "Balıkesir", "Bursa", "Çanakkale", "Bilecik",
-    ],
-    "ege": [
-        "İzmir", "Manisa", "Aydın", "Muğla", "Denizli", "Uşak", "Kütahya", "Afyonkarahisar",
-    ],
-    "akdeniz": [
-        "Antalya", "Mersin", "Adana", "Hatay", "Osmaniye", "Isparta", "Burdur", "Kahramanmaraş",
-    ],
-    "iç anadolu": [
-        "Ankara", "Eskişehir", "Konya", "Kayseri", "Sivas", "Aksaray",
-        "Karaman", "Kırıkkale", "Kırşehir", "Niğde", "Nevşehir", "Yozgat", "Çankırı",
-    ],
-    "karadeniz": [
-        "Trabzon", "Rize", "Artvin", "Giresun", "Ordu", "Samsun", "Sinop",
-        "Gümüşhane", "Bayburt", "Tokat", "Amasya", "Çorum", "Bolu",
-        "Kastamonu", "Bartın", "Zonguldak", "Düzce", "Karabük",
-    ],
-    "doğu anadolu": [
-        "Erzurum", "Erzincan", "Kars", "Ağrı", "Iğdır", "Van", "Muş",
-        "Bitlis", "Hakkari", "Tunceli", "Bingöl", "Malatya", "Elazığ", "Ardahan",
-    ],
-    "güneydoğu anadolu": [
-        "Gaziantep", "Şanlıurfa", "Diyarbakır", "Mardin", "Batman", "Siirt", "Şırnak", "Adıyaman", "Kilis",
-    ],
-}
-
-# Hızlı arama için İl -> Bölge haritası
-CITY_TO_REGION: Dict[str, str] = {
-    city.casefold(): region for region, cities in REGION_CITIES.items() for city in cities
-}
-
-REGION_ALIASES = {
-    "ic anadolu": "iç anadolu",
-    "iç anadolu bölgesi": "iç anadolu",
-    "dogu anadolu": "doğu anadolu",
-    "güneydogu anadolu": "güneydoğu anadolu",
-    "guneydogu anadolu": "güneydoğu anadolu",
-    "karadeniz bölgesi": "karadeniz",
-    "ege bölgesi": "ege",
-    "akdeniz bölgesi": "akdeniz",
-    "marmara bölgesi": "marmara",
-}
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     from math import radians, sin, cos, sqrt, atan2
@@ -93,12 +49,15 @@ def get_regional_report(
     type: str = Query("Wind", description="Solar veya Wind"),
     interval: str = Query("Yıllık", description="Yıllık, Aylık, Anlık"),
     limit: int = Query(400, ge=1, le=500),
+    province: Optional[str] = Query(None, description="İl adı ile filtrele (isteğe bağlı)"),
     db: Session = Depends(get_system_db),
     current_user: models.User = Depends(auth.get_current_active_user),
 ):
     region_key = _normalize(region)
     type_norm = "Solar" if type.lower().startswith("s") else "Wind"
     is_all_regions = region_key in {"tümü", "tum", "tumu", "all", "tumü"}
+    # İl filtresi: normalize edilmiş hallerle karşılaştırmak için casefold
+    province_filter = province.strip().casefold() if province else None
 
     if region_key not in REGION_CITIES and not is_all_regions:
         raise HTTPException(status_code=400, detail="Geçersiz bölge adı")
@@ -147,7 +106,11 @@ def get_regional_report(
 
              if not is_all_regions and city_region != region_key:
                 continue
-             
+
+             # İl filtresi
+             if province_filter and city_province.casefold() != province_filter:
+                continue
+
              # Değer Belirleme
              display_val = 0.0
              display_unit = ""
@@ -205,6 +168,10 @@ def get_regional_report(
             city_region = CITY_TO_REGION.get(city_province.casefold())
 
             if not is_all_regions and city_region != region_key:
+                continue
+
+            # İl filtresi
+            if province_filter and city_province.casefold() != province_filter:
                 continue
 
             current_score = cast(float, row.overall_score)

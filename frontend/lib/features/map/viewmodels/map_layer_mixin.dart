@@ -76,6 +76,28 @@ mixin MapLayerMixin on BaseViewModel {
     )).toList();
   }
 
+  /// Animasyon motoru tarafından doğrudan çağrılır (standard harita).
+  /// [pts] listesi: her eleman [lat, lon, rawValue] triple'ı.
+  /// Değerler [min, max] aralığına göre 0–1'e normalize edilir.
+  void setAnimFrameData(
+    List<dynamic> pts,
+    MapLayerType layerType,
+    double metricMin,
+    double metricMax,
+  ) {
+    final range = metricMax - metricMin;
+    _interpolatedData = pts.map((pt) {
+      final lat = (pt[0] as num).toDouble();
+      final lon = (pt[1] as num).toDouble();
+      final raw = (pt[2] as num).toDouble();
+      final normalized = range > 0 ? ((raw - metricMin) / range).clamp(0.0, 1.0) : 0.5;
+      return <String, dynamic>{'lat': lat, 'lon': lon, 'value': normalized};
+    }).toList();
+    _currentLayer = layerType;
+    _rebuildHeatmapCache();
+    // notifyListeners() caller'ın sorumluluğunda (safeNotify ile çağrılır)
+  }
+
   void setLayer(MapLayerType layer) {
     if (_currentLayer == layer) return;
     _currentLayer = layer;
@@ -183,6 +205,9 @@ mixin MapLayerMixin on BaseViewModel {
       debugPrint('Wind quality save error: $e');
     }
   }
+
+  /// MapLibre rüzgar okları için de kullanılır.
+  Future<void> loadWindVectors() => _fetchWindVectors();
 
   Future<void> _fetchWindVectors() async {
     _isWindLoading = true;

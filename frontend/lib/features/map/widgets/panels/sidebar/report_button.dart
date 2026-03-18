@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
-import 'package:frontend/features/reports/screens/report_screen.dart';
+import 'package:frontend/features/reports/report_screen.dart';
 
 class ReportButton extends StatelessWidget {
   final ThemeViewModel theme;

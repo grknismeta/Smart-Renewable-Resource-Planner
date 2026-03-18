@@ -196,9 +196,9 @@ class GridService:
         
         # We need to process Wind and Solar separately or together.
         # Group by City and Month.
-        # SQLite extract('month', ...) can be tricky, let's try strict SQL approach or python grouping.
-        # Since we have ~150k rows, Python iteration is okay but SQL is better.
-        # Let's use a simpler approach: Get all City Names first.
+        # PostgreSQL extract('month', ...) kullanılır.
+        # ~150k satır için SQL aggregation tercih edilir.
+        # Basit yaklaşım: önce tüm şehir adlarını al.
         
         unique_cities = db.query(models.HourlyWeatherData.city_name).distinct().all()
         unique_cities = [c[0] for c in unique_cities]

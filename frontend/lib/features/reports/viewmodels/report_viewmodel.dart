@@ -13,18 +13,31 @@ class ReportViewModel extends BaseViewModel {
   String _selectedRegion = 'Tümü';
   String _selectedType = 'Wind';
   String _selectedInterval = 'Yıllık';
+  String? _selectedProvince; // İl bazlı filtre (null = tüm iller)
   RegionalSite? _focusedSite;
 
   RegionalReport? get report => _currentReport;
   String get selectedRegion => _selectedRegion;
   String get selectedType => _selectedType;
   String get selectedInterval => _selectedInterval;
+  String? get selectedProvince => _selectedProvince;
   RegionalSite? get focusedSite => _focusedSite;
 
-  Future<void> fetchReport({String? region, String? type, String? interval}) async {
+  Future<void> fetchReport({
+    String? region,
+    String? type,
+    String? interval,
+    String? province,
+    bool clearProvince = false,
+  }) async {
     _selectedRegion = region ?? _selectedRegion;
     _selectedType = type ?? _selectedType;
     _selectedInterval = interval ?? _selectedInterval;
+    if (clearProvince) {
+      _selectedProvince = null;
+    } else if (province != null) {
+      _selectedProvince = province;
+    }
     setBusy(true);
 
     try {
@@ -32,6 +45,7 @@ class ReportViewModel extends BaseViewModel {
         region: _selectedRegion,
         type: _selectedType,
         interval: _selectedInterval,
+        province: _selectedProvince,
       );
     } catch (e) {
       debugPrint('Rapor yüklenirken hata: $e');

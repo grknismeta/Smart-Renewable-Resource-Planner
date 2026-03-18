@@ -43,98 +43,60 @@ def _c(color: str, text: str) -> str:
             return text
     return f"{_C.get(color, '')}{text}{_C['reset']}"
 
+def _safe_print(text: str):
+    """Windows cp1254 uyumlu print — encode edilemeyen karakterleri '?' ile değiştirir."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        print(text.encode(sys.stdout.encoding or "ascii", errors="replace").decode(sys.stdout.encoding or "ascii"))
+
 def _section(title: str, emoji: str = ""):
     prefix = f"{emoji}  " if emoji else ""
-    bar = "─" * (54 - len(prefix + title))
-    print(f"\n  {_c('teal', prefix + title)} {_c('gray', bar)}")
+    bar = "-" * max(0, 54 - len(prefix + title))
+    _safe_print(f"\n  {_c('teal', prefix + title)} {_c('gray', bar)}")
 
 def _row(label: str, value: str, ok: bool | None = None):
     if ok is True:
-        state = _c("green", "● AKTİF")
+        state = _c("green", "[AKTIF]")
     elif ok is False:
-        state = _c("gray", "○ Devre Dışı")
+        state = _c("gray", "[Devre Disi]")
     else:
         state = _c("cyan", value)
-    print(f"    {_c('gray', label.ljust(28))} {state}")
+    _safe_print(f"    {_c('gray', label.ljust(28))} {state}")
 
 def _ok(msg: str):
-    print(f"    {_c('green', '✔')}  {msg}")
+    _safe_print(f"    {_c('green', '[OK]')}  {msg}")
 
 def _info(msg: str):
-    print(f"    {_c('cyan', '→')}  {msg}")
+    _safe_print(f"    {_c('cyan', '->')}  {msg}")
 
 def _warn(msg: str):
-    print(f"    {_c('yellow', '⚠')}  {msg}")
+    _safe_print(f"    {_c('yellow', '[!]')}  {msg}")
 
 def _err(msg: str):
-    print(f"    {_c('red', '✖')}  {msg}")
+    _safe_print(f"    {_c('red', '[X]')}  {msg}")
 
 def print_banner():
-    print()
-    print(_c("green", "  ╔══════════════════════════════════════════════════════════╗"))
-    print(_c("green", "  ║") + _c("bold", "   ⚡  Smart Renewable Resource Planner") + _c("gray", "  API v2.1.0    ") + _c("green", "║"))
-    print(_c("green", "  ╚══════════════════════════════════════════════════════════╝"))
-    print()
+    _safe_print("")
+    _safe_print(_c("green", "  +----------------------------------------------------------+"))
+    _safe_print(_c("green", "  |") + _c("bold", "   * Smart Renewable Resource Planner") + _c("gray", "  API v2.1.0    ") + _c("green", "|"))
+    _safe_print(_c("green", "  +----------------------------------------------------------+"))
+    _safe_print("")
     now = datetime.now().strftime("%d.%m.%Y %H:%M")
-    print(f"  {_c('gray', '🕐 Başlangıç:')}  {_c('white', now)}")
+    _safe_print(f"  {_c('gray', 'Baslangiç:')}  {_c('white', now)}")
 
 # ─── ROUTERLARI IMPORT ET ─────────────────────────────────────────────────────
-from .routers import pins, users, equipments, optimization, weather, reports, scenario, tiles, recommendations, wind_vectors
+from .routers import pins, users, equipments, optimization, weather, reports, scenario, tiles, recommendations, wind_vectors, borders
 
 # Coğrafya analiz motoru
 _GEO_ENABLED = os.getenv("GEO_ANALYSIS_ENABLED", "false").lower() == "true"
 if _GEO_ENABLED:
     from .routers import geo
 
-# Veritabanı tablolarını oluştur
-# models_geo import edildiyse SystemBase.metadata'ya otomatik kaydolur,
-# create_all() zaten onları da oluşturur — ayrıca çağırmaya gerek yok.
+# Veritabanı tablolarını oluştur (PostgreSQL — tek engine, tüm Base'ler)
 models.SystemBase.metadata.create_all(bind=SystemEngine)
 models.UserBase.metadata.create_all(bind=UserEngine)
 models.UserPinsBase.metadata.create_all(bind=UserPinsEngine)
-
-# SQLite migration: pins tablosuna yeni sütunlar ekle (mevcut DB için)
-def _migrate_pins_table():
-    """SQLite ALTER TABLE — sütun yoksa ekler, varsa atlar."""
-    from sqlalchemy import text
-    new_cols = [
-        ("city",            "TEXT"),
-        ("district",        "TEXT"),
-        ("water_body_name", "TEXT"),
-    ]
-    try:
-        with UserEngine.connect() as conn:
-            existing = {row[1] for row in conn.execute(text("PRAGMA table_info(pins)"))}
-            for col_name, col_type in new_cols:
-                if col_name not in existing:
-                    conn.execute(text(f"ALTER TABLE pins ADD COLUMN {col_name} {col_type}"))
-            conn.commit()
-    except Exception as e:
-        print(f"[Migration] pins tablosu güncelleme hatası: {e}")
-
-_migrate_pins_table()
-
-
-# SQLite migration: scenarios tablosuna battery sütunları ekle
-def _migrate_scenarios_table():
-    """Battery storage sütunları yoksa ekler."""
-    from sqlalchemy import text
-    new_cols = [
-        ("battery_capacity_kwh",     "REAL"),
-        ("battery_efficiency_pct",   "REAL"),
-        ("battery_cost_usd_per_kwh", "REAL"),
-    ]
-    try:
-        with UserEngine.connect() as conn:
-            existing = {row[1] for row in conn.execute(text("PRAGMA table_info(scenarios)"))}
-            for col_name, col_type in new_cols:
-                if col_name not in existing:
-                    conn.execute(text(f"ALTER TABLE scenarios ADD COLUMN {col_name} {col_type}"))
-            conn.commit()
-    except Exception as e:
-        print(f"[Migration] scenarios tablosu güncelleme hatası: {e}")
-
-_migrate_scenarios_table()
 
 
 # ─── STARTUP / SHUTDOWN ───────────────────────────────────────────────────────
@@ -142,7 +104,7 @@ _migrate_scenarios_table()
 async def lifespan(app: FastAPI):
     print_banner()
 
-    _section("Arkaplan Servisler", "🔧")
+    _section("Arkaplan Servisler", "[*]")
 
     import asyncio
 
@@ -193,25 +155,25 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             _warn(f"GIST indeks oluşturulamadı: {e}")
 
-    _section("Sunucu Hazır", "🚀")
+    _section("Sunucu Hazir", "[>>]")
     _row("Ana URL",      "http://localhost:8000")
     _row("Swagger UI",   "http://localhost:8000/docs")
     _row("Redoc",        "http://localhost:8000/redoc")
     _row("GEO Analizi",  "", ok=_GEO_ENABLED)
     print()
-    print(_c("gray", "  " + "─" * 58))
-    print(_c("gray", "  Loglar ↓") + _c("dim", "  (Durdurmak için Ctrl+C)"))
-    print(_c("gray", "  " + "─" * 58))
-    print()
+    _safe_print(_c("gray", "  " + "-" * 58))
+    _safe_print(_c("gray", "  Loglar:") + _c("dim", "  (Durdurmak icin Ctrl+C)"))
+    _safe_print(_c("gray", "  " + "-" * 58))
+    _safe_print("")
 
     yield
 
     # Shutdown
-    print()
-    print(_c("gray", "  " + "─" * 58))
-    _info("Kapatma isteği alındı. Servisler durduruluyor...")
-    print(_c("yellow", "  👋 Backend güvenli şekilde kapatıldı."))
-    print()
+    _safe_print("")
+    _safe_print(_c("gray", "  " + "-" * 58))
+    _info("Kapatma istegi alindi. Servisler durduruluyor...")
+    _safe_print(_c("yellow", "  Backend guvenli sekilde kapatildi."))
+    _safe_print("")
 
 
 # ─── OPENAPI TAG AÇIKLAMALARI ──────────────────────────────────────────────────
@@ -276,6 +238,7 @@ app.include_router(scenario.router,     prefix="/scenarios",  tags=["🗂️ Sce
 app.include_router(tiles.router,        prefix="/api/v1/tiles",    tags=["🗺️ Map Tiles (MVT)"])
 app.include_router(recommendations.router)                                        # Prefix router içinde
 app.include_router(wind_vectors.router)                                           # Parçacık akış verisi
+app.include_router(borders.router)                                                # GADM il/ilçe sınırları
 
 if _GEO_ENABLED:
     app.include_router(geo.router, prefix="/geo", tags=["🗺️ Geo Analysis"])

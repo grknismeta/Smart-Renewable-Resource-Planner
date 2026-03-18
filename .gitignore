@@ -30,3 +30,10 @@ Thumbs.db
 # Large Data Directories
 backend/Data/
 backend/data/
+backend/tamdb/
+backend/logs/
+backend/*_err.txt
+backend/manifest_cihaz_*.json
+backend/turkey_districts_*backup*.json
+backend/turkey_districts_part*.json
+git_files.txt

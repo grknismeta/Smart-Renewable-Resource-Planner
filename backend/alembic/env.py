@@ -12,12 +12,14 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from app.db import models  # Modelleri import et
-from app.db.database import UserBase  # UserBase'i import et (Varsayılan migration hedefi)
+from app.db.database import UserBase, DATABASE_URL  # UserBase'i import et (Varsayılan migration hedefi)
 target_metadata = UserBase.metadata
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+config.set_main_option("sqlalchemy.url", DATABASE_URL)
+
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -54,7 +56,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=True, # SQLite için batch modu (Offline)
+        render_as_batch=False,
     )
 
     with context.begin_transaction():
@@ -78,7 +80,7 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection, 
             target_metadata=target_metadata,
-            render_as_batch=True # <-- SQLite için gerekli olan satır (Online)
+            render_as_batch=False,
         )
 
         with context.begin_transaction():
