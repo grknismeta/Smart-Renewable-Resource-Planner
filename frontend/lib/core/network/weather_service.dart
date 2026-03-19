@@ -177,6 +177,66 @@ class WeatherService extends BaseService {
     throw Exception('Animasyon verisi alınamadı');
   }
 
+  // ── Rapor Dashboard metodları ──────────────────────────────────────────────
+
+  /// DB'de kayıtlı yıllar listesi (zaman aralığı seçici için).
+  Future<List<int>> fetchAvailableYears() async {
+    final response =
+        await http.get(Uri.parse('$baseUrl/weather/available-years'));
+    final data = processResponse(response);
+    if (data is List) return data.cast<int>();
+    return [];
+  }
+
+  /// Aylık veya günlük trend verisi.
+  ///
+  /// [metric]: "solar" | "wind" | "temperature"
+  /// [month]: null → 12 aylık özet; 1-12 → o ayın günlük özeti
+  Future<List<TrendPoint>> fetchMonthlyTrend(
+    String city,
+    String metric,
+    int year, {
+    int? month,
+  }) async {
+    final params = <String, String>{
+      'city': city,
+      'metric': metric,
+      'year': '$year',
+    };
+    if (month != null) params['month'] = '$month';
+
+    final uri = Uri.parse(
+      '$baseUrl/weather/monthly-trend',
+    ).replace(queryParameters: params);
+    final response = await http.get(uri);
+    final data = processResponse(response);
+    if (data is List) {
+      return data.map((e) => TrendPoint.fromJson(e)).toList();
+    }
+    return [];
+  }
+
+  /// Tarih aralığı bazlı il özeti (Yıllık / Özel aralık modları için).
+  Future<List<ProvinceSummary>> fetchProvinceSummaryByDateRange({
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    String fmtDate(DateTime d) =>
+        '${d.year.toString().padLeft(4, '0')}-'
+        '${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+
+    final uri = Uri.parse(
+      '$baseUrl/weather/province-summary-range',
+    ).replace(queryParameters: {'start': fmtDate(start), 'end': fmtDate(end)});
+    final response = await http.get(uri);
+    final data = processResponse(response);
+    if (data is List) {
+      return data.map((e) => ProvinceSummary.fromJson(e)).toList();
+    }
+    return [];
+  }
+
   Future<List<CitySolarSummary>> fetchSolarSummary({int hours = 168}) async {
     debugPrint('[WeatherService.fetchSolarSummary] Çağrıldı: hours=$hours');
 

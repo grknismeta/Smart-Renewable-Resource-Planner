@@ -737,3 +737,193 @@ async def refresh_hourly_data():
         return {"status": "success", "message": "Saatlik veriler güncellendi"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Rapor Dashboard endpoint'leri ───────────────────────────────────────────
+
+class TrendPoint(BaseModel):
+    label: str    # "Oca", "Şub" … ya da "01", "02" … (gün)
+    value: float
+
+
+@router.get("/available-years", response_model=List[int])
+def get_available_years():
+    """
+    Saatlik veri tablosunda kayıtlı yılları döndürür.
+    Flutter zaman aralığı seçicisi bu listeyi kullanarak dinamik yıl dropdown'u oluşturur.
+    """
+    cache_key = "weather:available-years"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    db = SystemSessionLocal()
+    try:
+        rows = db.execute(
+            select(func.extract("year", HourlyWeatherData.timestamp).label("yr"))
+            .distinct()
+            .order_by(text("yr"))
+        ).scalars().all()
+        result = [int(y) for y in rows if y is not None]
+        cache_set(cache_key, result, ttl_seconds=3600)
+        return result
+    finally:
+        db.close()
+
+
+@router.get("/monthly-trend", response_model=List[TrendPoint])
+def get_monthly_trend(
+    city: str = Query(..., description="Şehir adı (ör: İzmir)"),
+    metric: str = Query("solar", description="solar | wind | temperature"),
+    year: int = Query(..., description="Yıl (ör: 2025)"),
+    month: Optional[int] = Query(None, ge=1, le=12, description="Ay (1-12). Verilmezse tüm yıl aylık özet döner."),
+):
+    """
+    Belirli bir şehir için trend verisi döndürür.
+
+    - `month` verilmezse: o yılın 12 aylık ortalama dizisi (label: Oca..Ara)
+    - `month` verilirse: o ayın günlük ortalama dizisi (label: 1..28/30/31)
+
+    metric:
+      solar       → avg(shortwave_radiation) W/m² → kWh/m²/gün'e dönüştürülür (÷ 1000 × 24)
+      wind        → avg(wind_speed_100m) m/s
+      temperature → avg(temperature_2m) °C
+    """
+    if metric not in ("solar", "wind", "temperature"):
+        raise HTTPException(status_code=400, detail="metric must be solar|wind|temperature")
+
+    cache_key = f"weather:monthly-trend:{city.strip().lower()}:{metric}:{year}:{month}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return [TrendPoint(**p) for p in cached]
+
+    # Metrik sütun seçimi
+    if metric == "solar":
+        metric_col = HourlyWeatherData.shortwave_radiation
+    elif metric == "wind":
+        metric_col = HourlyWeatherData.wind_speed_100m
+    else:
+        metric_col = HourlyWeatherData.temperature_2m
+
+    TR_MONTHS = ["Oca", "Şub", "Mar", "Nis", "May", "Haz",
+                 "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"]
+
+    db = SystemSessionLocal()
+    try:
+        city_lower = city.strip().lower()
+
+        if month is None:
+            # Aylık özet — 12 veri noktası
+            rows = db.query(
+                func.extract("month", HourlyWeatherData.timestamp).label("m"),
+                func.avg(metric_col).label("val"),
+            ).filter(
+                func.lower(HourlyWeatherData.city_name) == city_lower,
+                func.extract("year", HourlyWeatherData.timestamp) == year,
+                HourlyWeatherData.district_name.is_(None),
+                metric_col.isnot(None),
+            ).group_by(
+                func.extract("month", HourlyWeatherData.timestamp)
+            ).order_by(
+                func.extract("month", HourlyWeatherData.timestamp)
+            ).all()
+
+            result = []
+            for r in rows:
+                m_idx = int(r.m) - 1
+                val = float(r.val)
+                if metric == "solar":
+                    val = round(val / 1000 * 24, 2)   # W/m² → kWh/m²/gün
+                else:
+                    val = round(val, 2)
+                result.append(TrendPoint(label=TR_MONTHS[m_idx], value=val))
+
+        else:
+            # Günlük özet — o ayın her günü
+            rows = db.query(
+                func.extract("day", HourlyWeatherData.timestamp).label("d"),
+                func.avg(metric_col).label("val"),
+            ).filter(
+                func.lower(HourlyWeatherData.city_name) == city_lower,
+                func.extract("year", HourlyWeatherData.timestamp) == year,
+                func.extract("month", HourlyWeatherData.timestamp) == month,
+                HourlyWeatherData.district_name.is_(None),
+                metric_col.isnot(None),
+            ).group_by(
+                func.extract("day", HourlyWeatherData.timestamp)
+            ).order_by(
+                func.extract("day", HourlyWeatherData.timestamp)
+            ).all()
+
+            result = []
+            for r in rows:
+                val = float(r.val)
+                if metric == "solar":
+                    val = round(val / 1000 * 24, 2)
+                else:
+                    val = round(val, 2)
+                result.append(TrendPoint(label=str(int(r.d)), value=val))
+
+        cache_set(cache_key, [p.model_dump() for p in result], ttl_seconds=1800)
+        return result
+    finally:
+        db.close()
+
+
+@router.get("/province-summary-range", response_model=List[ProvinceSummary])
+def get_province_summary_range(
+    start: str = Query(..., description="Başlangıç tarihi YYYY-MM-DD"),
+    end: str = Query(..., description="Bitiş tarihi YYYY-MM-DD"),
+):
+    """
+    Belirtilen tarih aralığı için il bazlı hava durumu özeti.
+    Mevcut /province-summary (hours bazlı) endpointi'nin tarih bazlı karşılığı.
+    """
+    try:
+        start_dt = datetime.strptime(start, "%Y-%m-%d")
+        end_dt = datetime.strptime(end, "%Y-%m-%d").replace(
+            hour=23, minute=59, second=59
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz tarih formatı; YYYY-MM-DD bekleniyor")
+
+    if start_dt > end_dt:
+        raise HTTPException(status_code=400, detail="start tarihi end'den büyük olamaz")
+
+    cache_key = f"weather:province-summary-range:{start}:{end}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return [ProvinceSummary(**item) for item in cached]
+
+    db = SystemSessionLocal()
+    try:
+        results = db.query(
+            HourlyWeatherData.city_name,
+            func.avg(HourlyWeatherData.wind_speed_100m).label("avg_wind"),
+            func.avg(HourlyWeatherData.shortwave_radiation).label("avg_radiation"),
+            func.avg(HourlyWeatherData.temperature_2m).label("avg_temp"),
+            func.count(HourlyWeatherData.id).label("record_count"),
+        ).filter(
+            HourlyWeatherData.timestamp >= start_dt,
+            HourlyWeatherData.timestamp <= end_dt,
+            HourlyWeatherData.city_name.isnot(None),
+            HourlyWeatherData.district_name.is_(None),
+        ).group_by(
+            HourlyWeatherData.city_name
+        ).all()
+
+        result = [
+            ProvinceSummary(
+                province_name=r.city_name,
+                avg_wind_speed=round(r.avg_wind, 2) if r.avg_wind else None,
+                avg_radiation=round(r.avg_radiation, 1) if r.avg_radiation else None,
+                avg_temperature=round(r.avg_temp, 2) if r.avg_temp else None,
+                record_count=int(r.record_count),
+            )
+            for r in results
+            if r.city_name
+        ]
+        cache_set(cache_key, [r.model_dump() for r in result], ttl_seconds=1800)
+        return result
+    finally:
+        db.close()

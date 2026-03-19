@@ -553,13 +553,80 @@ Isı haritası aktifken `_heatmapControls(context)` bölümü gösterilir:
 
 ---
 
+## Sprint 6 — Rapor Dashboard Yeniden Tasarımı
+
+### Yapılan Değişiklikler
+
+#### Backend — Yeni Endpoint'ler (`backend/app/routers/weather.py`)
+| Endpoint | Açıklama | Cache TTL |
+|---|---|---|
+| `GET /weather/available-years` | DB'deki gerçek yıl listesi | 60 dak |
+| `GET /weather/monthly-trend?city&metric&year&month` | Aylık/günlük trend verisi | 30 dak |
+| `GET /weather/province-summary-range?start&end` | Tarih aralığı bazlı il özeti | 30 dak |
+
+#### Flutter — Yeni Model (`frontend/lib/data/models/weather_model.dart`)
+- `TrendPoint(label: String, value: double)` — trend grafik veri noktası eklendi
+
+#### Flutter — WeatherService (`frontend/lib/core/network/weather_service.dart`)
+- `fetchAvailableYears()` — yıl listesi
+- `fetchMonthlyTrend(city, metric, year, {month})` — trend verisi
+- `fetchProvinceSummaryByDateRange({start, end})` — tarih aralıklı il özeti
+
+#### Flutter — ReportViewModel (`frontend/lib/features/reports/viewmodels/report_viewmodel.dart`)
+- `DateRangeMode` enum eklendi: `yearly | monthly | custom`
+- Yeni state: `_dateRangeMode`, `_availableYears`, `_selectedYear`, `_selectedMonth`, `_customRangeStart`, `_customRangeEnd`, `_energyMode`, `_selectedProvinceIndex`, `_provinceSummaries`, `_trendCity`, `_trendMetric`, `_trendData`, `_trendLoading`
+- Yeni metodlar: `init()`, `loadAvailableYears()`, `setDateRangeMode()`, `setYear()`, `setMonth()`, `setCustomRange()`, `loadReportForCurrentRange()`, `setEnergyMode()`, `setSelectedProvinceIndex()`, `setTrendCity()`, `setTrendMetric()`
+
+#### Flutter — 5 Yeni Tab Widget'ı
+| Dosya | İçerik |
+|---|---|
+| `widgets/tabs/overview_tab.dart` | Enerji mod chip + KPI + BarChart (mevcut vs optimal) + progress bar + leaderboard + fizibilite + ROI grid |
+| `widgets/tabs/province_drill_tab.dart` | Kaydırmalı il listesi + detay paneli + RadarChart + ROI grid |
+| `widgets/tabs/scenario_compare_tab.dart` | A/B seçici + metrik karşılaştırma grid (renk kodlamalı) + RadarChart |
+| `widgets/tabs/monthly_trend_tab.dart` | Şehir/metrik seçici + LineChart + özet kartlar (en yüksek/ort/en düşük) |
+| `widgets/tabs/export_tab.dart` | 4 rapor tipi kartı + içerik checkbox + PDF export (printing) |
+
+#### Flutter — ReportScreen Yeniden Yazımı (`frontend/lib/features/reports/report_screen.dart`)
+- **6 tab** layout: Genel Bakış | İl Analizi | Senaryo | Trend | Harita | Export
+- `_TimeRangeSelector`: Yıllık / Aylık / Özel segmentli mod; yıl ve ay dropdown; DateRangePicker
+- `_FilterDropdown`: Bölge ve kaynak tipi filtreleri (AppBar satırında)
+- Tab 5 içinde `ReportMap` embed edildi
+
+### Etkilenen Dosyalar
+| Dosya | İşlem |
+|---|---|
+| `backend/app/routers/weather.py` | 3 yeni endpoint |
+| `frontend/lib/data/models/weather_model.dart` | TrendPoint modeli eklendi |
+| `frontend/lib/core/network/weather_service.dart` | 3 yeni metod |
+| `frontend/lib/features/reports/viewmodels/report_viewmodel.dart` | Tam yeniden yazım |
+| `frontend/lib/features/reports/report_screen.dart` | Tam yeniden yazım (6 tab) |
+| `frontend/lib/features/reports/widgets/tabs/overview_tab.dart` | YENİ |
+| `frontend/lib/features/reports/widgets/tabs/province_drill_tab.dart` | YENİ |
+| `frontend/lib/features/reports/widgets/tabs/scenario_compare_tab.dart` | YENİ |
+| `frontend/lib/features/reports/widgets/tabs/monthly_trend_tab.dart` | YENİ |
+| `frontend/lib/features/reports/widgets/tabs/export_tab.dart` | YENİ |
+
+### Test Adımları
+1. Raporlar sayfasını aç → 6 tab görünmeli (Genel Bakış / İl Analizi / Senaryo / Trend / Harita / Export)
+2. **Genel Bakış:** Enerji mod chip değiştir → KPI güncellemeli; Leaderboard ve ROI grid görünmeli
+3. **İl Analizi:** Soldaki listeden il seç → sağda radar chart + ROI grid görünmeli
+4. **Senaryo:** İki senaryo seç (A/B) → metrik grid ve radar chart dolmali
+5. **Trend:** Şehir ve metrik seç → LineChart dolmali; özet kartlar güncellenmeali
+6. **Harita:** Türkiye haritası görünmeli (report_map embed)
+7. **Export:** Rapor tipi seç + checkbox → "PDF İndir" butonu çalışmalı
+8. **Zaman Aralığı:** Yıllık/Aylık/Özel mod geçişleri çalışmalı; yıl ve ay dropdown'ları görünmeli
+9. `dart analyze frontend` → sadece info seviyesi (error/warning yok)
+
+---
+
 ## Genel Durum
 
-### `flutter analyze` Sonucu (Sprint 5 sonrası)
+### `dart analyze` Sonucu (Sprint 6 sonrası)
 ```
-1 issue found (info seviyesi — hata/uyarı yok)
-- _yr local variable naming (map_viewmodel.dart:1369) — önceden var
+3 issues found (hepsi info seviyesi — hata/uyarı yok)
+- _yr local variable (map_viewmodel.dart:1369) — önceden var
+- 2x avoid_print (test_nan.dart) — önceden var
 ```
 
 ### Backend
-Sprint 5'te backend değişikliği yapılmadı.
+Sprint 6'da `/weather/available-years`, `/weather/monthly-trend`, `/weather/province-summary-range` endpoint'leri eklendi.

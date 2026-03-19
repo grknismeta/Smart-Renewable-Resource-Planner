@@ -382,3 +382,18 @@ class CitySolarSummary {
         'avgRadiation: $avgShortwaveRadiation W/m², records: $recordCount)';
   }
 }
+
+/// Trend grafik veri noktası (Aylık / Günlük trend)
+class TrendPoint {
+  final String label; // "Oca".."Ara" veya "1".."31"
+  final double value;
+
+  const TrendPoint({required this.label, required this.value});
+
+  factory TrendPoint.fromJson(Map<String, dynamic> json) {
+    return TrendPoint(
+      label: json['label'] as String,
+      value: (json['value'] as num).toDouble(),
+    );
+  }
+}
