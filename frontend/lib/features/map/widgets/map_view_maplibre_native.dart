@@ -17,6 +17,7 @@ const _pinsLayerId        = 'srrp-pins-circles';
 const _pinsLabelLayerId   = 'srrp-pins-labels';
 
 const _heatmapSourceId    = 'srrp-heatmap';
+const _heatmapGridSourceId = 'srrp-heatmap-grid';
 const _heatmapSolarId     = 'srrp-heatmap-solar';
 const _heatmapWindId      = 'srrp-heatmap-wind';
 
@@ -26,7 +27,7 @@ const _hillshadeLayerId   = 'srrp-hillshade';
 // ─── Heatmap Paint Tanımları ──────────────────────────────────────────────────
 
 const _solarHeatmapPaint = <String, Object>{
-  'heatmap-weight':    ['interpolate', ['linear'], ['get', 'solar_weight'], 0, 0, 1, 1],
+  'heatmap-weight':    ['interpolate', ['linear'], ['get', 'value'], 0, 0, 1, 1],
   'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 10, 3],
   'heatmap-color': [
     'interpolate', ['linear'], ['heatmap-density'],
@@ -41,7 +42,7 @@ const _solarHeatmapPaint = <String, Object>{
 };
 
 const _windHeatmapPaint = <String, Object>{
-  'heatmap-weight':    ['interpolate', ['linear'], ['get', 'wind_weight'], 0, 0, 1, 1],
+  'heatmap-weight':    ['interpolate', ['linear'], ['get', 'value'], 0, 0, 1, 1],
   'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 10, 3],
   'heatmap-color': [
     'interpolate', ['linear'], ['heatmap-density'],
@@ -91,6 +92,15 @@ String _heatmapToGeoJson(List<CityWeatherSummary> summaries) {
   }).toList()});
 }
 
+String _heatmapGridToGeoJson(List<HeatmapPoint> points) {
+  if (points.isEmpty) return '{"type":"FeatureCollection","features":[]}';
+  return jsonEncode({'type': 'FeatureCollection', 'features': points.map((p) => {
+    'type': 'Feature',
+    'geometry': {'type': 'Point', 'coordinates': [p.longitude, p.latitude]},
+    'properties': {'value': p.value},
+  }).toList()});
+}
+
 // ─── MapViewMapLibre (Native) ─────────────────────────────────────────────────
 
 class MapViewMapLibre extends StatefulWidget {
@@ -99,9 +109,16 @@ class MapViewMapLibre extends StatefulWidget {
 
   const MapViewMapLibre({super.key, this.onMapTap, this.onPinTap});
 
-  /// Native: MapLibre SDK'da animasyonlu geçiş (şimdilik stub; ml.MapController ile entegre edilebilir).
+  /// Aktif native MapController referansı (state tarafından atanır).
+  static ml.MapController? _activeController;
+
+  /// Native: MapLibre SDK animasyonlu kamera geçişi.
   static void flyTo(double lat, double lon, {double zoom = 10.0}) {
-    // TODO: native MapLibre controller üzerinden flyTo çağrısı ekle
+    _activeController?.animateCamera(
+      center: ml.Position(lon, lat),
+      zoom: zoom,
+      nativeDuration: const Duration(milliseconds: 800),
+    );
   }
 
   /// Native: web-only özellik, no-op.
@@ -110,6 +127,7 @@ class MapViewMapLibre extends StatefulWidget {
   static void setupProvinceMode({String? regionFilter}) {}
   static void setupDistrictMode(String provinceName) {}
   static void clearSelectionMode() {}
+  static void setInteractive(bool enable) {}
 
   @override
   State<MapViewMapLibre> createState() => _MapViewMapLibreState();
@@ -147,6 +165,10 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   @override
   void dispose() {
     _vmRef?.removeListener(_onVmChanged);
+    // Bu widget kapanırken aktif controller referansını temizle
+    if (MapViewMapLibre._activeController != null) {
+      MapViewMapLibre._activeController = null;
+    }
     super.dispose();
   }
 
@@ -167,6 +189,11 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       await _syncHeatmapData(vm.weatherSummary);
     } catch (e) {
       debugPrint('[MapLibre-Native] _syncHeatmapData hata: $e');
+    }
+    try {
+      await _syncHeatmapGridData(vm.heatmapPoints);
+    } catch (e) {
+      debugPrint('[MapLibre-Native] _syncHeatmapGridData hata: $e');
     }
     try {
       await _syncHeatmapMode(vm.mlHeatmapMode);
@@ -259,6 +286,12 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       await style.addSource(ml.GeoJsonSource(id: _heatmapSourceId, data: _heatmapToGeoJson([])));
     } catch (e) {
       debugPrint('[MapLibre-Native] heatmap source eklenemedi: $e');
+    }
+
+    try {
+      await style.addSource(ml.GeoJsonSource(id: _heatmapGridSourceId, data: _heatmapGridToGeoJson([])));
+    } catch (e) {
+      debugPrint('[MapLibre-Native] heatmap grid source eklenemedi: $e');
     }
 
     try {
@@ -406,6 +439,19 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     }
   }
 
+  Future<void> _syncHeatmapGridData(List<HeatmapPoint> points) async {
+    final style = _style;
+    if (style == null || !_styleLoaded) return;
+    try {
+      await style.updateGeoJsonSource(
+        id: _heatmapGridSourceId,
+        data: _heatmapGridToGeoJson(points),
+      );
+    } catch (e) {
+      debugPrint('[MapLibre-Native] heatmap grid source güncelleme hatası: $e');
+    }
+  }
+
   Future<void> _syncHeatmapMode(MlHeatmapMode mode) async {
     final style = _style;
     if (style == null || !_styleLoaded || mode == _lastHeatmap) return;
@@ -429,7 +475,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
     try {
       await style.addLayer(
-        ml.HeatmapStyleLayer(id: layerId, sourceId: _heatmapSourceId, paint: paintDef),
+        ml.HeatmapStyleLayer(id: layerId, sourceId: _heatmapGridSourceId, paint: paintDef),
         belowLayerId: _pinsShadowLayerId,
       );
       added = true;
@@ -438,7 +484,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     if (!added) {
       try {
         await style.addLayer(
-          ml.HeatmapStyleLayer(id: layerId, sourceId: _heatmapSourceId, paint: paintDef),
+          ml.HeatmapStyleLayer(id: layerId, sourceId: _heatmapGridSourceId, paint: paintDef),
         );
         added = true;
       } catch (e) {
@@ -519,6 +565,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
               ),
             ),
             onEvent: _onEvent,
+            onMapCreated: (controller) {
+              MapViewMapLibre._activeController = controller;
+            },
           ),
         ),
 
