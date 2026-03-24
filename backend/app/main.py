@@ -258,7 +258,7 @@ else:
 
     @_stub_geo.get("/city")
     async def geo_stub_city(lat: float, lon: float):
-        return {"province": "Bilinmiyor", "district": "Bilinmiyor"}
+        return {"province": "", "district": ""}
 
     app.include_router(_stub_geo, prefix="/geo", tags=["🗺️ Geo (Stub)"])
 

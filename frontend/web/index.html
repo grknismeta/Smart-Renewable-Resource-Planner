@@ -29,8 +29,13 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>frontend</title>
+  <title>SRRP — Akıllı Yenilenebilir Kaynak Planlayıcısı</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Google Fonts: Noto Sans (Türkçe + Latin Extended + Unicode kapsamı) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap">
 
   <!-- MapLibre GL JS — Lazy-load: Sadece MapLibre moduna geçilince yüklenir.
        srrpEnsureMapLibre(callback) fonksiyonu ile yönetilir.
@@ -110,6 +115,20 @@
         instance.on('style.load', function() {
           // Dart tarafındaki _initLayers'ın bitmesini bekle (100ms yeterli)
           setTimeout(function() { _srrpApplyAdminBorderFixes(instance); }, 150);
+          // MapLibre varsayılan 'grab' cursor'ını kaldır — 'default' kullan
+          instance.getCanvas().style.cursor = 'default';
+        });
+
+        // Drag sırasında grabbing cursor — başka durumda default
+        instance.on('mousedown', function() {
+          if (!window._mapInteractive) return;
+          instance.getCanvas().style.cursor = 'grabbing';
+        });
+        instance.on('mouseup', function() {
+          instance.getCanvas().style.cursor = 'default';
+        });
+        instance.on('dragend', function() {
+          instance.getCanvas().style.cursor = 'default';
         });
 
         return instance;
@@ -151,7 +170,7 @@
       };
 
       window._srrpPinMouseleaveHandler = function() {
-        map.getCanvas().style.cursor = '';
+        map.getCanvas().style.cursor = 'default';
         if (window._srrpPinHoverFn) window._srrpPinHoverFn('');
       };
 
@@ -267,6 +286,46 @@
     // Dart _initLayers içinden çağrılır.
     // MapLibre, data URL'si olan GeoJSON source'u otomatik fetch eder.
 
+    // Türkiye coğrafi sınırları — bu bbox dışındaki ilçe feature'ları (ör. Yunan adaları)
+    // district GeoJSON'dan elenir.
+    var _TR_BOUNDS = { minLon: 25.0, maxLon: 46.0, minLat: 35.0, maxLat: 43.0 };
+
+    /**
+     * GeoJSON feature'ının merkez noktasını (yaklaşık centroid) hesaplar.
+     * Polygon: ilk ring, MultiPolygon: ilk poligonun ilk ring'i.
+     * Döner: [lon, lat] veya null.
+     */
+    function _featureCentroid(feature) {
+      try {
+        var geom = feature.geometry;
+        if (!geom) return null;
+        var rings = geom.type === 'Polygon'
+          ? geom.coordinates
+          : (geom.type === 'MultiPolygon' ? geom.coordinates[0] : null);
+        if (!rings || !rings[0] || !rings[0].length) return null;
+        var coords = rings[0];
+        var sumLon = 0, sumLat = 0, n = coords.length;
+        for (var i = 0; i < n; i++) { sumLon += coords[i][0]; sumLat += coords[i][1]; }
+        return [sumLon / n, sumLat / n];
+      } catch (_) { return null; }
+    }
+
+    /**
+     * İlçe GeoJSON'unu Türkiye sınırları içinde filtrele.
+     * Yunan adaları ve yanlış konumlanmış feature'ları eler.
+     */
+    function _filterDistrictGeoJson(geojson) {
+      if (!geojson || !Array.isArray(geojson.features)) return geojson;
+      var b = _TR_BOUNDS;
+      geojson.features = geojson.features.filter(function(f) {
+        var c = _featureCentroid(f);
+        if (!c) return false; // geometri yok → ele
+        return c[0] >= b.minLon && c[0] <= b.maxLon &&
+               c[1] >= b.minLat && c[1] <= b.maxLat;
+      });
+      return geojson;
+    }
+
     window.srrpLoadBorderLayers = function(provUrl, distUrl, regUrl) {
       const map = window._srrpMap;
       if (!map) return;
@@ -285,36 +344,62 @@
         try { if (map.getSource(id)) map.removeSource(id); } catch(_) {}
       });
 
-      // Kaynak ekle — MapLibre URL'i fetch eder, Dart müdahalesi gerekmez
+      // İl + bölge source: URL doğrudan yükle (Türkiye dışı veri yok)
       map.addSource(PROV_SRC, { type: 'geojson', data: provUrl });
-      map.addSource(DIST_SRC, { type: 'geojson', data: distUrl });
       if (regUrl) map.addSource(REG_SRC, { type: 'geojson', data: regUrl });
 
+      // İlçe source: fetch et → Türkiye dışı feature'ları ele → source'a ekle
+      fetch(distUrl)
+        .then(function(r) { return r.json(); })
+        .then(function(geojson) {
+          var filtered = _filterDistrictGeoJson(geojson);
+          var removed = geojson.features
+            ? (geojson.features.length - filtered.features.length) : 0;
+          if (removed > 0) {
+            console.log('[SRRP] İlçe GeoJSON: ' + removed + ' Türkiye dışı feature elendi.');
+          }
+          map.addSource(DIST_SRC, { type: 'geojson', data: filtered });
+          // Kaynak eklenince sınır çizgilerini çiz
+          _addDistrictLines(map, DIST_SRC, PROV_SRC, DIST_LINE, PROV_LINE);
+        })
+        .catch(function(err) {
+          console.error('[SRRP] İlçe GeoJSON yüklenemedi, URL ile fallback:', err);
+          // Hata halinde filtresiz yükle
+          map.addSource(DIST_SRC, { type: 'geojson', data: distUrl });
+          _addDistrictLines(map, DIST_SRC, PROV_SRC, DIST_LINE, PROV_LINE);
+        });
+    };
+
+    function _addDistrictLines(map, DIST_SRC, PROV_SRC, DIST_LINE, PROV_LINE) {
       // İlçe sınırı (ince, zoom >= 6'da görünür, pin katmanının altında)
-      map.addLayer({
-        id: DIST_LINE,
-        type: 'line',
-        source: DIST_SRC,
-        minzoom: 6,
-        paint: {
-          'line-color': '#556677',
-          'line-width': 0.5,
-          'line-opacity': 0.55
-        }
-      }, 'srrp-pins-shadow');
+      try {
+        map.addLayer({
+          id: DIST_LINE,
+          type: 'line',
+          source: DIST_SRC,
+          minzoom: 6,
+          paint: {
+            'line-color': '#556677',
+            'line-width': 0.5,
+            'line-opacity': 0.55
+          }
+        }, 'srrp-pins-shadow');
+      } catch(e) { console.warn('[SRRP] dist-line:', e); }
 
       // İl sınırı (belirgin, her zoom'da görünür)
-      map.addLayer({
-        id: PROV_LINE,
-        type: 'line',
-        source: PROV_SRC,
-        paint: {
-          'line-color': '#aabbcc',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 3, 0.8, 8, 1.5],
-          'line-opacity': 0.7
-        }
-      }, 'srrp-pins-shadow');
-    };
+      try {
+        map.addLayer({
+          id: PROV_LINE,
+          type: 'line',
+          source: PROV_SRC,
+          paint: {
+            'line-color': '#aabbcc',
+            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 0.8, 8, 1.5],
+            'line-opacity': 0.7
+          }
+        }, 'srrp-pins-shadow');
+      } catch(e) { console.warn('[SRRP] prov-line:', e); }
+    }
 
     // ── Layer yardımcıları ──────────────────────────────────────────
 
@@ -403,6 +488,16 @@
       } catch (e) { console.error('[SRRP] srrpFlyTo:', e); }
     };
 
+    window.srrpZoomIn = function () {
+      const map = window._srrpMap;
+      if (map) map.zoomIn({ duration: 300 });
+    };
+
+    window.srrpZoomOut = function () {
+      const map = window._srrpMap;
+      if (map) map.zoomOut({ duration: 300 });
+    };
+
     // ── Kamera pitch (3D görünüm için) ─────────────────────────────
 
     window.srrpSetPitch = function (pitch) {
@@ -411,6 +506,35 @@
       try {
         map.easeTo({ pitch: pitch, duration: 800 });
       } catch (e) { console.error('[SRRP] srrpSetPitch:', e); }
+    };
+
+    // ── Harita etkileşimini aç/kapat ───────────────────────────────
+    // Flutter overlay widget'ları (panel, slider, vb.) harita üzerindeyken
+    // kullanıcı sürükleme/scroll hareketlerinin MapLibre'ye geçmesini önlemek için
+    // Dart Listener.onPointerDown/Up'tan çağrılır.
+    // NOT: pointerEvents CSS'e DOKUNMA — kaldırılırsa click olayları gelmez.
+    window._mapInteractive = true;
+    window.srrpSetMapInteractive = function (enable) {
+      window._mapInteractive = enable;
+      const map = window._srrpMap;
+      if (!map) return;
+      try {
+        if (enable) {
+          map.dragPan.enable();
+          map.scrollZoom.enable();
+          map.touchZoomRotate.enable();
+          map.dragRotate.enable();
+          map.keyboard.enable();
+          map.doubleClickZoom.enable();
+        } else {
+          map.dragPan.disable();
+          map.scrollZoom.disable();
+          map.touchZoomRotate.disable();
+          map.dragRotate.disable();
+          map.keyboard.disable();
+          map.doubleClickZoom.disable();
+        }
+      } catch (e) { console.error('[SRRP] srrpSetMapInteractive:', e); }
     };
 
     // ── Temel stil fill-extrusion layer'larını gizle/göster ─────────
@@ -561,12 +685,22 @@
       }
 
       // Canvas oluştur
+      // Flutter Web'de map.getContainer() div'i içinde position:relative
+      // olmayabilir — explicit set et. MapLibre kendi canvas'ı üzerinden
+      // boyut al (clientWidth=0 senaryosuna karşı güvenli).
       const container = map.getContainer();
+      container.style.position = 'relative';  // canvas absolute için şart
+      const mlCanvas = map.getCanvas();       // MapLibre'nin WebGL canvas'ı
+
       const canvas = document.createElement('canvas');
       canvas.id = 'srrp-wind-canvas';
-      canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2;';
+      canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;';
       container.appendChild(canvas);
       const ctx = canvas.getContext('2d');
+
+      console.log('[SRRP] Wind particles başlatılıyor:', vectors.length, 'vektör',
+                  'container:', container.clientWidth, 'x', container.clientHeight,
+                  'mlCanvas:', mlCanvas.width, 'x', mlCanvas.height);
 
       // Parçacık havuzu (Typed Arrays → GC baskısı yok)
       const N   = 700;
@@ -589,7 +723,9 @@
         const dt = Math.min((ts - lastTs) / 1000, 0.05);
         lastTs = ts;
 
-        const w = container.clientWidth, h = container.clientHeight;
+        // Flutter Web'de container.clientWidth sıfır olabilir → MapLibre canvas boyutunu kullan
+        const w = container.clientWidth  || mlCanvas.width  || 800;
+        const h = container.clientHeight || mlCanvas.height || 600;
         if (canvas.width !== w || canvas.height !== h) {
           canvas.width = w; canvas.height = h;
         }
@@ -644,11 +780,12 @@
         rafId = requestAnimationFrame(frame);
       }
 
-      canvas.width  = container.clientWidth;
-      canvas.height = container.clientHeight;
+      canvas.width  = container.clientWidth  || mlCanvas.width  || 800;
+      canvas.height = container.clientHeight || mlCanvas.height || 600;
       rafId = requestAnimationFrame(frame);
       window._srrpWindRafId  = rafId;
       window._srrpWindCanvas = canvas;
+      console.log('[SRRP] Wind canvas boyutu:', canvas.width, 'x', canvas.height);
     };
 
     window.srrpStopWindParticles = function () {
@@ -679,13 +816,39 @@
     window._srrpProvinceClickFn = null;
     window._srrpDistrictClickFn = null;
 
+    // GeoJSON NAME_1 (Türkçe resmi il adı) → plaka numarası (string)
+    // İlçe tıklamalarında province adı yerine plaka kodu gönderilir → backend province_code parametresi
+    window.SRRP_PROVINCE_CODES = {
+      "Adana":"01",      "Adıyaman":"02",     "Afyonkarahisar":"03","Ağrı":"04",
+      "Amasya":"05",     "Ankara":"06",       "Antalya":"07",       "Artvin":"08",
+      "Aydın":"09",      "Balıkesir":"10",    "Bilecik":"11",       "Bingöl":"12",
+      "Bitlis":"13",     "Bolu":"14",         "Burdur":"15",        "Bursa":"16",
+      "Çanakkale":"17",  "Çankırı":"18",      "Çorum":"19",         "Denizli":"20",
+      "Diyarbakır":"21", "Edirne":"22",       "Elazığ":"23",        "Erzincan":"24",
+      "Erzurum":"25",    "Eskişehir":"26",    "Gaziantep":"27",     "Giresun":"28",
+      "Gümüşhane":"29",  "Hakkâri":"30",      "Hatay":"31",         "Isparta":"32",
+      "Mersin":"33",     "İstanbul":"34",     "İzmir":"35",         "Kars":"36",
+      "Kastamonu":"37",  "Kayseri":"38",      "Kırklareli":"39",    "Kırşehir":"40",
+      "Kocaeli":"41",    "Konya":"42",        "Kütahya":"43",       "Malatya":"44",
+      "Manisa":"45",     "Kahramanmaraş":"46","Mardin":"47",        "Muğla":"48",
+      "Muş":"49",        "Nevşehir":"50",     "Niğde":"51",         "Ordu":"52",
+      "Rize":"53",       "Sakarya":"54",      "Samsun":"55",        "Siirt":"56",
+      "Sinop":"57",      "Sivas":"58",        "Tekirdağ":"59",      "Tokat":"60",
+      "Trabzon":"61",    "Tunceli":"62",      "Şanlıurfa":"63",     "Uşak":"64",
+      "Van":"65",        "Yozgat":"66",       "Zonguldak":"67",     "Aksaray":"68",
+      "Bayburt":"69",    "Karaman":"70",      "Kırıkkale":"71",     "Batman":"72",
+      "Şırnak":"73",     "Bartın":"74",       "Ardahan":"75",       "Iğdır":"76",
+      "Yalova":"77",     "Karabük":"78",      "Kilis":"79",         "Osmaniye":"80",
+      "Düzce":"81"
+    };
+
     window.srrpSetRegionClickFn   = function (fn) { window._srrpRegionClickFn   = fn; };
     window.srrpSetProvinceClickFn = function (fn) { window._srrpProvinceClickFn = fn; };
     window.srrpSetDistrictClickFn = function (fn) { window._srrpDistrictClickFn = fn; };
 
     // Seçim katman ID'leri
     var SEL_LAYERS = [
-      'srrp-sel-hit', 'srrp-sel-hover', 'srrp-sel-extrusion',
+      'srrp-sel-unique', 'srrp-sel-hit', 'srrp-sel-hover', 'srrp-sel-extrusion',
     ];
 
     // Aktif event handler referansları — map.off() ile kaldırmak için saklanır.
@@ -694,6 +857,156 @@
     var _selMousemoveFn  = null;
     var _selMouseleaveFn = null;
     var _selClickFn      = null;
+
+    // ── Benzersiz renk paleti (il/ilçe/bölge renklendir) ─────────────────────
+    // Renk çifti mesafesi gözetilerek gruplandırıldı:
+    //  Sıcak tonlar (turuncu/kırmızı/pembe), Soğuk tonlar (mavi/cyan/indigo),
+    //  Doğal tonlar (yeşil/teal/lime), Nötr tonlar (amber/sarı/mor/kahve)
+    // Greedy graph-coloring için yeterli mesafe: bitişik iki poligon aynı grubu almaz.
+    var _srrpUniqPalette = [
+      'rgba(79,195,247,0.42)',    //  0 açık mavi
+      'rgba(255,112,67,0.42)',    //  1 turuncu
+      'rgba(102,187,106,0.42)',   //  2 yeşil
+      'rgba(171,71,188,0.42)',    //  3 mor
+      'rgba(255,238,88,0.42)',    //  4 sarı
+      'rgba(239,83,80,0.42)',     //  5 kırmızı
+      'rgba(38,198,218,0.42)',    //  6 cyan
+      'rgba(255,202,40,0.42)',    //  7 amber
+      'rgba(38,166,154,0.42)',    //  8 teal
+      'rgba(236,64,122,0.42)',    //  9 pembe
+      'rgba(92,107,192,0.42)',    // 10 indigo
+      'rgba(156,204,101,0.42)',   // 11 açık yeşil
+      'rgba(66,165,245,0.42)',    // 12 orta mavi
+      'rgba(141,110,99,0.42)',    // 13 kahve
+      'rgba(255,167,38,0.42)',    // 14 portakal
+    ];
+
+    /**
+     * Greedy graph-coloring: bitişik poligonlar birbirinden farklı renk alır.
+     *
+     * Algoritma:
+     *  1. querySourceFeatures ile tüm feature'ları topla (değere göre tekilleştir).
+     *  2. Her feature için bounding-box hesapla.
+     *  3. İki feature'ın bbox'ları örtüşüyorsa komşu say.
+     *  4. Greedy: her feature'a komşularının almadığı en küçük indeksli rengi ver.
+     *  5. MapLibre 'match' ifadesi oluştur → layer'a ekle.
+     */
+    function _addUniqueColorLayer(srcId, hoverProp, hitFilter) {
+      var map = window._srrpMap;
+      if (!map) return;
+
+      // Önceki unique katmanı temizle
+      try { if (map.getLayer('srrp-sel-unique')) map.removeLayer('srrp-sel-unique'); } catch(_) {}
+
+      function _bbox(feature) {
+        try {
+          var geom = feature.geometry;
+          if (!geom) return null;
+          var rings = geom.type === 'Polygon'
+            ? geom.coordinates
+            : (geom.type === 'MultiPolygon' ? [].concat.apply([], geom.coordinates) : null);
+          if (!rings) return null;
+          var minLon=Infinity, minLat=Infinity, maxLon=-Infinity, maxLat=-Infinity;
+          rings.forEach(function(ring) {
+            ring.forEach(function(c) {
+              if (c[0]<minLon) minLon=c[0]; if (c[0]>maxLon) maxLon=c[0];
+              if (c[1]<minLat) minLat=c[1]; if (c[1]>maxLat) maxLat=c[1];
+            });
+          });
+          return [minLon, minLat, maxLon, maxLat];
+        } catch(_) { return null; }
+      }
+
+      function _bboxOverlap(a, b) {
+        if (!a || !b) return false;
+        return a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+      }
+
+      function _build() {
+        var raw = map.querySourceFeatures(srcId);
+        // Değere göre tekilleştir; her değer için bbox sakla
+        var byVal = {};
+        raw.forEach(function(f) {
+          var val = f.properties && f.properties[hoverProp];
+          if (!val) return;
+          if (!byVal[val]) byVal[val] = { val: val, bbox: _bbox(f) };
+          else {
+            // MultiPolygon: bbox genişlet
+            var b2 = _bbox(f);
+            if (b2 && byVal[val].bbox) {
+              var b1 = byVal[val].bbox;
+              byVal[val].bbox = [
+                Math.min(b1[0],b2[0]), Math.min(b1[1],b2[1]),
+                Math.max(b1[2],b2[2]), Math.max(b1[3],b2[3])
+              ];
+            }
+          }
+        });
+
+        var vals = Object.keys(byVal);
+        if (vals.length === 0) {
+          setTimeout(_build, 300);
+          return;
+        }
+
+        // Komşuluk listesi — O(n²) ama n<=1000 için < 5ms
+        var adj = {};
+        vals.forEach(function(v) { adj[v] = []; });
+        for (var i = 0; i < vals.length; i++) {
+          for (var j = i + 1; j < vals.length; j++) {
+            if (_bboxOverlap(byVal[vals[i]].bbox, byVal[vals[j]].bbox)) {
+              adj[vals[i]].push(vals[j]);
+              adj[vals[j]].push(vals[i]);
+            }
+          }
+        }
+
+        // Greedy coloring: en çok komşusu olanı önce boyamak daha iyi sonuç verir
+        vals.sort(function(a,b) { return adj[b].length - adj[a].length; });
+        var colorOf = {};
+        var P = _srrpUniqPalette.length;
+        vals.forEach(function(v) {
+          var usedByNeighbor = {};
+          adj[v].forEach(function(nb) {
+            if (colorOf[nb] !== undefined) usedByNeighbor[colorOf[nb]] = true;
+          });
+          var c = 0;
+          while (usedByNeighbor[c] && c < P - 1) c++;
+          colorOf[v] = c;
+        });
+
+        // MapLibre 'match' ifadesi oluştur
+        var matchParts = ['match', ['get', hoverProp]];
+        vals.forEach(function(v) {
+          matchParts.push(v);
+          matchParts.push(_srrpUniqPalette[colorOf[v] % P]);
+        });
+        matchParts.push('rgba(0,0,0,0)'); // fallback
+
+        var spec = {
+          id: 'srrp-sel-unique',
+          type: 'fill',
+          source: srcId,
+          paint: {
+            'fill-color': matchParts,
+            'fill-outline-color': 'rgba(255,255,255,0.20)',
+            'fill-opacity': 1
+          }
+        };
+        if (hitFilter) spec.filter = hitFilter;
+        try {
+          var before = map.getLayer('srrp-sel-hit') ? 'srrp-sel-hit' : undefined;
+          map.addLayer(spec, before);
+          console.log('[SRRP] Graph-coloring: ' + vals.length + ' bölge, ' +
+            Object.keys(colorOf).reduce(function(mx,v){ return Math.max(mx,colorOf[v]); },0)+1 +
+            ' renk kullanıldı.');
+        } catch(e) {
+          console.warn('[SRRP] Unique color layer eklenemedi:', e);
+        }
+      }
+
+      _build();
+    }
 
     /** Tüm seçim katmanlarını kaldır, event handler'ları temizle ve kamerayı sıfırla */
     window.srrpClearSelectionMode = function () {
@@ -714,15 +1027,20 @@
 
     /**
      * Seçim modunu kur.
-     * @param {string} srcId        — GeoJSON source ID
-     * @param {string} hoverProp    — hover filtre özelliği (NAME_1, NAME_2, REGION)
-     * @param {string|null} hitFilter — hit katmanına ek filtre (bölge/il kısıtı için)
-     * @param {Function} clickFn    — tıklama callback'i
-     * @param {string} srcName      — log için seviye adı
+     * @param {string}      srcId       — GeoJSON source ID
+     * @param {string}      hoverProp   — birincil hover/filtre özelliği (NAME_1, REGION)
+     * @param {string|null} hitFilter   — hit katmanına ek filtre (bölge/il kısıtı için)
+     * @param {Function}    clickFn     — tıklama callback'i
+     * @param {string}      srcName     — log için seviye adı
+     * @param {string|null} hoverProp2  — (opsiyonel) bileşik anahtar için ikinci özellik.
+     *   Tanımlandığında hover = NAME_1__NAME_2 şeklinde birleşik değer, filtre ALL ile kurulur.
+     *   click callback hoverProp2'nin değerini alır (ilçe adı).
      */
-    function _setupSelectionLayers(srcId, hoverProp, hitFilter, clickFn, srcName) {
+    function _setupSelectionLayers(srcId, hoverProp, hitFilter, clickFn, srcName, hoverProp2) {
       var map = window._srrpMap;
       if (!map) return;
+
+      var composite = !!hoverProp2;   // ilçe modu → true
 
       // Önce mevcut katmanları temizle
       SEL_LAYERS.forEach(function (id) {
@@ -733,7 +1051,7 @@
       if (!map.getSource(srcId)) {
         console.warn('[SRRP] Kaynak hazır değil: ' + srcId + ', 600ms sonra tekrar denenecek');
         setTimeout(function () {
-          _setupSelectionLayers(srcId, hoverProp, hitFilter, clickFn, srcName);
+          _setupSelectionLayers(srcId, hoverProp, hitFilter, clickFn, srcName, hoverProp2);
         }, 600);
         return;
       }
@@ -742,6 +1060,19 @@
       map.easeTo({ pitch: 28, duration: 800 });
 
       var emptyFilter = ['==', ['get', hoverProp], '___NONE___'];
+
+      // ─── Hover filtresi oluşturucu ──────────────────────────────────────────
+      // composite modda: ['all', ['==', ['get', NAME_1], prov], ['==', ['get', NAME_2], dist]]
+      // normal modda:    ['==', ['get', hoverProp], val]
+      function _hoverFilter(prov, dist) {
+        if (composite) {
+          return ['all',
+            ['==', ['get', hoverProp],  prov],
+            ['==', ['get', hoverProp2], dist],
+          ];
+        }
+        return ['==', ['get', hoverProp], prov];
+      }
 
       // 1. Şeffaf hit katmanı (event tetikleyici)
       var hitLayerSpec = {
@@ -772,7 +1103,7 @@
         source: srcId,
         paint: {
           'fill-extrusion-color': 'rgba(80, 180, 255, 0.38)',
-          'fill-extrusion-height': 8000,
+          'fill-extrusion-height': 4000,
           'fill-extrusion-base': 0,
           'fill-extrusion-opacity': 0.65,
           'fill-extrusion-vertical-gradient': true
@@ -788,23 +1119,37 @@
       // Yeni handler'ları tanımla ve referansları sakla
       _selMousemoveFn = function (e) {
         if (!e.features || !e.features.length) return;
-        var val = e.features[0].properties[hoverProp] || '';
-        if (!val) return;
+        var props  = e.features[0].properties;
+        var prov   = props[hoverProp]  || '';
+        var dist   = composite ? (props[hoverProp2] || '') : '';
+        if (!prov) return;
         map.getCanvas().style.cursor = 'pointer';
-        var f = ['==', ['get', hoverProp], val];
-        if (map.getLayer('srrp-sel-hover'))    map.setFilter('srrp-sel-hover',    f);
+        var f = _hoverFilter(prov, dist);
+        if (map.getLayer('srrp-sel-hover'))     map.setFilter('srrp-sel-hover',     f);
         if (map.getLayer('srrp-sel-extrusion')) map.setFilter('srrp-sel-extrusion', f);
       };
 
       _selMouseleaveFn = function () {
-        map.getCanvas().style.cursor = '';
-        if (map.getLayer('srrp-sel-hover'))    map.setFilter('srrp-sel-hover',    emptyFilter);
+        map.getCanvas().style.cursor = 'default';
+        if (map.getLayer('srrp-sel-hover'))     map.setFilter('srrp-sel-hover',     emptyFilter);
         if (map.getLayer('srrp-sel-extrusion')) map.setFilter('srrp-sel-extrusion', emptyFilter);
       };
 
       _selClickFn = function (e) {
         if (!e.features || !e.features.length) return;
-        var val = e.features[0].properties[hoverProp] || '';
+        var props = e.features[0].properties;
+        // composite modda "il|ilçe" formatında gönder (Dart tarafı province bağlamını bilsin)
+        // normal modda birincil değeri gönder
+        var val;
+        if (composite) {
+          var prov2 = props[hoverProp]  || '';
+          var dist2 = props[hoverProp2] || '';
+          // İl adı yerine 3 harfli kod gönder → DB sorgusu Türkçe karakter bağımsız
+          var pCode = (window.SRRP_PROVINCE_CODES && window.SRRP_PROVINCE_CODES[prov2]) || prov2;
+          val = pCode + '|' + dist2;
+        } else {
+          val = props[hoverProp] || '';
+        }
         if (val && clickFn) clickFn(val);
       };
 
@@ -813,6 +1158,10 @@
       map.on('mouseleave', 'srrp-sel-hit', _selMouseleaveFn);
       // Tıklama — Dart callback
       map.on('click',      'srrp-sel-hit', _selClickFn);
+
+      // Benzersiz renk katmanı — ilçe modunda NAME_2 ile, diğerlerinde hoverProp ile
+      var colorProp = composite ? hoverProp2 : hoverProp;
+      _addUniqueColorLayer(srcId, colorProp, hitFilter);
 
       console.log('[SRRP] Seçim modu aktif: ' + srcName);
     }
@@ -847,6 +1196,8 @@
 
     /**
      * İlçe seçim modunu başlat.
+     * Hover bileşik anahtar kullanır: NAME_1 (il) + NAME_2 (ilçe).
+     * Böylece farklı illerdeki aynı adlı ilçeler (örn. "Merkez") karışmaz.
      * @param {string|null} provinceName — ilçeleri gösterilecek il (NAME_1), null = Tüm Türkiye
      */
     window.srrpSetupDistrictMode = function (provinceName) {
@@ -855,10 +1206,11 @@
         : null;
       _setupSelectionLayers(
         'srrp-borders-districts',
-        'NAME_2',
+        'NAME_1',          // birincil: il adı (composite filter için)
         hitFilter,
         window._srrpDistrictClickFn,
-        provinceName ? ('İlçe (' + provinceName + ')') : 'İlçe (Tüm Türkiye)'
+        provinceName ? ('İlçe (' + provinceName + ')') : 'İlçe (Tüm Türkiye)',
+        'NAME_2'           // ikincil: ilçe adı → bileşik hover + click değeri
       );
     };
 
@@ -1038,6 +1390,106 @@
         if (map.getLayer(RASTER_LYR)) map.removeLayer(RASTER_LYR);
         if (map.getSource(RASTER_SRC)) map.removeSource(RASTER_SRC);
       } catch (e) {}
+    };
+
+    // ── Bulut / Uydu Overlay (RainViewer Infrared Satellite) ─────────────────
+    // Gerçek zamanlı infrared uydu görüntüsü — API key gerektirmez.
+    // Renk modu 0 → siyah-beyaz IR (soğuk bulut tepeleri beyaz görünür, Google Earth'e benzer).
+    // Kaynak: https://www.rainviewer.com/api/weather-maps.html
+
+    var CLOUD_SRC = 'srrp-cloud-src';
+    var CLOUD_LYR = 'srrp-cloud-layer';
+    var _cloudEnabled = false;
+    var _cloudRefreshTimer = null;
+
+    /** Bulut katmanını kaynağı güncelleyerek yenile (her 10 dk'da bir otomatik çalışır) */
+    function _refreshCloudTiles() {
+      var map = window._srrpMap;
+      if (!map || !_cloudEnabled) return;
+      fetch('https://api.rainviewer.com/public/weather-maps.json')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var ir = data.satellite && data.satellite.infrared;
+          if (!ir || !ir.length) return;
+          var latest = ir[ir.length - 1];
+          // renk=0 (siyah-beyaz), smooth=0, snow=0 → doğal görünüm
+          var tileUrl = 'https://tilecache.rainviewer.com' + latest.path
+            + '/512/{z}/{x}/{y}/0/0_0.png';
+
+          // Mevcut kaynağı kaldır, yenisini ekle (setData yok — raster source güncelleme)
+          try {
+            if (map.getLayer(CLOUD_LYR)) map.removeLayer(CLOUD_LYR);
+            if (map.getSource(CLOUD_SRC)) map.removeSource(CLOUD_SRC);
+          } catch(_) {}
+
+          if (!_cloudEnabled) return;
+
+          map.addSource(CLOUD_SRC, {
+            type: 'raster',
+            tiles: [tileUrl],
+            tileSize: 512,
+            attribution: '© <a href="https://www.rainviewer.com" target="_blank">RainViewer</a>',
+            minzoom: 0,
+            maxzoom: 12,
+          });
+          // Eğer pin-shadow layer henüz yüklenmemişse undefined geç (en üste ekler)
+          var _cloudBefore = map.getLayer('srrp-pins-shadow') ? 'srrp-pins-shadow' : undefined;
+          map.addLayer({
+            id: CLOUD_LYR,
+            type: 'raster',
+            source: CLOUD_SRC,
+            paint: {
+              'raster-opacity': window._cloudOpacity || 0.70,
+              'raster-fade-duration': 600,
+              'raster-resampling': 'linear',
+              // IR beyazı gerçek buluta dönüştür: karanlık (kara uzay) şeffaf, beyaz (bulut) opak
+              'raster-brightness-min': 0.0,
+              'raster-brightness-max': 1.0,
+              'raster-contrast': 0.15,
+              'raster-saturation': -0.8,  // renk modu 0 zaten siyah-beyaz ama emin ol
+            }
+          }, _cloudBefore);
+
+          console.log('[SRRP] Bulut katmanı güncellendi:', latest.path);
+        })
+        .catch(function(e) {
+          console.warn('[SRRP] Bulut katmanı yüklenemedi:', e);
+        });
+    }
+
+    /**
+     * Bulut/uydu katmanını aç veya kapat.
+     * @param {boolean} enable  — true: aç, false: kapat
+     * @param {number}  opacity — opaklık (0-1, varsayılan 0.70)
+     */
+    window.srrpSetCloudLayer = function(enable, opacity) {
+      var map = window._srrpMap;
+      if (!map) return;
+
+      _cloudEnabled = enable;
+      window._cloudOpacity = (typeof opacity === 'number') ? opacity : 0.70;
+
+      // Yenileme timer'ı temizle
+      if (_cloudRefreshTimer) { clearInterval(_cloudRefreshTimer); _cloudRefreshTimer = null; }
+
+      if (!enable) {
+        try { if (map.getLayer(CLOUD_LYR)) map.removeLayer(CLOUD_LYR); } catch(_) {}
+        try { if (map.getSource(CLOUD_SRC)) map.removeSource(CLOUD_SRC); } catch(_) {}
+        return;
+      }
+
+      // İlk yükleme + 10 dk'da bir otomatik güncelle
+      _refreshCloudTiles();
+      _cloudRefreshTimer = setInterval(_refreshCloudTiles, 10 * 60 * 1000);
+    };
+
+    /** Opacity'yi anında güncelle (slider için) */
+    window.srrpSetCloudOpacity = function(opacity) {
+      window._cloudOpacity = opacity;
+      var map = window._srrpMap;
+      if (map && map.getLayer(CLOUD_LYR)) {
+        map.setPaintProperty(CLOUD_LYR, 'raster-opacity', opacity);
+      }
     };
 
     // ── Lazy MapLibre Loader ──────────────────────────────────────────────────

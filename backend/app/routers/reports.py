@@ -48,7 +48,7 @@ def get_regional_report(
     region: str = Query(..., description="Ege, Marmara vb. veya 'Tümü'"),
     type: str = Query("Wind", description="Solar veya Wind"),
     interval: str = Query("Yıllık", description="Yıllık, Aylık, Anlık"),
-    limit: int = Query(400, ge=1, le=500),
+    limit: int = Query(1000, ge=1, le=1000),
     province: Optional[str] = Query(None, description="İl adı ile filtrele (isteğe bağlı)"),
     db: Session = Depends(get_system_db),
     current_user: models.User = Depends(auth.get_current_active_user),

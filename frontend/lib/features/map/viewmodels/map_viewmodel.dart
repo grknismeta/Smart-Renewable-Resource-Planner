@@ -18,7 +18,7 @@ import 'package:frontend/data/models/recommendation_model.dart';
 export 'package:frontend/features/map/layers/map_layers_system.dart'
     show MapLayerType;
 export 'package:frontend/features/map/models/map_models.dart'
-    show MapMode, MlHeatmapMode, MlBaseStyle, HeatmapPalette;
+    show MlHeatmapMode, MlBaseStyle, HeatmapPalette;
 
 // SharedPreferences key prefix — versiyonlu, schema değişirse eski cache invalidate olur
 const _kCityPrefix = 'city_v2_';
@@ -78,13 +78,14 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   MapTimePeriod _selectedPeriod = MapTimePeriod.current;
 
   // --- MapLibre 3D Modu ---
-  MapMode _mapMode = MapMode.standard;
   MlHeatmapMode _mlHeatmapMode = MlHeatmapMode.none;
   MlBaseStyle _mlBaseStyle = MlBaseStyle.darkMatter;
   bool _show3DTurbines = false;
   bool _showGlobe = false;
   bool _show3DBuildings = false;
   bool _show3DTerrain = false;
+  bool _showCloudLayer = false;
+  double _cloudOpacity = 0.70;
 
   // Isı haritası parametreleri
   double _heatmapRadius = 40.0;
@@ -110,6 +111,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   SelectionLevel _selectionLevel = SelectionLevel.none;
   String? _selectedRegionName;
   String? _selectedProvinceName;
+  String? _selectedProvinceCode;  // 3 harfli il kodu (ör. "ist")
   String? _selectedDistrictName;
   List<ProvinceSummary> _provinceSummaries = [];
   bool _isLoadingProvinceSummaries = false;
@@ -145,13 +147,14 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   MapTimePeriod get selectedPeriod => _selectedPeriod;
 
   // MapLibre 3D getters
-  MapMode get mapMode => _mapMode;
   MlHeatmapMode get mlHeatmapMode => _mlHeatmapMode;
   MlBaseStyle get mlBaseStyle => _mlBaseStyle;
   bool get show3DTurbines => _show3DTurbines;
   bool get showGlobe => _showGlobe;
   bool get show3DBuildings => _show3DBuildings;
   bool get show3DTerrain => _show3DTerrain;
+  bool get showCloudLayer => _showCloudLayer;
+  double get cloudOpacity => _cloudOpacity;
 
   // Isı haritası parametreleri getters
   double get heatmapRadius => _heatmapRadius;
@@ -243,6 +246,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   }
 
   /// Seçili ilçenin hava özeti — district-summary listesinden eşleştirme.
+  /// Önce normalize edilmiş ilçe adıyla eşleştirir (location_code opsiyonel).
   DistrictSummary? get selectedDistrictSummary {
     if (_selectedDistrictName == null || _districtSummaries.isEmpty) return null;
     final nameNorm = _normalizeProvinceName(_selectedDistrictName!);
@@ -254,6 +258,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       return null;
     }
   }
+
+  String? get selectedProvinceCode => _selectedProvinceCode;
 
   void toggleDataPoints(bool value) {
     _showDataPoints = value;
@@ -280,12 +286,6 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   }
 
   // --- MapLibre 3D Modu Metodları ---
-
-  void setMapMode(MapMode mode) {
-    if (_mapMode == mode) return;
-    _mapMode = mode;
-    safeNotify();
-  }
 
   void setMlHeatmapMode(MlHeatmapMode mode) {
     _mlHeatmapMode = mode;
@@ -361,6 +361,16 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   void toggleShow3DTerrain() {
     _show3DTerrain = !_show3DTerrain;
+    safeNotify();
+  }
+
+  void toggleShowCloudLayer() {
+    _showCloudLayer = !_showCloudLayer;
+    safeNotify();
+  }
+
+  void setCloudOpacity(double v) {
+    _cloudOpacity = v.clamp(0.0, 1.0);
     safeNotify();
   }
 
@@ -476,6 +486,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   /// İl seçildi → ilçe seviyesine geç. İlçe verisini arka planda yükle.
   void selectProvince(String provinceName) {
     _selectedProvinceName = provinceName;
+    _selectedProvinceCode = null; // il adıyla seçimde kodu sıfırla
     _selectedDistrictName = null;
     _districtSummaries    = [];   // önceki ilin ilçelerini temizle
     _selectionLevel       = SelectionLevel.district;
@@ -484,8 +495,34 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   }
 
   /// İlçe seçildi.
-  void selectDistrict(String districtName) {
+  /// [province]: İlçenin bağlı olduğu il adı VEYA plaka kodu (ör: "34", "55").
+  ///   Plaka kodu ise (1-2 haneli sayı) doğrudan API province_code olarak kullanılır;
+  ///   isim ise PROVINCE_GEO_TO_CODE üzerinden çözülür.
+  void selectDistrict(String districtName, {String? province}) {
     _selectedDistrictName = districtName;
+
+    if (province != null && province.isNotEmpty) {
+      // Plaka kodu tespiti: 1-2 haneli rakamdan oluşan string (ör: "34", "5")
+      final isCode = province.length <= 2 && RegExp(r'^\d+$').hasMatch(province);
+      if (isCode) {
+        final needsLoad = _selectedProvinceCode != province || _districtSummaries.isEmpty;
+        _selectedProvinceCode = province;
+        // İsim mevcut değilse kodu göster (API'den gelen province_name ile sonradan güncellenir)
+        _selectedProvinceName ??= province;
+        if (needsLoad) {
+          _districtSummaries = [];
+          loadDistrictSummaries(province, isCode: true);
+        }
+      } else {
+        final needsLoad = _selectedProvinceName != province || _districtSummaries.isEmpty;
+        _selectedProvinceName = province;
+        if (needsLoad) {
+          _districtSummaries = [];
+          loadDistrictSummaries(province);
+        }
+      }
+    }
+
     safeNotify();
   }
 
@@ -499,6 +536,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   /// İl seçimini temizle → il listesine geri dön (bölge filtresi korunur).
   void clearSelectedProvince() {
     _selectedProvinceName = null;
+    _selectedProvinceCode = null;
     _selectedDistrictName = null;
     _districtSummaries    = [];
     _selectionLevel       = SelectionLevel.province;
@@ -509,6 +547,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   void clearRegionFilter() {
     _selectedRegionName   = null;
     _selectedProvinceName = null;
+    _selectedProvinceCode = null;
     _selectedDistrictName = null;
     _selectionLevel       = SelectionLevel.province;
     safeNotify();
@@ -521,6 +560,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   void clearAllSelection() {
     _selectedRegionName   = null;
     _selectedProvinceName = null;
+    _selectedProvinceCode = null;
     _selectedDistrictName = null;
     _districtSummaries    = [];
     _selectionLevel = _isProvinceModeActive
@@ -546,15 +586,26 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     }
   }
 
-  Future<void> loadDistrictSummaries(String province, {int hours = 168}) async {
+  Future<void> loadDistrictSummaries(String province, {int hours = 168, bool isCode = false}) async {
     if (_isLoadingDistrictSummaries) return;
     _isLoadingDistrictSummaries = true;
     safeNotify();
     try {
       _districtSummaries = await _apiService.weather.fetchDistrictSummary(
-        province: province,
+        province: isCode ? null : province,
+        provinceCode: isCode ? province : null,
         hours: hours,
       );
+      // Yüklenen veri province_name içeriyorsa görüntüleme adını güncelle.
+      // Sadece mevcut isim null ya da plaka kodu ise güncelle (kullanıcıya görünen adı ezme).
+      if (isCode && _districtSummaries.isNotEmpty && _selectedProvinceCode == province) {
+        final currentName = _selectedProvinceName;
+        final isCurrentlyACode = currentName == null ||
+            RegExp(r'^\d+$').hasMatch(currentName);
+        if (isCurrentlyACode) {
+          _selectedProvinceName = _districtSummaries.first.provinceName;
+        }
+      }
     } catch (e) {
       debugPrint('[MapViewModel.loadDistrictSummaries] Hata: $e');
       _districtSummaries = [];
@@ -1366,8 +1417,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       final hMin = data['hourly_min'] ?? '?';
       final hMax = data['hourly_max'] ?? '?';
       // Yıl kısmını kısalt: "2015-12-31" → "2015"
-      String _yr(String s) => s.length >= 4 ? s.substring(0, 4) : s;
-      _animRangeInfo = 'Günlük: ${_yr(dMin)}–${_yr(dMax)}  ·  Saatlik: ${_yr(hMin)}–${_yr(hMax)}';
+      String yr(String s) => s.length >= 4 ? s.substring(0, 4) : s;
+      _animRangeInfo = 'Günlük: ${yr(dMin)}–${yr(dMax)}  ·  Saatlik: ${yr(hMin)}–${yr(hMax)}';
     } catch (e) {
       _animRangeInfo = '';
     }
@@ -1416,12 +1467,10 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
                 : MlHeatmapMode.solar;
         setMlHeatmapMode(targetMode);
 
-        // MapLibre için JS'e tam JSON gönder (sadece MapLibre modunda)
-        if (_mapMode == MapMode.maplibre3d) {
-          _jsLoadAnimationData(jsonEncode(data));
-        }
+        // MapLibre için JS'e tam JSON gönder
+        _jsLoadAnimationData(jsonEncode(data));
 
-        // Standard harita için frame verisini sakla
+        // Frame verisi (JS animasyonu için yedek)
         _animFrames    = data['frames'] as List?;
         _animMetricMin = (data['metric_min'] as num?)?.toDouble() ?? 0.0;
         _animMetricMax = (data['metric_max'] as num?)?.toDouble() ?? 1.0;
@@ -1455,29 +1504,11 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     setAnimFrameData(pts, layerType, _animMetricMin, _animMetricMax);
   }
 
-  /// Animasyonu oynat — MapLibre: JS timer; Standard: Dart Timer.
+  /// Animasyonu oynat — MapLibre JS timer.
   void playAnimation() {
     if (_animTotalFrames == 0) return;
     _animIsPlaying = true;
-    if (_mapMode == MapMode.maplibre3d) {
-      // MapLibre: JS setInterval üzerinden animasyon
-      _jsAnimPlay(_animSpeedFps);
-    } else {
-      // Standard harita: Dart Timer ile frame ilerlet
-      _animTimer?.cancel();
-      final intervalMs = (1000.0 / _animSpeedFps).round();
-      _animTimer = Timer.periodic(Duration(milliseconds: intervalMs), (_) {
-        final next = (_animCurrentFrame + 1) % _animTotalFrames;
-        _animCurrentFrame = next;
-        _animCurrentTimestamp = (_animFrames != null && next < _animFrames!.length)
-            ? ((_animFrames![next] as Map)['ts'] ?? '')
-            : '';
-        _renderStandardMapFrame(next);
-        // safeNotify() yerine doğrudan çağır — timer zaten main thread dışında değil,
-        // post-frame callback pile-up'ı önler
-        notifyListeners();
-      });
-    }
+    _jsAnimPlay(_animSpeedFps);
     safeNotify();
   }
 
@@ -1486,7 +1517,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     _animIsPlaying = false;
     _animTimer?.cancel();
     _animTimer = null;
-    if (_mapMode == MapMode.maplibre3d) _jsAnimStop();
+    _jsAnimStop();
     safeNotify();
   }
 
@@ -1494,10 +1525,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   void seekAnimation(int frame) {
     if (_animTotalFrames == 0) return;
     _animCurrentFrame = frame.clamp(0, _animTotalFrames - 1);
-    if (_mapMode == MapMode.maplibre3d) {
-      _jsAnimSeek(_animCurrentFrame);
-    }
-    // Standard harita
+    _jsAnimSeek(_animCurrentFrame);
     if (_animFrames != null) {
       _animCurrentTimestamp = (_animCurrentFrame < _animFrames!.length)
           ? ((_animFrames![_animCurrentFrame] as Map)['ts'] ?? '')
@@ -1527,23 +1555,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   void setAnimSpeed(double fps) {
     _animSpeedFps = fps.clamp(1.0, 20.0);
     if (_animIsPlaying) {
-      if (_mapMode == MapMode.maplibre3d) {
-        _jsAnimStop();
-        _jsAnimPlay(_animSpeedFps);
-      } else {
-        // Standard harita — timer'ı yeni hızla yeniden başlat
-        _animTimer?.cancel();
-        final intervalMs = (1000.0 / _animSpeedFps).round();
-        _animTimer = Timer.periodic(Duration(milliseconds: intervalMs), (_) {
-          final next = (_animCurrentFrame + 1) % _animTotalFrames;
-          _animCurrentFrame = next;
-          _animCurrentTimestamp = (_animFrames != null && next < _animFrames!.length)
-              ? ((_animFrames![next] as Map)['ts'] ?? '')
-              : '';
-          _renderStandardMapFrame(next);
-          notifyListeners();
-        });
-      }
+      _jsAnimStop();
+      _jsAnimPlay(_animSpeedFps);
     }
     safeNotify();
   }

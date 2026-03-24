@@ -4,24 +4,19 @@ import 'package:frontend/core/theme/theme_view_model.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/features/map/models/map_models.dart';
 
-/// Katmanlar paneli — Standart | 3D Harita (MapLibre) sekmeli yapı.
+/// Katmanlar paneli — MapLibre harita kontrolleri.
 class LayersPanel extends StatelessWidget {
   final ThemeViewModel theme;
   final MapViewModel mapViewModel;
-  final String selectedBaseMap;
-  final ValueChanged<String> onBaseMapChanged;
 
   const LayersPanel({
     super.key,
     required this.theme,
     required this.mapViewModel,
-    required this.selectedBaseMap,
-    required this.onBaseMapChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isMapLibre = mapViewModel.mapMode == MapMode.maplibre3d;
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
@@ -37,30 +32,19 @@ class LayersPanel extends StatelessWidget {
               BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 12, offset: const Offset(0, 4)),
             ],
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _ModeSwitcher(
-                isMapLibre: isMapLibre,
-                theme: theme,
-                onChanged: (ml) => mapViewModel.setMapMode(
-                  ml ? MapMode.maplibre3d : MapMode.standard,
-                ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.80,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _MapLibreSection(theme: theme, vm: mapViewModel),
+                ],
               ),
-              const SizedBox(height: 12),
-              Divider(height: 1, color: theme.secondaryTextColor.withValues(alpha: 0.12)),
-              const SizedBox(height: 10),
-              if (isMapLibre)
-                _MapLibreSection(theme: theme, vm: mapViewModel)
-              else
-                _StandardSection(
-                  theme: theme,
-                  vm: mapViewModel,
-                  selectedBaseMap: selectedBaseMap,
-                  onBaseMapChanged: onBaseMapChanged,
-                ),
-            ],
+            ),
           ),
         ),
       ),
@@ -68,356 +52,249 @@ class LayersPanel extends StatelessWidget {
   }
 }
 
-// ─── Mod Seçici ───────────────────────────────────────────────────────────────
+// ─── Bölüm Başlığı (daraltılabilir) ──────────────────────────────────────────
 
-class _ModeSwitcher extends StatelessWidget {
-  final bool isMapLibre;
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final bool expanded;
+  final VoidCallback onToggle;
   final ThemeViewModel theme;
-  final ValueChanged<bool> onChanged;
 
-  const _ModeSwitcher({
-    required this.isMapLibre,
+  const _SectionHeader({
+    required this.title,
+    required this.expanded,
+    required this.onToggle,
     required this.theme,
-    required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 36,
-      decoration: BoxDecoration(
-        color: theme.secondaryTextColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      padding: const EdgeInsets.all(3),
-      child: Row(
-        children: [
-          _ModeTab(
-            label: 'Standart', icon: Icons.map_outlined,
-            active: !isMapLibre, activeColor: Colors.blueAccent,
-            theme: theme, onTap: () => onChanged(false),
-          ),
-          _ModeTab(
-            label: '3D Harita', icon: Icons.view_in_ar_rounded,
-            active: isMapLibre, activeColor: Colors.deepPurpleAccent,
-            theme: theme, onTap: () => onChanged(true),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ModeTab extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool active;
-  final Color activeColor;
-  final ThemeViewModel theme;
-  final VoidCallback onTap;
-
-  const _ModeTab({
-    required this.label, required this.icon, required this.active,
-    required this.activeColor, required this.theme, required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          decoration: BoxDecoration(
-            color: active ? activeColor.withValues(alpha: 0.85) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          alignment: Alignment.center,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 12, color: active ? Colors.white : theme.secondaryTextColor),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: active ? Colors.white : theme.secondaryTextColor,
-                  fontSize: 11,
-                  fontWeight: active ? FontWeight.bold : FontWeight.normal,
-                ),
+    return InkWell(
+      onTap: onToggle,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                color: theme.secondaryTextColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
               ),
-            ],
-          ),
+            ),
+            const Spacer(),
+            Icon(
+              expanded
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
+              size: 14,
+              color: theme.secondaryTextColor,
+            ),
+          ],
         ),
       ),
     );
-  }
-}
-
-// ─── Standart Bölüm ───────────────────────────────────────────────────────────
-
-class _StandardSection extends StatelessWidget {
-  final ThemeViewModel theme;
-  final MapViewModel vm;
-  final String selectedBaseMap;
-  final ValueChanged<String> onBaseMapChanged;
-
-  const _StandardSection({
-    required this.theme, required this.vm,
-    required this.selectedBaseMap, required this.onBaseMapChanged,
-  });
-
-  Widget _lbl(String text) => Text(
-    text,
-    style: TextStyle(color: theme.secondaryTextColor, fontSize: 11, fontWeight: FontWeight.w700),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _lbl('Harita Stili'),
-        const SizedBox(height: 6),
-        _baseOpt('Koyu Mod', 'dark', Icons.dark_mode_outlined),
-        _baseOpt('Uydu', 'satellite', Icons.satellite_alt_outlined),
-        _baseOpt('Sokak', 'street', Icons.map_outlined),
-
-        const SizedBox(height: 12),
-        _lbl('Veri Katmanları'),
-        const SizedBox(height: 6),
-        _layerOpt('Rüzgar Hızı', MapLayerType.wind),
-        _layerOpt('Sıcaklık', MapLayerType.temp),
-        _layerOpt('Güneş Işınımı', MapLayerType.irradiance),
-
-        if (vm.currentLayer == MapLayerType.irradiance)
-          Padding(
-            padding: const EdgeInsets.only(top: 2, left: 4),
-            child: Row(children: [
-              Icon(Icons.info_outline, size: 10, color: Colors.orangeAccent.withValues(alpha: 0.7)),
-              const SizedBox(width: 4),
-              Flexible(child: Text('Yıllık ortalama güneş potansiyeli',
-                style: TextStyle(color: theme.secondaryTextColor.withValues(alpha: 0.6), fontSize: 9.5, fontStyle: FontStyle.italic))),
-            ]),
-          ),
-
-        if (vm.currentLayer != MapLayerType.none) ...[
-          const SizedBox(height: 10),
-          _timePeriodRow(),
-        ],
-
-        const SizedBox(height: 12),
-        _lbl('Katman Efektleri'),
-        const SizedBox(height: 6),
-        _effectRow('Rüzgar Akışı', Icons.air, vm.showWindParticles,
-          (v) => vm.toggleWindParticles(v), Colors.cyanAccent, isLoading: vm.isWindLoading),
-        if (vm.showWindParticles) ...[
-          const SizedBox(height: 4),
-          _qualityRow(),
-          const SizedBox(height: 4),
-        ],
-        _effectRow('Yükseklik Haritası', Icons.terrain, vm.showElevation,
-          (v) => vm.toggleElevation(v), Colors.greenAccent),
-
-        const SizedBox(height: 12),
-        _lbl('Görünüm'),
-        const SizedBox(height: 4),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('Veri Noktaları (Neon)', style: TextStyle(color: theme.textColor, fontSize: 12)),
-          Switch(
-            value: vm.showDataPoints,
-            onChanged: (v) => vm.toggleDataPoints(v),
-            activeColor: Colors.cyanAccent,
-            activeTrackColor: Colors.cyan.withValues(alpha: 0.3),
-            inactiveThumbColor: theme.secondaryTextColor,
-            inactiveTrackColor: theme.secondaryTextColor.withValues(alpha: 0.1),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-        ]),
-      ],
-    );
-  }
-
-  Widget _baseOpt(String title, String value, IconData icon) {
-    final active = selectedBaseMap == value;
-    return InkWell(
-      onTap: () => onBaseMapChanged(value),
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(children: [
-          Icon(icon, size: 14, color: active ? Colors.blueAccent : theme.secondaryTextColor),
-          const SizedBox(width: 8),
-          Text(title, style: TextStyle(color: active ? theme.textColor : theme.secondaryTextColor, fontSize: 12)),
-          const Spacer(),
-          if (active) const Icon(Icons.check_rounded, size: 13, color: Colors.blueAccent),
-        ])),
-    );
-  }
-
-  Widget _layerOpt(String title, MapLayerType layer) {
-    final active = vm.currentLayer == layer;
-    return InkWell(
-      onTap: () => vm.setLayer(active ? MapLayerType.none : layer),
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(children: [
-          Icon(active ? Icons.check_circle : Icons.radio_button_unchecked,
-            color: active ? Colors.greenAccent : theme.secondaryTextColor.withValues(alpha: 0.5), size: 15),
-          const SizedBox(width: 8),
-          Expanded(child: Text(title, style: TextStyle(
-            color: active ? theme.textColor : theme.secondaryTextColor, fontSize: 12), overflow: TextOverflow.ellipsis)),
-        ])),
-    );
-  }
-
-  Widget _timePeriodRow() {
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: theme.secondaryTextColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(children: [
-        _timeOpt('Anlık', MapTimePeriod.current),
-        _timeOpt('Aylık', MapTimePeriod.monthly),
-        _timeOpt('Yıllık', MapTimePeriod.annual),
-      ]),
-    );
-  }
-
-  Widget _timeOpt(String title, MapTimePeriod period) {
-    final sel = vm.selectedPeriod == period;
-    return Expanded(child: InkWell(
-      onTap: () => vm.setPeriod(period),
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        decoration: BoxDecoration(
-          color: sel ? theme.cardColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        alignment: Alignment.center,
-        child: Text(title, style: TextStyle(
-          color: sel ? theme.textColor : theme.secondaryTextColor,
-          fontSize: 10, fontWeight: sel ? FontWeight.bold : FontWeight.normal,
-        )),
-      ),
-    ));
-  }
-
-  Widget _effectRow(String title, IconData icon, bool active,
-      ValueChanged<bool> onChange, Color color, {bool isLoading = false}) {
-    return Padding(padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(children: [
-        Icon(icon, size: 14, color: active ? color : theme.secondaryTextColor),
-        const SizedBox(width: 6),
-        Expanded(child: Text(title, style: TextStyle(
-          color: active ? theme.textColor : theme.secondaryTextColor, fontSize: 12))),
-        if (isLoading)
-          const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-        else
-          Switch(value: active, onChanged: onChange, activeColor: color,
-            activeTrackColor: color.withValues(alpha: 0.3),
-            inactiveThumbColor: theme.secondaryTextColor,
-            inactiveTrackColor: theme.secondaryTextColor.withValues(alpha: 0.1),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap),
-      ]));
-  }
-
-  Widget _qualityRow() {
-    return Container(
-      margin: const EdgeInsets.only(left: 20),
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: theme.secondaryTextColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(children: [
-        _qualOpt('Hafif', WindParticleQuality.light),
-        _qualOpt('Dengeli', WindParticleQuality.balanced),
-        _qualOpt('Yoğun', WindParticleQuality.heavy),
-      ]),
-    );
-  }
-
-  Widget _qualOpt(String title, WindParticleQuality q) {
-    final sel = vm.windQuality == q;
-    return Expanded(child: InkWell(
-      onTap: () => vm.setWindQuality(q),
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        decoration: BoxDecoration(
-          color: sel ? theme.cardColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        alignment: Alignment.center,
-        child: Text(title, style: TextStyle(
-          color: sel ? Colors.cyanAccent : theme.secondaryTextColor,
-          fontSize: 9.5, fontWeight: sel ? FontWeight.bold : FontWeight.normal,
-        )),
-      ),
-    ));
   }
 }
 
 // ─── MapLibre 3D Bölümü ───────────────────────────────────────────────────────
 
-class _MapLibreSection extends StatelessWidget {
+class _MapLibreSection extends StatefulWidget {
   final ThemeViewModel theme;
   final MapViewModel vm;
 
   const _MapLibreSection({required this.theme, required this.vm});
 
-  Widget _lbl(String text) => Text(
-    text,
-    style: TextStyle(color: theme.secondaryTextColor, fontSize: 11, fontWeight: FontWeight.w700),
-  );
+  @override
+  State<_MapLibreSection> createState() => _MapLibreSectionState();
+}
+
+class _MapLibreSectionState extends State<_MapLibreSection> {
+  bool _styleExpanded      = true;
+  bool _projectionExpanded = true;
+  bool _heatmapExpanded    = true;
+  bool _pinExpanded        = true;
+  bool _satelliteExpanded  = false;
+  bool _windExpanded       = true;
+  bool _effectsExpanded    = true;
+
+  ThemeViewModel get theme => widget.theme;
+  MapViewModel   get vm    => widget.vm;
 
   @override
   Widget build(BuildContext context) {
     final heatmapActive = vm.mlHeatmapMode != MlHeatmapMode.none;
+    final globeActive   = vm.showGlobe;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _lbl('Harita Stili'),
-        const SizedBox(height: 6),
-        ...MlBaseStyle.values.map(_styleOpt),
-
-        const SizedBox(height: 12),
-        _lbl('Isı Haritası'),
-        const SizedBox(height: 6),
-        _heatmapOpt('Güneş Potansiyeli', MlHeatmapMode.solar, Colors.orangeAccent, Icons.wb_sunny_outlined),
-        _heatmapOpt('Rüzgar Potansiyeli', MlHeatmapMode.wind, Colors.cyanAccent, Icons.air),
-        _heatmapOpt('Sıcaklık', MlHeatmapMode.temperature, Colors.deepOrangeAccent, Icons.thermostat_outlined),
-
-        // Isı haritası parametreleri — sadece aktif modda göster
-        if (heatmapActive) ...[
-          const SizedBox(height: 10),
-          _heatmapControls(context),
+        // ── Harita Stili ────────────────────────────────────────────────
+        _SectionHeader(
+          title: 'Harita Stili', expanded: _styleExpanded, theme: theme,
+          onToggle: () => setState(() => _styleExpanded = !_styleExpanded),
+        ),
+        if (_styleExpanded) ...[
+          const SizedBox(height: 6),
+          ...MlBaseStyle.values.map(_styleOpt),
         ],
 
-        const SizedBox(height: 12),
-        _lbl('Pin Filtresi'),
-        const SizedBox(height: 6),
-        _effectRow('Pin Kümeleme', Icons.bubble_chart_outlined,
-            vm.showPinClusters, Colors.tealAccent, vm.togglePinClustering, badge: 'JS'),
-        const SizedBox(height: 4),
-        _pinFilterSection(),
+        const SizedBox(height: 10),
+        // ── Projeksiyon ─────────────────────────────────────────────────
+        _SectionHeader(
+          title: 'Projeksiyon', expanded: _projectionExpanded, theme: theme,
+          onToggle: () => setState(() => _projectionExpanded = !_projectionExpanded),
+        ),
+        if (_projectionExpanded) ...[
+          const SizedBox(height: 6),
+          _effectRow('Globe Projeksiyon', Icons.public_outlined,
+              vm.showGlobe, Colors.deepPurpleAccent, vm.toggleShowGlobe),
+          if (globeActive) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.deepPurpleAccent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.deepPurpleAccent.withValues(alpha: 0.35)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.lock_outline_rounded, size: 13, color: Colors.deepPurpleAccent),
+                const SizedBox(width: 6),
+                Expanded(child: Text(
+                  'Globe projeksiyon açıkken diğer özellikler kullanılamaz. Yalnızca pinler görünür.',
+                  style: TextStyle(color: Colors.deepPurpleAccent.withValues(alpha: 0.8), fontSize: 9.5),
+                )),
+              ]),
+            ),
+          ],
+        ],
 
-        const SizedBox(height: 12),
-        _lbl('3D Efektler'),
-        const SizedBox(height: 6),
-        _effectRow('3D Türbinler', Icons.wind_power_outlined,
-            vm.show3DTurbines, Colors.blueAccent, vm.toggleShow3DTurbines, badge: '3D'),
-        _effectRow('3D Binalar', Icons.location_city_outlined,
-            vm.show3DBuildings, Colors.indigoAccent, vm.toggleShow3DBuildings, badge: '3D'),
-        _effectRow('3D Arazi', Icons.terrain_outlined,
-            vm.show3DTerrain, Colors.teal, vm.toggleShow3DTerrain, badge: 'DEM'),
-        _effectRow('Globe Projeksiyon', Icons.public_outlined,
-            vm.showGlobe, Colors.deepPurpleAccent, vm.toggleShowGlobe),
+        // ── Kilit altındaki içerik ─────────────────────────────────────
+        Opacity(
+          opacity: globeActive ? 0.3 : 1.0,
+          child: AbsorbPointer(
+            absorbing: globeActive,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 10),
+                // ── Isı Haritası ──────────────────────────────────────
+                _SectionHeader(
+                  title: 'Isı Haritası', expanded: _heatmapExpanded, theme: theme,
+                  onToggle: () => setState(() => _heatmapExpanded = !_heatmapExpanded),
+                ),
+                if (_heatmapExpanded) ...[
+                  const SizedBox(height: 6),
+                  _heatmapOpt('Güneş Potansiyeli', MlHeatmapMode.solar, Colors.orangeAccent, Icons.wb_sunny_outlined),
+                  _heatmapOpt('Rüzgar Potansiyeli', MlHeatmapMode.wind, Colors.cyanAccent, Icons.air),
+                  _heatmapOpt('Sıcaklık', MlHeatmapMode.temperature, Colors.deepOrangeAccent, Icons.thermostat_outlined),
+                  if (heatmapActive && !globeActive) ...[
+                    const SizedBox(height: 10),
+                    _heatmapControls(context),
+                  ],
+                ],
+
+                const SizedBox(height: 10),
+                // ── Pin Filtresi ──────────────────────────────────────
+                _SectionHeader(
+                  title: 'Pin Filtresi', expanded: _pinExpanded, theme: theme,
+                  onToggle: () => setState(() => _pinExpanded = !_pinExpanded),
+                ),
+                if (_pinExpanded) ...[
+                  const SizedBox(height: 6),
+                  _effectRow('Pin Kümeleme', Icons.bubble_chart_outlined,
+                      vm.showPinClusters, Colors.tealAccent,
+                      vm.togglePinClustering, badge: 'JS'),
+                  const SizedBox(height: 4),
+                  _pinFilterSection(),
+                ],
+
+                const SizedBox(height: 10),
+                // ── Uydu Katmanları ───────────────────────────────────
+                _SectionHeader(
+                  title: 'Uydu Katmanları', expanded: _satelliteExpanded, theme: theme,
+                  onToggle: () => setState(() => _satelliteExpanded = !_satelliteExpanded),
+                ),
+                if (_satelliteExpanded) ...[
+                  const SizedBox(height: 6),
+                  _effectRow('Bulut Örtüsü', Icons.cloud_outlined,
+                      vm.showCloudLayer, const Color(0xFF90CAF9),
+                      vm.toggleShowCloudLayer, badge: 'SAT'),
+                  if (vm.showCloudLayer) ...[
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Icon(Icons.opacity_outlined, size: 12, color: theme.secondaryTextColor),
+                      const SizedBox(width: 4),
+                      Text('Şeffaflık', style: TextStyle(color: theme.secondaryTextColor, fontSize: 10)),
+                      const Spacer(),
+                      Text('${(vm.cloudOpacity * 100).round()}%',
+                          style: TextStyle(color: theme.textColor, fontSize: 10, fontWeight: FontWeight.w600)),
+                    ]),
+                    SliderTheme(
+                      data: SliderThemeData(
+                        trackHeight: 2,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                        activeTrackColor: const Color(0xFF90CAF9),
+                        inactiveTrackColor: theme.secondaryTextColor.withValues(alpha: 0.2),
+                        thumbColor: const Color(0xFF90CAF9),
+                        overlayColor: const Color(0xFF90CAF9).withAlpha(40),
+                      ),
+                      child: Slider(
+                        value: vm.cloudOpacity, min: 0.1, max: 1.0, divisions: 9,
+                        onChanged: vm.setCloudOpacity,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(children: [
+                        Icon(Icons.info_outline_rounded, size: 10, color: theme.secondaryTextColor.withValues(alpha: 0.6)),
+                        const SizedBox(width: 4),
+                        Expanded(child: Text(
+                          'RainViewer infrared uydu — ~10 dk güncelleme',
+                          style: TextStyle(color: theme.secondaryTextColor.withValues(alpha: 0.6), fontSize: 9),
+                        )),
+                      ]),
+                    ),
+                  ],
+                ],
+
+                const SizedBox(height: 10),
+                // ── Rüzgar Partikülleri ───────────────────────────────
+                _SectionHeader(
+                  title: 'Rüzgar Partikülleri', expanded: _windExpanded, theme: theme,
+                  onToggle: () => setState(() => _windExpanded = !_windExpanded),
+                ),
+                if (_windExpanded) ...[
+                  const SizedBox(height: 6),
+                  _effectRow('Canlı Akış', Icons.air_rounded,
+                      vm.showWindParticles, Colors.cyanAccent,
+                      () => vm.toggleWindParticles(!vm.showWindParticles), badge: 'LIVE'),
+                ],
+
+                const SizedBox(height: 10),
+                // ── 3D Efektler ───────────────────────────────────────
+                _SectionHeader(
+                  title: '3D Efektler', expanded: _effectsExpanded, theme: theme,
+                  onToggle: () => setState(() => _effectsExpanded = !_effectsExpanded),
+                ),
+                if (_effectsExpanded) ...[
+                  const SizedBox(height: 6),
+                  _effectRow('3D Türbinler', Icons.wind_power_outlined,
+                      vm.show3DTurbines, Colors.blueAccent,
+                      vm.toggleShow3DTurbines, badge: '3D'),
+                  _effectRow('3D Arazi', Icons.terrain_outlined,
+                      vm.show3DTerrain, Colors.teal, vm.toggleShow3DTerrain, badge: 'DEM'),
+                ],
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }

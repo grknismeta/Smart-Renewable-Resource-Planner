@@ -1,13 +1,6 @@
 import 'package:flutter/material.dart';
 
-// ─── Harita Modu ──────────────────────────────────────────────────────────────
-
-/// Aktif harita motoru.
-/// • standard   → flutter_map (Windows + web fallback)
-/// • maplibre3d → MapLibre GL JS (web)
-enum MapMode { standard, maplibre3d }
-
-// ─── MapLibre 3D — Isı Haritası Modu ─────────────────────────────────────────
+// ─── MapLibre — Isı Haritası Modu ────────────────────────────────────────────
 
 enum MlHeatmapMode { none, solar, wind, temperature }
 

@@ -61,6 +61,16 @@ class CityListSection extends StatelessWidget {
             onCityTap: onCityTap,
             isSolar: true,
           ),
+        if (data.windWeak.isNotEmpty)
+          _CategoryGroup(
+            title: 'Zayıf Rüzgar',
+            subtitle: '2–5.5 m/s potansiyel',
+            icon: Icons.air_outlined,
+            color: Colors.grey,
+            cities: data.windWeak,
+            theme: theme,
+            onCityTap: onCityTap,
+          ),
       ],
     );
   }

@@ -1,11 +1,8 @@
 // lib/features/reports/widgets/tabs/overview_tab.dart
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import 'package:frontend/core/constants/map_constants.dart';
 import 'package:frontend/core/theme/app_theme.dart';
 import 'package:frontend/data/models/system_data_models.dart';
 import 'package:frontend/data/models/weather_model.dart';
@@ -43,7 +40,7 @@ const _cTot  = Color(0xFF78909C);
 const _cRes  = Color(0xFF26C6DA);
 
 // ── 2024 Türkiye elektrik üretimi enerji karması ──────────────────────────────
-// Kaynak: TEİAŞ 2024 yıllık üretim raporu (GWh bazında oranlar)
+// Kaynak: TEİAŞ 2024 yıllık üretim raporu (GWh bazında oranlar), ~330 TWh toplam
 const _kDonut = <(String, double, Color)>[
   ('HES',       20.4, _cHes),
   ('Rüzgar',    12.1, _cWind),
@@ -53,8 +50,10 @@ const _kDonut = <(String, double, Color)>[
   ('Diğer',     10.2, Color(0xFFCE93D8)),
 ];
 
-// ── Türkiye koordinat sabitler ────────────────────────────────────────────────
-const _kTurkeyCenter = LatLng(39.0, 35.0);
+// Donut için 2024 TWh değerleri (toplam ~330 TWh)
+const _kDonutTWh2024 = <double>[67.3, 39.9, 22.1, 94.1, 72.9, 33.7];
+// Donut için 2023 TWh değerleri (karşılaştırma, ~325 TWh)
+const _kDonutTWh2023 = <double>[72.4, 37.6, 18.5, 84.6, 75.0, 37.0];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Ana widget (StatefulWidget — info panel + hybrid sliders için)
@@ -92,6 +91,38 @@ class _OverviewTabState extends State<OverviewTab> {
     context.watch<ThemeViewModel>();
     final top5 = (vm.report?.items ?? []).take(5).toList();
 
+    // Yükleniyor
+    if (vm.isBusy && vm.report == null) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.cyanAccent, strokeWidth: 2),
+      );
+    }
+
+    // Hata durumu
+    if (vm.hasError && vm.report == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_rounded, color: Colors.orangeAccent, size: 36),
+            const SizedBox(height: 10),
+            Text(
+              vm.errorMessage ?? 'Rapor yüklenemedi',
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: () => vm.fetchReport(),
+              icon: const Icon(Icons.refresh_rounded, size: 14),
+              label: const Text('Yeniden Dene'),
+              style: TextButton.styleFrom(foregroundColor: Colors.cyanAccent),
+            ),
+          ],
+        ),
+      );
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
       child: Column(
@@ -113,12 +144,12 @@ class _OverviewTabState extends State<OverviewTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    flex: 54,
+                    flex: 50,
                     child: _GrowthChart(),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    flex: 46,
+                    flex: 50,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -191,9 +222,9 @@ class _OverviewTabState extends State<OverviewTab> {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(flex: 55, child: _MiniMap(items: top5)),
+                  Expanded(flex: 50, child: _MiniMap(items: top5)),
                   const SizedBox(width: 12),
-                  Expanded(flex: 45, child: hybrid),
+                  Expanded(flex: 50, child: hybrid),
                 ],
               );
             }
@@ -420,245 +451,498 @@ class _GrowthChart extends StatelessWidget {
     return _Panel(
       title: 'Türkiye YEK Kurulu Güç Büyümesi',
       subtitle: '2015–2025  •  GW',
-      child: SizedBox(
-        height: 220,
-        child: LineChart(
-          duration: Duration.zero,
-          LineChartData(
-            gridData: FlGridData(
-              show: true,
-              drawVerticalLine: false,
-              getDrawingHorizontalLine: (_) => FlLine(
-                color: Colors.white.withValues(alpha: 0.06),
-                strokeWidth: 1,
-              ),
-            ),
-            borderData: FlBorderData(show: false),
-            clipData: const FlClipData.all(),
-            minY: 0,
-            maxY: 125,
-            titlesData: FlTitlesData(
-              leftTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  reservedSize: 36,
-                  interval: 25,
-                  getTitlesWidget: (v, _) => Text(
-                    '${v.toInt()}',
-                    style: const TextStyle(
-                        color: Colors.white38, fontSize: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 260,
+            child: LineChart(
+              duration: Duration.zero,
+              LineChartData(
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  getDrawingHorizontalLine: (_) => FlLine(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    strokeWidth: 1,
                   ),
                 ),
-              ),
-              rightTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false)),
-              topTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false)),
-              bottomTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  interval: 2,
-                  getTitlesWidget: (val, meta) {
-                    final idx = val.toInt();
-                    if (idx < 0 || idx >= _kYears.length) {
-                      return const SizedBox.shrink();
-                    }
-                    // Show every other year to avoid crowding
-                    if (idx % 2 != 0) return const SizedBox.shrink();
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        '${_kYears[idx]}',
+                borderData: FlBorderData(show: false),
+                clipData: const FlClipData.all(),
+                minY: 0,
+                maxY: 125,
+                titlesData: FlTitlesData(
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 36,
+                      interval: 25,
+                      getTitlesWidget: (v, _) => Text(
+                        '${v.toInt()}',
                         style: const TextStyle(
                             color: Colors.white38, fontSize: 9),
                       ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            lineTouchData: LineTouchData(
-              touchTooltipData: LineTouchTooltipData(
-                getTooltipColor: (_) => const Color(0xFF1C2533),
-                getTooltipItems: (spots) {
-                  // Only show tooltip for Total and RES lines
-                  return spots.map((s) {
-                    final idx = s.x.toInt();
-                    String label;
-                    Color color;
-                    switch (s.barIndex) {
-                      case 0:
-                        label =
-                            '${_kYears[idx]} Toplam: ${_kTotGW[idx].toStringAsFixed(0)} GW';
-                        color = _cTot;
-                      case 3:
-                        label =
-                            'YEK: ${resGW[idx].toStringAsFixed(1)} GW';
-                        color = _cRes;
-                      default:
-                        return null;
-                    }
-                    return LineTooltipItem(
-                      label,
-                      TextStyle(
-                        color: color,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    );
-                  }).toList();
-                },
-              ),
-            ),
-            // Çizim sırası önemli:
-            // 0 = Toplam (soluk gri, üste çizilir)
-            // 1 = YEK/Güneş fill (en alttan çizilir — sarı)
-            // 2 = Rüzgar+HES fill (sarı fill üzerine yeşil)
-            // 3 = HES fill  (yeşil fill üzerine mavi)
-            // = Net görsel: sarı top, yeşil orta, mavi alt + gri toplam çizgisi
-            lineBarsData: [
-              // — Toplam üretim (gri kesik çizgi, dolgu yok)
-              _areaLine(
-                ys: _kTotGW,
-                lineColor: _cTot.withValues(alpha: 0.55),
-                fillColor: Colors.transparent,
-                barWidth: 1.5,
-                dashArray: [5, 4],
-              ),
-              // — Güneş alanı (RES = en üst) — sarı fill 0→RES
-              _areaLine(
-                ys: resGW,
-                lineColor: Colors.transparent,
-                fillColor: _cSol.withValues(alpha: 0.75),
-              ),
-              // — Rüzgar+HES alanı — yeşil fill 0→Wind+HES (sarı üzerine)
-              _areaLine(
-                ys: windHesGW,
-                lineColor: Colors.transparent,
-                fillColor: _cWind.withValues(alpha: 0.80),
-              ),
-              // — HES alanı — mavi fill 0→HES (yeşil üzerine)
-              _areaLine(
-                ys: _kHesGW,
-                lineColor: Colors.transparent,
-                fillColor: _cHes.withValues(alpha: 0.85),
-              ),
-              // — YEK toplam çizgisi (cyan, belirgin)
-              LineChartBarData(
-                spots: List.generate(
-                    resGW.length, (i) => FlSpot(i.toDouble(), resGW[i])),
-                isCurved: true,
-                curveSmoothness: 0.3,
-                color: _cRes,
-                barWidth: 2.5,
-                isStrokeCapRound: true,
-                dotData: FlDotData(
-                  show: true,
-                  getDotPainter: (spot, _, __, i) => FlDotCirclePainter(
-                    radius: 2.5,
-                    color: _cRes,
-                    strokeWidth: 1,
-                    strokeColor: Colors.black,
+                    ),
+                  ),
+                  rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 32,
+                      interval: 2,
+                      getTitlesWidget: (val, meta) {
+                        final idx = val.toInt();
+                        if (idx < 0 || idx >= _kYears.length) {
+                          return const SizedBox.shrink();
+                        }
+                        if (idx % 2 != 0) return const SizedBox.shrink();
+                        final res = _kHesGW[idx] + _kWindGW[idx] + _kSolGW[idx];
+                        final pct = (res / _kTotGW[idx] * 100).toStringAsFixed(0);
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${_kYears[idx]}',
+                                style: const TextStyle(
+                                    color: Colors.white38, fontSize: 9),
+                              ),
+                              Text(
+                                '$pct%',
+                                style: const TextStyle(
+                                    color: _cRes, fontSize: 8),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
-                belowBarData: BarAreaData(show: false),
+                lineTouchData: LineTouchData(
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipColor: (_) => const Color(0xFF1C2533),
+                    getTooltipItems: (spots) {
+                      return spots.map((s) {
+                        final idx = s.x.toInt();
+                        if (idx < 0 || idx >= _kYears.length) return null;
+                        final res = _kHesGW[idx] + _kWindGW[idx] + _kSolGW[idx];
+                        final pct = (res / _kTotGW[idx] * 100).toStringAsFixed(0);
+                        String? label;
+                        Color? color;
+                        switch (s.barIndex) {
+                          case 0:
+                            label = 'Toplam: ${_kTotGW[idx].toStringAsFixed(0)} GW';
+                            color = _cTot;
+                          case 4:
+                            label = 'YEK: ${res.toStringAsFixed(1)} GW ($pct%)';
+                            color = _cRes;
+                          default:
+                            return null;
+                        }
+                        return LineTooltipItem(
+                          label,
+                          TextStyle(
+                            color: color,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        );
+                      }).toList();
+                    },
+                  ),
+                ),
+                // Çizim sırası:
+                // 0 = Toplam (gri kesik çizgi, dolgu yok)
+                // 1 = Güneş/RES fill (sarı, en geniş alan)
+                // 2 = Rüzgar+HES fill (yeşil, sarı üzerine çizilir)
+                // 3 = HES fill (mavi, yeşil üzerine çizilir)
+                // 4 = YEK toplam çizgisi (cyan, en üstte)
+                lineBarsData: [
+                  _areaLine(
+                    ys: _kTotGW,
+                    lineColor: _cTot.withValues(alpha: 0.50),
+                    fillColor: Colors.transparent,
+                    barWidth: 1.5,
+                    dashArray: [5, 4],
+                  ),
+                  _areaLine(
+                    ys: resGW,
+                    lineColor: Colors.transparent,
+                    fillColor: _cSol.withValues(alpha: 0.60),
+                  ),
+                  _areaLine(
+                    ys: windHesGW,
+                    lineColor: Colors.transparent,
+                    fillColor: _cWind.withValues(alpha: 0.65),
+                  ),
+                  _areaLine(
+                    ys: _kHesGW,
+                    lineColor: Colors.transparent,
+                    fillColor: _cHes.withValues(alpha: 0.70),
+                  ),
+                  LineChartBarData(
+                    spots: List.generate(
+                        resGW.length, (i) => FlSpot(i.toDouble(), resGW[i])),
+                    isCurved: true,
+                    curveSmoothness: 0.3,
+                    color: _cRes,
+                    barWidth: 2.5,
+                    isStrokeCapRound: true,
+                    dotData: FlDotData(
+                      show: true,
+                      getDotPainter: (spot, _, __, i) => FlDotCirclePainter(
+                        radius: 2.5,
+                        color: _cRes,
+                        strokeWidth: 1,
+                        strokeColor: Colors.black,
+                      ),
+                    ),
+                    belowBarData: BarAreaData(show: false),
+                  ),
+                ],
               ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          // ── Legend ──────────────────────────────────────────────────────────
+          Wrap(
+            spacing: 14,
+            runSpacing: 4,
+            children: const [
+              _LegendItem(color: _cHes,  label: 'HES'),
+              _LegendItem(color: _cWind, label: 'Rüzgar'),
+              _LegendItem(color: _cSol,  label: 'Güneş'),
+              _LegendItem(color: _cRes,  label: 'Toplam YEK', isLine: true),
+              _LegendItem(color: _cTot,  label: 'TR Toplam',  isLine: true, dashed: true),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
+}
+
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+  final bool isLine;
+  final bool dashed;
+
+  const _LegendItem({
+    required this.color,
+    required this.label,
+    this.isLine = false,
+    this.dashed = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isLine)
+          SizedBox(
+            width: 16,
+            height: 2,
+            child: CustomPaint(
+              painter: _DashedLinePainter(
+                  color: color.withValues(alpha: dashed ? 0.6 : 0.9),
+                  dashed: dashed),
+            ),
+          )
+        else
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white54, fontSize: 9),
+        ),
+      ],
+    );
+  }
+}
+
+class _DashedLinePainter extends CustomPainter {
+  final Color color;
+  final bool dashed;
+  const _DashedLinePainter({required this.color, required this.dashed});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5;
+    if (!dashed) {
+      canvas.drawLine(
+          Offset(0, size.height / 2), Offset(size.width, size.height / 2), paint);
+    } else {
+      double x = 0;
+      while (x < size.width) {
+        canvas.drawLine(
+            Offset(x, size.height / 2),
+            Offset((x + 4).clamp(0, size.width), size.height / 2),
+            paint);
+        x += 7;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedLinePainter old) => false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Donut grafiği — 2024 Türkiye enerji karması
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _DonutChart extends StatelessWidget {
+class _DonutChart extends StatefulWidget {
   const _DonutChart();
+
+  @override
+  State<_DonutChart> createState() => _DonutChartState();
+}
+
+class _DonutChartState extends State<_DonutChart> {
+  int _touchedIdx = -1;
 
   @override
   Widget build(BuildContext context) {
     return _Panel(
       title: 'Türkiye Enerji Karması',
       subtitle: '2024  •  üretim bazında',
-      child: SizedBox(
-        height: 190,
-        child: Row(
-          children: [
-            // Donut
-            Expanded(
-              flex: 5,
-              child: PieChart(
-                duration: Duration.zero,
-                PieChartData(
-                  sectionsSpace: 1.5,
-                  centerSpaceRadius: 38,
-                  sections: _kDonut.map((d) {
-                    final (label, pct, color) = d;
-                    return PieChartSectionData(
-                      value: pct,
-                      color: color,
-                      radius: 40,
-                      title: pct >= 10 ? '${pct.toStringAsFixed(0)}%' : '',
-                      titleStyle: const TextStyle(
-                        color: Colors.black87,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
+      child: Column(
+        children: [
+          SizedBox(
+            height: 210,
+            child: Row(
+              children: [
+                // Donut
+                Expanded(
+                  flex: 5,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PieChart(
+                        duration: Duration.zero,
+                        PieChartData(
+                          sectionsSpace: 2,
+                          centerSpaceRadius: 40,
+                          pieTouchData: PieTouchData(
+                            touchCallback:
+                                (FlTouchEvent event, pieTouchResponse) {
+                              setState(() {
+                                if (!event.isInterestedForInteractions ||
+                                    pieTouchResponse == null ||
+                                    pieTouchResponse.touchedSection == null) {
+                                  _touchedIdx = -1;
+                                  return;
+                                }
+                                _touchedIdx = pieTouchResponse
+                                    .touchedSection!.touchedSectionIndex;
+                              });
+                            },
+                          ),
+                          sections: _kDonut.asMap().entries.map((entry) {
+                            final i = entry.key;
+                            final (label, pct, color) = entry.value;
+                            final isTouched = i == _touchedIdx;
+                            return PieChartSectionData(
+                              value: pct,
+                              color: isTouched
+                                  ? color
+                                  : color.withValues(alpha: 0.85),
+                              radius: isTouched ? 54 : 44,
+                              title: pct >= 10
+                                  ? '${pct.toStringAsFixed(0)}%'
+                                  : '',
+                              titleStyle: TextStyle(
+                                color: Colors.black87,
+                                fontSize: isTouched ? 10 : 9,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            );
+                          }).toList(),
+                        ),
                       ),
-                      badgeWidget: null,
-                    );
-                  }).toList(),
+                      // Merkez — dokunulan bölge bilgisi
+                      if (_touchedIdx >= 0 && _touchedIdx < _kDonut.length)
+                        _DonutCenter(idx: _touchedIdx)
+                      else
+                        const _DonutCenter(idx: -1),
+                    ],
+                  ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            // Legend
-            Expanded(
-              flex: 4,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: _kDonut.map((d) {
-                  final (label, pct, color) = d;
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2.5),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
+                const SizedBox(width: 10),
+                // Legend
+                Expanded(
+                  flex: 4,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: _kDonut.asMap().entries.map((entry) {
+                      final i = entry.key;
+                      final (label, pct, color) = entry.value;
+                      final isTouched = i == _touchedIdx;
+                      return GestureDetector(
+                        onTap: () =>
+                            setState(() => _touchedIdx = isTouched ? -1 : i),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 3),
                           decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
+                            color: isTouched
+                                ? color.withValues(alpha: 0.12)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              Expanded(
+                                child: Text(
+                                  label,
+                                  style: TextStyle(
+                                    color: isTouched
+                                        ? Colors.white
+                                        : Colors.white60,
+                                    fontSize: 10,
+                                    fontWeight: isTouched
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Text(
+                                '${pct.toStringAsFixed(1)}%',
+                                style: TextStyle(
+                                  color: isTouched ? color : Colors.white54,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 5),
-                        Expanded(
-                          child: Text(
-                            label,
-                            style: const TextStyle(
-                                color: Colors.white60, fontSize: 10),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Text(
-                          '${pct.toStringAsFixed(1)}%',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
+          // Dokunulan bölme detay satırı
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            child: _touchedIdx >= 0
+                ? _DonutDetailRow(idx: _touchedIdx)
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DonutCenter extends StatelessWidget {
+  final int idx;
+  const _DonutCenter({required this.idx});
+
+  @override
+  Widget build(BuildContext context) {
+    if (idx < 0) {
+      return const Text(
+        '2024',
+        style: TextStyle(color: Colors.white38, fontSize: 11),
+      );
+    }
+    final (label, pct, color) = _kDonut[idx];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '${pct.toStringAsFixed(0)}%',
+          style: TextStyle(
+              color: color, fontSize: 14, fontWeight: FontWeight.w800),
         ),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white54, fontSize: 9),
+        ),
+      ],
+    );
+  }
+}
+
+class _DonutDetailRow extends StatelessWidget {
+  final int idx;
+  const _DonutDetailRow({required this.idx});
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, pct, color) = _kDonut[idx];
+    final twh2024 = _kDonutTWh2024[idx];
+    final twh2023 = _kDonutTWh2023[idx];
+    final diff = twh2024 - twh2023;
+    final diffStr = diff >= 0 ? '+${diff.toStringAsFixed(1)}' : diff.toStringAsFixed(1);
+    final diffColor = diff >= 0 ? Colors.greenAccent : Colors.redAccent;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(width: 8, height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+            ),
+          ),
+          Text(
+            '2024: ${twh2024.toStringAsFixed(1)} TWh',
+            style: const TextStyle(color: Colors.white70, fontSize: 10),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '$diffStr TWh',
+            style: TextStyle(
+                color: diffColor, fontSize: 10, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'vs 2023',
+            style: const TextStyle(color: Colors.white30, fontSize: 9),
+          ),
+        ],
       ),
     );
   }
@@ -1027,83 +1311,39 @@ class _InfoChip extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mini harita
+// Top 5 lokasyon listesi
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _MiniMap extends StatefulWidget {
+class _MiniMap extends StatelessWidget {
   final List<RegionalSite> items;
   const _MiniMap({required this.items});
 
   @override
-  State<_MiniMap> createState() => _MiniMapState();
-}
-
-class _MiniMapState extends State<_MiniMap> {
-  final _mapController = MapController();
-
-  @override
   Widget build(BuildContext context) {
-    final markers = widget.items.asMap().entries.map((entry) {
-      final i = entry.key;
-      final site = entry.value;
-      final colors = [_cRes, _cSol, _cWind, _cHes, Colors.purpleAccent];
-      final color = colors[i % colors.length];
-      return Marker(
-        point: LatLng(site.latitude, site.longitude),
-        width: 30,
-        height: 30,
-        child: Tooltip(
-          message: '${site.city}\nSkor: ${site.overallScore.toStringAsFixed(0)}',
-          child: Container(
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.9),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                    color: color.withValues(alpha: 0.5), blurRadius: 6),
-              ],
-            ),
-            child: Center(
-              child: Text(
-                '${i + 1}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }).toList();
-
+    final colors = [_cRes, _cSol, _cWind, _cHes, Colors.purpleAccent];
     return _Panel(
-      title: 'Lokasyon Haritası',
-      subtitle: 'Top 5 yer',
-      child: SizedBox(
-        height: 200,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: _kTurkeyCenter,
-              initialZoom: 4.8,
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+      title: 'Top 5 Lokasyon',
+      subtitle: '${items.length} alan',
+      child: Column(
+        children: items.asMap().entries.map((entry) {
+          final i = entry.key;
+          final site = entry.value;
+          final color = colors[i % colors.length];
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(children: [
+              Container(
+                width: 22, height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: color.withValues(alpha: 0.9)),
+                child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
               ),
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: MapConstants.getTileUrl('dark'),
-                userAgentPackageName: 'com.srrp.frontend',
-              ),
-              MarkerLayer(markers: markers),
-            ],
-          ),
-        ),
+              const SizedBox(width: 8),
+              Expanded(child: Text(site.city, style: const TextStyle(color: Colors.white, fontSize: 12), overflow: TextOverflow.ellipsis)),
+              Text(site.overallScore.toStringAsFixed(1), style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
+            ]),
+          );
+        }).toList(),
       ),
     );
   }
@@ -1138,6 +1378,33 @@ class _HybridProfile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Açıklama
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.amber.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.info_outline_rounded,
+                    size: 12, color: Colors.amber),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Türkiye\'nin toplam YEK kurulu gücünü (~58 GW) '
+                    'bu karışım oranlarıyla değerlendirdiğinizdeki tahmini '
+                    'yıllık üretimi hesaplar. Sliderlar toplamlı olarak çalışır '
+                    '(Güneş + Rüzgar + HES = %100).',
+                    style: TextStyle(color: Colors.amber, fontSize: 9.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
           // Sliders
           _HybSlider(
             label: 'Güneş',

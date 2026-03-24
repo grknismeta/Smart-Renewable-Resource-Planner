@@ -2,9 +2,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:frontend/features/map/models/map_models.dart';
 
 /// Katman türleri tek bir enum altında toplandı
@@ -45,24 +42,17 @@ enum MapLayerType {
 
 // ─── Isolate Input / Output ────────────────────────────────────────────────────
 
-/// [compute()] fonksiyonuna gönderilen düz veri.
-/// Tüm değerler Float32List içinde interleaved olarak taşınır:
-/// [lat0, lon0, val0, lat1, lon1, val1, ...]
 class _LayerComputeInput {
   final Float32List data;
   final int layerTypeIndex;
-  /// fastMode: animasyon sırasında kullanılır — coarser grid + azaltılmış
-  /// smoothing. Compute süresi ~100ms → ~8ms, animasyon pile-up önlenir.
   final bool fastMode;
   _LayerComputeInput(this.data, this.layerTypeIndex, {this.fastMode = false});
 }
 
-/// [compute()] sonucu — saf typed arrays.
-/// ui.Vertices.raw() direkt bu verileri tüketir.
 class _LayerComputeResult {
-  final Float32List positions; // [x, y, x, y, ...]
-  final Int32List colors;      // 0xAARRGGBB
-  final Uint16List indices;    // üçgen indeksleri
+  final Float32List positions;
+  final Int32List colors;
+  final Uint16List indices;
   final double minLat, maxLat, minLon, maxLon;
   final int cols, rows;
 
@@ -86,19 +76,17 @@ _LayerComputeResult _emptyResult() => _LayerComputeResult(
   minLat: 0, maxLat: 0, minLon: 0, maxLon: 0, cols: 0, rows: 0,
 );
 
-// ─── Renk yardımcıları — izolat uyumlu, saf int aritmetiği ───────────────────
+// ─── Renk yardımcıları ────────────────────────────────────────────────────────
 
 int _lerpByte(int a, int b, double t) =>
     (a + (b - a) * t).round().clamp(0, 255);
 
-/// c1 / c2: 0xAARRGGBB
 int _lerpInt(int c1, int c2, double t) =>
     (_lerpByte((c1 >> 24) & 0xFF, (c2 >> 24) & 0xFF, t) << 24) |
     (_lerpByte((c1 >> 16) & 0xFF, (c2 >> 16) & 0xFF, t) << 16) |
     (_lerpByte((c1 >> 8)  & 0xFF, (c2 >> 8)  & 0xFF, t) << 8)  |
      _lerpByte( c1        & 0xFF,  c2        & 0xFF,  t);
 
-// Mevcut paleti int sabitlere dönüştürdük → Flutter framework gerektirmiyor
 int _getSolarColorInt(double t) {
   if (t < 0.2) return _lerpInt(0x00000000, 0xCCFF6D00, t / 0.2);
   if (t < 0.5) return _lerpInt(0xCCFF6D00, 0xFFD50000, (t - 0.2) / 0.3);
@@ -118,25 +106,21 @@ int _getTempColorInt(double t) {
   return _lerpInt(0xFFFFEB3B, 0xFFF44336, (t - 0.66) / 0.34);
 }
 
-/// MapLayerType enum sırası: none=0, wind=1, temp=2, irradiance=3
 int _colorInt(double normalized, int layerTypeIndex) {
   switch (layerTypeIndex) {
-    case 1: return _getWindColorInt(normalized);      // wind
-    case 2: return _getTempColorInt(normalized);      // temp
-    case 3: return _getSolarColorInt(normalized);     // irradiance
-    default: return 0x00000000;                       // none veya bilinmeyen
+    case 1: return _getWindColorInt(normalized);
+    case 2: return _getTempColorInt(normalized);
+    case 3: return _getSolarColorInt(normalized);
+    default: return 0x00000000;
   }
 }
 
-// ─── Ağır hesaplama — izolat'te çalışır, UI thread'ini bloklamaz ──────────────
+// ─── Compute — izolat'te çalışır ─────────────────────────────────────────────
 
-/// Bu fonksiyon [compute()] aracılığıyla ayrı bir Dart izolatında çalışır.
-/// Gap-filling, Gaussian smoothing, vertex + index inşası burada yapılır.
 _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
   final int count = input.data.length ~/ 3;
   if (count == 0) return _emptyResult();
 
-  // 1. Sınırları ve değer aralığını bul
   double minLat = double.infinity, maxLat = double.negativeInfinity;
   double minLon = double.infinity, maxLon = double.negativeInfinity;
   double minVal = double.infinity, maxVal = double.negativeInfinity;
@@ -156,16 +140,13 @@ _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
   if (minLat == double.infinity) return _emptyResult();
   if (minVal == maxVal) maxVal += 0.1;
 
-  // fastMode: animasyon için daha kaba grid → compute ~12x hızlı
   final double resolution = input.fastMode ? 0.25 : 0.1;
   final int cols = ((maxLon - minLon) / resolution).round() + 1;
   final int rows = ((maxLat - minLat) / resolution).round() + 1;
   final int total = rows * cols;
 
-  // Uint16List maksimum indeks sınırı (65535 vertex)
   if (total > 65535 || rows < 2 || cols < 2) return _emptyResult();
 
-  // 2. Veriyi düz grid listesine yerleştir
   final grid = List<double?>.filled(total, null);
   for (int i = 0; i < count; i++) {
     final r = ((input.data[i * 3] - minLat) / resolution).round();
@@ -175,7 +156,6 @@ _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
     }
   }
 
-  // 3. Gap filling — normal: 5 geçiş; fastMode: 2 geçiş
   final int gapPasses = input.fastMode ? 2 : 5;
   for (int pass = 0; pass < gapPasses; pass++) {
     final newGrid = List<double?>.from(grid);
@@ -203,7 +183,6 @@ _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
     if (!changed) break;
   }
 
-  // 4. Gaussian-like smoothing — normal: 3 geçiş; fastMode: 1 geçiş
   final int smoothPasses = input.fastMode ? 1 : 3;
   List<double?> currentGrid = grid;
   for (int pass = 0; pass < smoothPasses; pass++) {
@@ -212,7 +191,7 @@ _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
       for (int c = 0; c < cols; c++) {
         final center = currentGrid[r * cols + c];
         if (center == null) continue;
-        double sum = center * 2; // merkez ağırlıklı
+        double sum = center * 2;
         double w = 2.0;
         for (int dr = -1; dr <= 1; dr++) {
           for (int dc = -1; dc <= 1; dc++) {
@@ -231,7 +210,6 @@ _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
     currentGrid = nextGrid;
   }
 
-  // 5. Vertex verisi — Float32List + Int32List (Vertices.raw için)
   final positions = Float32List(total * 2);
   final colors = Int32List(total);
 
@@ -245,11 +223,9 @@ _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
         final norm = ((v - minVal) / (maxVal - minVal)).clamp(0.0, 1.0);
         colors[idx] = _colorInt(norm, input.layerTypeIndex);
       }
-      // null → 0x00000000 (transparan — Int32List default)
     }
   }
 
-  // 6. Üçgen indeksleri
   final triCount = (rows - 1) * (cols - 1) * 6;
   final indices = Uint16List(triCount);
   int ii = 0;
@@ -280,7 +256,6 @@ _LayerComputeResult _computeLayerData(_LayerComputeInput input) {
 
 // ─── Raster PNG Export (MapLibre overlay için) ────────────────────────────────
 
-/// `computeLayerPng()` dönüş tipi.
 class MapLayerRasterResult {
   final String base64Png;
   final double minLon, minLat, maxLon, maxLat;
@@ -293,9 +268,6 @@ class MapLayerRasterResult {
   });
 }
 
-/// Heatmap noktalarını standart haritayla AYNI pipeline ile hesaplar ve
-/// PNG base64 olarak döndürür. MapLibre'de `image source + raster layer`
-/// olarak kullanılır → standart haritayla birebir aynı görsel.
 Future<MapLayerRasterResult?> computeLayerPng(
   List<HeatmapPoint> data,
   MapLayerType layerType, {
@@ -324,7 +296,7 @@ Future<MapLayerRasterResult?> computeLayerPng(
   );
 
   final recorder = ui.PictureRecorder();
-  Canvas(recorder).drawVertices(vertices, BlendMode.srcOver, Paint());
+  ui.Canvas(recorder).drawVertices(vertices, ui.BlendMode.srcOver, ui.Paint());
   final picture = recorder.endRecording();
 
   final image = await picture.toImage(result.cols, result.rows);
@@ -339,173 +311,4 @@ Future<MapLayerRasterResult?> computeLayerPng(
     maxLon: result.maxLon,
     maxLat: result.maxLat,
   );
-}
-
-// ─── Widget ────────────────────────────────────────────────────────────────────
-
-/// Tüm katman mantığını (logic + rendering) içeren ana widget.
-class MapLayerWidget extends StatefulWidget {
-  final List<HeatmapPoint> data;
-  final MapLayerType layerType;
-  final double opacity;
-  /// Animasyon modunda true — coarser grid ile hızlı render.
-  final bool fastMode;
-
-  const MapLayerWidget({
-    super.key,
-    required this.data,
-    required this.layerType,
-    this.opacity = 0.5,
-    this.fastMode = false,
-  });
-
-  @override
-  State<MapLayerWidget> createState() => _MapLayerWidgetState();
-}
-
-class _MapLayerWidgetState extends State<MapLayerWidget> {
-  ui.Picture? _cachedPicture;
-  LatLngBounds? _bounds;
-  double _imgWidth = 0;
-  double _imgHeight = 0;
-
-  /// Stale check: widget güncellenirse eski compute sonucu görmezden gelinir.
-  int _computeVersion = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _scheduleCompute();
-  }
-
-  @override
-  void didUpdateWidget(covariant MapLayerWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Cache fix: aynı List referansı ise hesaplama yapma
-    if (widget.data != oldWidget.data ||
-        widget.layerType != oldWidget.layerType ||
-        widget.fastMode != oldWidget.fastMode) {
-      _scheduleCompute();
-    }
-  }
-
-  void _scheduleCompute() {
-    final version = ++_computeVersion;
-    _runCompute(version);
-  }
-
-  Future<void> _runCompute(int version) async {
-    if (widget.data.isEmpty || widget.layerType == MapLayerType.none) {
-      if (mounted && _computeVersion == version) {
-        setState(() { _cachedPicture = null; _bounds = null; });
-      }
-      return;
-    }
-
-    // Flat Float32List oluştur — izolata gönderilir
-    final inputData = Float32List(widget.data.length * 3);
-    for (int i = 0; i < widget.data.length; i++) {
-      inputData[i * 3]     = widget.data[i].latitude;
-      inputData[i * 3 + 1] = widget.data[i].longitude;
-      inputData[i * 3 + 2] = widget.data[i].value;
-    }
-
-    // Ağır hesaplama ayrı izolatta — UI thread serbest kalır
-    final result = await compute(
-      _computeLayerData,
-      _LayerComputeInput(inputData, widget.layerType.index, fastMode: widget.fastMode),
-    );
-
-    // Widget unmount olmuş veya daha yeni bir hesaplama başlamış
-    if (!mounted || _computeVersion != version) return;
-
-    if (result.isEmpty) {
-      setState(() { _cachedPicture = null; _bounds = null; });
-      return;
-    }
-
-    // Ana thread'de: Vertices + Picture kaydı — < 2ms
-    final vertices = ui.Vertices.raw(
-      ui.VertexMode.triangles,
-      result.positions,
-      colors: result.colors,
-      indices: result.indices,
-    );
-
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    canvas.drawVertices(vertices, BlendMode.srcOver, Paint());
-    final picture = recorder.endRecording();
-
-    setState(() {
-      _cachedPicture = picture;
-      _bounds = LatLngBounds(
-        LatLng(result.minLat, result.minLon),
-        LatLng(result.maxLat, result.maxLon),
-      );
-      _imgWidth = result.cols.toDouble();
-      _imgHeight = result.rows.toDouble();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_cachedPicture == null || _bounds == null) return const SizedBox.shrink();
-
-    return Opacity(
-      opacity: widget.opacity,
-      child: CustomPaint(
-        painter: _CachedLayerPainter(
-          picture: _cachedPicture!,
-          bounds: _bounds!,
-          imgWidth: _imgWidth,
-          imgHeight: _imgHeight,
-          mapCamera: MapCamera.of(context),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Painter — haritaya ölçekleyerek çizer ────────────────────────────────────
-
-class _CachedLayerPainter extends CustomPainter {
-  final ui.Picture picture;
-  final LatLngBounds bounds;
-  final double imgWidth;
-  final double imgHeight;
-  final MapCamera mapCamera;
-
-  _CachedLayerPainter({
-    required this.picture,
-    required this.bounds,
-    required this.imgWidth,
-    required this.imgHeight,
-    required this.mapCamera,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final northWest = mapCamera.getOffsetFromOrigin(bounds.northWest);
-    final southEast = mapCamera.getOffsetFromOrigin(bounds.southEast);
-
-    final dstRect = Rect.fromLTRB(
-      northWest.dx, northWest.dy,
-      southEast.dx, southEast.dy,
-    );
-
-    if (dstRect.width <= 0 || dstRect.height <= 0) return;
-
-    canvas.save();
-    canvas.translate(dstRect.left, dstRect.top);
-    canvas.scale(dstRect.width / imgWidth, dstRect.height / imgHeight);
-    canvas.drawPicture(picture);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _CachedLayerPainter oldDelegate) =>
-      oldDelegate.mapCamera.zoom != mapCamera.zoom ||
-      oldDelegate.mapCamera.center != mapCamera.center ||
-      oldDelegate.picture != picture;
 }

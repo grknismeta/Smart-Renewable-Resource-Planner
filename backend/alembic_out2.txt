@@ -1,0 +1,74 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 009_composite_indexes -> 010_add_missing_districts, Add missing districts: Zonguldak(Kilimli, Kozlu), Samsun(Atakum, Canik, Ýlkadým)
+   + fix location_codes shifted by new alphabetical positions
+   + fix Zonguldak Ereðli coordinates (was pointing to Konya Ereðli)
+Traceback (most recent call last):
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\sqlalchemy\engine\default.py", line 951, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint "uix_hourly_lat_lon_ts"
+DETAIL:  Key (latitude, longitude, "timestamp")=(41.2831, 31.4266, 2024-12-31 21:00:00) already exists.
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Scripts\alembic.exe\__main__.py", line 6, in <module>
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\alembic\config.py", line 1022, in main
+    CommandLine(prog=prog).main(argv=argv)
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\alembic\config.py", line 1012, in main
+    self.run_cmd(cfg, options)
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\alembic\config.py", line 946, in run_cmd
+    fn(
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\alembic\command.py", line 483, in upgrade
+    script.run_env()
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\alembic\script\base.py", line 545, in run_env
+    util.load_python_file(self.dir, "env.py")
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\alembic\util\pyfiles.py", line 116, in load_python_file
+    module = load_module_py(module_id, path)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\alembic\util\pyfiles.py", line 136, in load_module_py
+    spec.loader.exec_module(module)  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\alembic\env.py", line 93, in <module>
+    run_migrations_online()
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\alembic\env.py", line 87, in run_migrations_online
+    context.run_migrations()
+  File "<string>", line 8, in run_migrations
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\alembic\runtime\environment.py", line 946, in run_migrations
+    self.get_context().run_migrations(**kw)
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\alembic\runtime\migration.py", line 627, in run_migrations
+    step.migration_fn(**kw)
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\alembic\versions\010_add_missing_districts.py", line 57, in upgrade
+    conn.execute(sa.text(
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 526, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2355, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Projelerim\smart_renewable_resource_planner\backend\venv\Lib\site-packages\sqlalchemy\engine\default.py", line 951, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.IntegrityError: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "uix_hourly_lat_lon_ts"
+DETAIL:  Key (latitude, longitude, "timestamp")=(41.2831, 31.4266, 2024-12-31 21:00:00) already exists.
+
+[SQL: UPDATE hourly_weather_data SET latitude = 41.2831, longitude = 31.4266 WHERE city_name = 'Zonguldak' AND district_name = 'Ereðli']
+(Background on this error at: https://sqlalche.me/e/20/gkpj)

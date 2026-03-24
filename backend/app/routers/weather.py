@@ -5,6 +5,8 @@
 81 il için saatlik ve günlük hava durumu verilerine erişim.
 """
 
+import unicodedata
+
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select, text
 from typing import List, Optional
@@ -14,7 +16,7 @@ from pydantic import BaseModel
 
 from app.db.database import SystemSessionLocal
 from app.db.models import HourlyWeatherData, WeatherData
-from app.core.constants import TURKEY_CITIES, CITY_TO_REGION
+from app.core.constants import TURKEY_CITIES, CITY_TO_REGION, PROVINCE_GEO_TO_CODE, _PROVINCE_DB_CODES
 from app.services.redis_cache import cache_get, cache_set
 
 router = APIRouter(
@@ -22,6 +24,15 @@ router = APIRouter(
     tags=["weather"],
     responses={404: {"description": "Not found"}},
 )
+
+
+def _ascii_normalize(name: str) -> str:
+    """
+    Türkçe ve ASCII karakter farklarını giderir: 'İstanbul' → 'istanbul',
+    'Gümüşhane' → 'gumushane'.  GeoJSON NAME_1 → DB city_name karşılaştırması
+    için kullanılır (Python lower() ile PostgreSQL lower() arasındaki U+0130 farkını çözer).
+    """
+    return unicodedata.normalize("NFKD", name.strip()).encode("ascii", "ignore").decode("ascii").lower()
 
 
 # --- SCHEMA'LAR ---
@@ -81,6 +92,7 @@ class DistrictSummary(BaseModel):
     avg_radiation: Optional[float] = None
     avg_temperature: Optional[float] = None
     record_count: int
+    location_code: Optional[str] = None  # ör. "ist14" = İstanbul/Kadıköy
 
 
 class RegionSummary(BaseModel):
@@ -117,11 +129,12 @@ def get_city_hourly_data(
             .filter(HourlyWeatherData.city_name == city_name)\
             .filter(HourlyWeatherData.timestamp >= cutoff)\
             .order_by(HourlyWeatherData.timestamp.desc())\
+            .limit(hours)\
             .all()
-        
+
         if not data:
             raise HTTPException(status_code=404, detail=f"{city_name} için veri bulunamadı")
-        
+
         return data
     finally:
         db.close()
@@ -161,49 +174,42 @@ def get_all_cities_summary(
     """Tüm şehirler ve ilçeler için özet bilgi getir (varsayılan son 7 gün)."""
     db = SystemSessionLocal()
     try:
-        # İstenen saat aralığı için özet hesapla
         cutoff = datetime.now() - timedelta(hours=hours)
-        
-        summaries = []
-        for location in TURKEY_CITIES:
-            city_name = location["name"]
-            district_name = location.get("district")
-            
-            # İstatistikler (city_name + district_name kombinasyonu ile)
-            query = db.query(
-                func.count(HourlyWeatherData.id).label('record_count'),
-                func.max(HourlyWeatherData.timestamp).label('last_update'),
-                func.avg(HourlyWeatherData.wind_speed_10m).label('avg_wind_10'),
-                func.avg(HourlyWeatherData.wind_speed_100m).label('avg_wind_100'),
-                func.avg(HourlyWeatherData.temperature_2m).label('avg_temp'),
-                func.sum(HourlyWeatherData.shortwave_radiation).label('total_rad')
-            ).filter(
-                HourlyWeatherData.city_name == city_name,
-                HourlyWeatherData.timestamp >= cutoff
+
+        # Tek GROUP BY sorgusu — 81 ayrı sorgu yerine
+        rows = db.query(
+            HourlyWeatherData.city_name,
+            HourlyWeatherData.district_name,
+            func.avg(HourlyWeatherData.latitude).label('lat'),
+            func.avg(HourlyWeatherData.longitude).label('lon'),
+            func.max(HourlyWeatherData.timestamp).label('last_update'),
+            func.count(HourlyWeatherData.id).label('record_count'),
+            func.avg(HourlyWeatherData.wind_speed_10m).label('avg_wind_10'),
+            func.avg(HourlyWeatherData.wind_speed_100m).label('avg_wind_100'),
+            func.avg(HourlyWeatherData.temperature_2m).label('avg_temp'),
+            func.sum(HourlyWeatherData.shortwave_radiation).label('total_rad'),
+        ).filter(
+            HourlyWeatherData.timestamp >= cutoff,
+        ).group_by(
+            HourlyWeatherData.city_name,
+            HourlyWeatherData.district_name,
+        ).all()
+
+        return [
+            CitySummary(
+                city_name=r.city_name,
+                district_name=r.district_name,
+                lat=round(r.lat, 4) if r.lat else 0.0,
+                lon=round(r.lon, 4) if r.lon else 0.0,
+                last_update=r.last_update,
+                record_count=int(r.record_count),
+                avg_wind_speed_10m=round(r.avg_wind_10 / 3.6, 2) if r.avg_wind_10 else None,
+                avg_wind_speed_100m=round(r.avg_wind_100 / 3.6, 2) if r.avg_wind_100 else None,
+                avg_temperature=round(r.avg_temp, 2) if r.avg_temp else None,
+                total_radiation=round(r.total_rad, 2) if r.total_rad else None,
             )
-            
-            # District filtresi ekle
-            if district_name is not None:
-                query = query.filter(HourlyWeatherData.district_name == district_name)
-            else:
-                query = query.filter(HourlyWeatherData.district_name.is_(None))
-            
-            stats = query.first()
-            
-            summaries.append(CitySummary(
-                city_name=city_name,
-                district_name=district_name,
-                lat=location["lat"],
-                lon=location["lon"],
-                last_update=stats.last_update if stats else None,
-                record_count=int(stats.record_count) if stats else 0,
-                avg_wind_speed_10m=round(stats.avg_wind_10, 2) if stats and stats.avg_wind_10 else None,
-                avg_wind_speed_100m=round(stats.avg_wind_100, 2) if stats and stats.avg_wind_100 else None,
-                avg_temperature=round(stats.avg_temp, 2) if stats and stats.avg_temp else None,
-                total_radiation=round(stats.total_rad, 2) if stats and stats.total_rad else None
-            ))
-        
-        return summaries
+            for r in rows
+        ]
     finally:
         db.close()
 
@@ -239,8 +245,9 @@ def get_best_wind_cities(
                 "city": r.city_name,
                 "lat": r.latitude,
                 "lon": r.longitude,
-                "avg_wind_speed_100m": round(r.avg_wind, 2) if r.avg_wind else None,
-                "max_wind_speed_100m": round(r.max_wind, 2) if r.max_wind else None
+                # Open-Meteo km/h → m/s (÷ 3.6)
+                "avg_wind_speed_100m": round(r.avg_wind / 3.6, 2) if r.avg_wind else None,
+                "max_wind_speed_100m": round(r.max_wind / 3.6, 2) if r.max_wind else None,
             }
             for r in results
         ]
@@ -295,57 +302,50 @@ def get_weather_at_time(
     """Belirli bir zaman için tüm şehirlerin hava durumu verisi"""
     db = SystemSessionLocal()
     try:
-        # Timestamp'ı parse et
-        # Timestamp'ı parse et
         target_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-        
-        # Eğer naive (timezone yoksa) ise TRT (UTC+3) kabul et ve UTC'ye çevir
+
         if target_time.tzinfo is None:
-             target_time = target_time - timedelta(hours=3)
+            target_time = target_time - timedelta(hours=3)
         else:
-             # Already aware, convert to UTC
-             target_time = target_time.astimezone(timezone.utc).replace(tzinfo=None)
-        
-        # +/- 30 dakika tolerans ile en yakın veriyi bul
+            target_time = target_time.astimezone(timezone.utc).replace(tzinfo=None)
+
         tolerance = timedelta(minutes=30)
-        
-        results = []
-        for city in TURKEY_CITIES:
-            city_name = city["name"]
-            district_name = city.get("district")
-            
-            # En yakın zaman damgasına sahip kaydı bul
-            query = db.query(HourlyWeatherData)\
-                .filter(HourlyWeatherData.city_name == city_name)
-            
-            # District filtresi
-            if district_name is not None:
-                query = query.filter(HourlyWeatherData.district_name == district_name)
-            else:
-                query = query.filter(HourlyWeatherData.district_name.is_(None))
-            
-            data = query\
-                .filter(HourlyWeatherData.timestamp >= target_time - tolerance)\
-                .filter(HourlyWeatherData.timestamp <= target_time + tolerance)\
-                .order_by(func.abs(
-                    func.extract('epoch', HourlyWeatherData.timestamp - target_time)
-                ))\
-                .first()
-            
-            if data:
-                results.append({
-                    "city_name": city_name,
-                    "lat": city["lat"],
-                    "lon": city["lon"],
-                    "temperature_2m": data.temperature_2m,
-                    "wind_speed_100m": data.wind_speed_100m,
-                    "wind_speed_10m": data.wind_speed_10m,
-                    "wind_direction_10m": data.wind_direction_10m,
-                    "shortwave_radiation": data.shortwave_radiation,
-                    "timestamp": data.timestamp.isoformat()
-                })
-        
-        return results
+        t_min = target_time - tolerance
+        t_max = target_time + tolerance
+
+        # Adım 1: En yakın tek timestamp'ı bul (il merkezleri arasından)
+        closest_row = db.query(HourlyWeatherData.timestamp).filter(
+            HourlyWeatherData.timestamp.between(t_min, t_max),
+            HourlyWeatherData.district_name.is_(None),
+        ).order_by(
+            func.abs(func.extract('epoch', HourlyWeatherData.timestamp - target_time))
+        ).first()
+
+        if not closest_row:
+            return []
+
+        closest_ts = closest_row[0]
+
+        # Adım 2: O timestamp için tüm il merkezlerini tek sorguda al
+        rows = db.query(HourlyWeatherData).filter(
+            HourlyWeatherData.timestamp == closest_ts,
+            HourlyWeatherData.district_name.is_(None),
+        ).all()
+
+        return [
+            {
+                "city_name": r.city_name,
+                "lat": r.latitude,
+                "lon": r.longitude,
+                "temperature_2m": r.temperature_2m,
+                "wind_speed_100m": r.wind_speed_100m,
+                "wind_speed_10m": r.wind_speed_10m,
+                "wind_direction_10m": r.wind_direction_10m,
+                "shortwave_radiation": r.shortwave_radiation,
+                "timestamp": r.timestamp.isoformat(),
+            }
+            for r in rows
+        ]
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Geçersiz timestamp formatı: {str(e)}")
     finally:
@@ -388,7 +388,7 @@ def get_province_summary(
         result = [
             ProvinceSummary(
                 province_name=r.city_name,
-                avg_wind_speed=round(r.avg_wind, 2) if r.avg_wind else None,
+                avg_wind_speed=round(r.avg_wind / 3.6, 2) if r.avg_wind else None,  # km/h → m/s
                 avg_radiation=round(r.avg_radiation, 1) if r.avg_radiation else None,
                 avg_temperature=round(r.avg_temp, 2) if r.avg_temp else None,
                 record_count=int(r.record_count),
@@ -404,7 +404,8 @@ def get_province_summary(
 
 @router.get("/district-summary", response_model=List[DistrictSummary])
 def get_district_summary(
-    province: str = Query(..., description="İl adı (ör: İstanbul)"),
+    province: Optional[str] = Query(None, description="İl adı (ör: İstanbul)"),
+    province_code: Optional[str] = Query(None, description="İl plaka kodu (ör: 34 = İstanbul, 55 = Samsun)"),
     hours: int = Query(
         default=168,
         ge=1,
@@ -414,10 +415,34 @@ def get_district_summary(
 ):
     """
     Belirli bir ile ait ilçe bazlı hava durumu özeti.
-    district_name IS NOT NULL olan kayıtlardan city_name+district_name gruplama yapar.
+    province_code (ör: "34") verilirse location_code prefix ile sorgu yapar (önerilen).
+    province (il adı) verilirse PROVINCE_GEO_TO_CODE üzerinden plaka koduna çevrilir.
     """
-    # ── Cache kontrolü (TTL: 15 dakika, il bazlı key) ────────────────────────
-    cache_key = f"weather:district-summary:{province.strip().lower()}:{hours}"
+    # ── Konum kodu çözünürlüğü ────────────────────────────────────────────────
+    # 1) province_code doğrudan verilmişse kullan
+    # 2) province (GeoJSON Türkçe adı) verilmişse PROVINCE_GEO_TO_CODE üzerinden çevir
+    # 3) Hiçbiri yoksa hata
+    resolved_code: Optional[str] = None
+    if province_code:
+        # Plaka kodu gelebilir ("34") veya eski 3-harfli kod (geriye uyumluluk)
+        resolved_code = province_code.strip()
+    elif province:
+        geo_code = PROVINCE_GEO_TO_CODE.get(province.strip())
+        if geo_code:
+            resolved_code = geo_code
+        else:
+            # Fallback: DB adına göre bak ve plaka numarasını string'e çevir
+            for db_name, plate in _PROVINCE_DB_CODES.items():
+                if db_name.lower() == province.strip().lower():
+                    resolved_code = f"{plate:02d}"
+                    break
+
+    if not resolved_code:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="province veya province_code gerekli")
+
+    # ── Cache kontrolü (TTL: 15 dakika) ──────────────────────────────────────
+    cache_key = f"weather:district-summary:{resolved_code}:{hours}"
     cached = cache_get(cache_key)
     if cached is not None:
         return [DistrictSummary(**item) for item in cached]
@@ -425,11 +450,14 @@ def get_district_summary(
     db = SystemSessionLocal()
     try:
         cutoff = datetime.now() - timedelta(hours=hours)
-        province_lower = province.strip().lower()
 
+        # Hem gerçek ilçeler (district_name IS NOT NULL) hem de il merkezi
+        # (location_code = "{code}0", district_name IS NULL) dahil edilir.
+        # Merkez kayıt "Merkez" district_name ile döndürülür.
         results = db.query(
             HourlyWeatherData.city_name,
             HourlyWeatherData.district_name,
+            HourlyWeatherData.location_code,
             func.avg(HourlyWeatherData.latitude).label("lat"),
             func.avg(HourlyWeatherData.longitude).label("lon"),
             func.avg(HourlyWeatherData.wind_speed_100m).label("avg_wind"),
@@ -438,26 +466,27 @@ def get_district_summary(
             func.count(HourlyWeatherData.id).label("record_count"),
         ).filter(
             HourlyWeatherData.timestamp >= cutoff,
-            HourlyWeatherData.district_name.isnot(None),
-            func.lower(HourlyWeatherData.city_name) == province_lower,
+            HourlyWeatherData.location_code.like(f"{resolved_code}%"),
         ).group_by(
             HourlyWeatherData.city_name,
             HourlyWeatherData.district_name,
+            HourlyWeatherData.location_code,
         ).all()
 
         result = [
             DistrictSummary(
-                district_name=r.district_name,
+                # district_name = NULL ise bu il merkezidir → "Merkez" olarak göster
+                district_name=r.district_name if r.district_name else "Merkez",
                 province_name=r.city_name,
                 lat=round(float(r.lat), 4) if r.lat else None,
                 lon=round(float(r.lon), 4) if r.lon else None,
-                avg_wind_speed=round(r.avg_wind, 2) if r.avg_wind else None,
+                avg_wind_speed=round(r.avg_wind / 3.6, 2) if r.avg_wind else None,
                 avg_radiation=round(r.avg_radiation, 1) if r.avg_radiation else None,
                 avg_temperature=round(r.avg_temp, 2) if r.avg_temp else None,
                 record_count=int(r.record_count),
+                location_code=r.location_code,
             )
             for r in results
-            if r.district_name
         ]
         cache_set(cache_key, [r.model_dump() for r in result], ttl_seconds=900)
         return result
@@ -512,7 +541,7 @@ def get_region_summary(
             b = region_buckets[region]
             b["provinces"].add(r.city_name)
             if r.avg_wind is not None:
-                b["winds"].append(float(r.avg_wind))
+                b["winds"].append(float(r.avg_wind) / 3.6)  # km/h → m/s
             if r.avg_radiation is not None:
                 b["rads"].append(float(r.avg_radiation))
             if r.avg_temp is not None:
@@ -792,7 +821,9 @@ def get_monthly_trend(
     if metric not in ("solar", "wind", "temperature"):
         raise HTTPException(status_code=400, detail="metric must be solar|wind|temperature")
 
-    cache_key = f"weather:monthly-trend:{city.strip().lower()}:{metric}:{year}:{month}"
+    # ASCII normalize: "İstanbul" → "istanbul" (U+0130 vs ASCII I farkını giderir)
+    city_ascii = _ascii_normalize(city)
+    cache_key = f"weather:monthly-trend:{city_ascii}:{metric}:{year}:{month}"
     cached = cache_get(cache_key)
     if cached is not None:
         return [TrendPoint(**p) for p in cached]
@@ -810,7 +841,10 @@ def get_monthly_trend(
 
     db = SystemSessionLocal()
     try:
-        city_lower = city.strip().lower()
+        # DB city_name canonical Türkçe ("İzmir", "Çorum" vb.).
+        # func.lower() PostgreSQL'de Türkçe İ→i̇ yapar (ASCII 'i' değil),
+        # bu yüzden ascii_normalize ile eşleşmez → ILIKE kullan.
+        city_filter = HourlyWeatherData.city_name.ilike(city.strip())
 
         if month is None:
             # Aylık özet — 12 veri noktası
@@ -818,7 +852,7 @@ def get_monthly_trend(
                 func.extract("month", HourlyWeatherData.timestamp).label("m"),
                 func.avg(metric_col).label("val"),
             ).filter(
-                func.lower(HourlyWeatherData.city_name) == city_lower,
+                city_filter,
                 func.extract("year", HourlyWeatherData.timestamp) == year,
                 HourlyWeatherData.district_name.is_(None),
                 metric_col.isnot(None),
@@ -834,6 +868,8 @@ def get_monthly_trend(
                 val = float(r.val)
                 if metric == "solar":
                     val = round(val / 1000 * 24, 2)   # W/m² → kWh/m²/gün
+                elif metric == "wind":
+                    val = round(val / 3.6, 2)          # km/h → m/s
                 else:
                     val = round(val, 2)
                 result.append(TrendPoint(label=TR_MONTHS[m_idx], value=val))
@@ -844,7 +880,7 @@ def get_monthly_trend(
                 func.extract("day", HourlyWeatherData.timestamp).label("d"),
                 func.avg(metric_col).label("val"),
             ).filter(
-                func.lower(HourlyWeatherData.city_name) == city_lower,
+                city_filter,
                 func.extract("year", HourlyWeatherData.timestamp) == year,
                 func.extract("month", HourlyWeatherData.timestamp) == month,
                 HourlyWeatherData.district_name.is_(None),
@@ -860,6 +896,8 @@ def get_monthly_trend(
                 val = float(r.val)
                 if metric == "solar":
                     val = round(val / 1000 * 24, 2)
+                elif metric == "wind":
+                    val = round(val / 3.6, 2)   # km/h → m/s
                 else:
                     val = round(val, 2)
                 result.append(TrendPoint(label=str(int(r.d)), value=val))
@@ -915,7 +953,7 @@ def get_province_summary_range(
         result = [
             ProvinceSummary(
                 province_name=r.city_name,
-                avg_wind_speed=round(r.avg_wind, 2) if r.avg_wind else None,
+                avg_wind_speed=round(r.avg_wind / 3.6, 2) if r.avg_wind else None,  # km/h → m/s
                 avg_radiation=round(r.avg_radiation, 1) if r.avg_radiation else None,
                 avg_temperature=round(r.avg_temp, 2) if r.avg_temp else None,
                 record_count=int(r.record_count),
@@ -925,5 +963,55 @@ def get_province_summary_range(
         ]
         cache_set(cache_key, [r.model_dump() for r in result], ttl_seconds=1800)
         return result
+    finally:
+        db.close()
+
+
+# ─── Collector Sağlık Durumu ──────────────────────────────────────────────────
+
+class CollectorStatus(BaseModel):
+    healthy: bool
+    last_collected: Optional[datetime] = None
+    minutes_ago: Optional[int] = None
+    records_48h: int
+
+
+@router.get("/collector-status", response_model=CollectorStatus)
+def get_collector_status():
+    """
+    Arka plan veri toplayıcısının son çalışma zamanını döndürür.
+    - healthy: True = son 2 saat içinde veri geldi
+    - minutes_ago: son kaydın kaç dakika önce eklendiği
+    - records_48h: son 48 saatteki kayıt sayısı
+    """
+    db = SystemSessionLocal()
+    try:
+        row = db.execute(text("""
+            SELECT
+                MAX(timestamp)  AS last_ts,
+                COUNT(*)        AS cnt
+            FROM hourly_weather_data
+            WHERE timestamp >= NOW() - INTERVAL '48 hours'
+        """)).fetchone()
+
+        if row is None or row.last_ts is None:
+            return CollectorStatus(healthy=False, records_48h=0)
+
+        last_ts: datetime = row.last_ts
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        minutes_ago = int((now - last_ts).total_seconds() / 60)
+
+        return CollectorStatus(
+            healthy=minutes_ago < 120,
+            last_collected=last_ts,
+            minutes_ago=minutes_ago,
+            records_48h=int(row.cnt),
+        )
+    except Exception as e:
+        logger.warning("collector-status sorgusu başarısız: {}", e)
+        return CollectorStatus(healthy=False, records_48h=0)
     finally:
         db.close()

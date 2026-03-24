@@ -3,8 +3,42 @@ import 'package:http/http.dart' as http;
 import 'package:frontend/data/models/weather_model.dart';
 import 'package:frontend/core/network/api_client.dart';
 
+// ── In-memory TTL cache ────────────────────────────────────────────────────
+class _CacheEntry {
+  final http.Response response;
+  final DateTime expiry;
+  _CacheEntry(this.response, this.expiry);
+  bool get isValid => DateTime.now().isBefore(expiry);
+}
+
 class WeatherService extends BaseService {
   WeatherService(super.storageService);
+
+  final Map<String, _CacheEntry> _cache = {};
+
+  static const _kSummaryTtl  = Duration(minutes: 5);   // Saatlik güncellenen veriler
+  static const _kTrendTtl    = Duration(minutes: 30);  // Tarihsel / az değişen
+  static const _kStaticTtl   = Duration(hours: 1);     // Yıllar listesi vb.
+
+  Future<http.Response> _cachedGet(Uri uri, {Duration ttl = _kSummaryTtl}) async {
+    final key = uri.toString();
+    final entry = _cache[key];
+    if (entry != null && entry.isValid) return entry.response;
+    final response = await http.get(uri);
+    if (response.statusCode == 200) {
+      _cache[key] = _CacheEntry(response, DateTime.now().add(ttl));
+    }
+    return response;
+  }
+
+  /// Belirli bir URL prefix'ine ait tüm cache girdilerini temizler.
+  void invalidateCache([String? prefix]) {
+    if (prefix == null) {
+      _cache.clear();
+    } else {
+      _cache.removeWhere((k, _) => k.contains(prefix));
+    }
+  }
 
   Future<List<CityWeatherSummary>> fetchWeatherSummary({
     int hours = 168,
@@ -12,7 +46,7 @@ class WeatherService extends BaseService {
     final uri = Uri.parse(
       '$baseUrl/weather/summary',
     ).replace(queryParameters: {'hours': '$hours'});
-    final response = await http.get(uri);
+    final response = await _cachedGet(uri);
     
     final data = processResponse(response);
     if (data is List) {
@@ -84,7 +118,7 @@ class WeatherService extends BaseService {
     final uri = Uri.parse(
       '$baseUrl/weather/province-summary',
     ).replace(queryParameters: {'hours': '$hours'});
-    final response = await http.get(uri);
+    final response = await _cachedGet(uri);
     final data = processResponse(response);
     if (data is List) {
       return data.map((e) => ProvinceSummary.fromJson(e)).toList();
@@ -93,13 +127,20 @@ class WeatherService extends BaseService {
   }
 
   Future<List<DistrictSummary>> fetchDistrictSummary({
-    required String province,
+    String? province,
+    String? provinceCode,
     int hours = 168,
   }) async {
+    final params = <String, String>{'hours': '$hours'};
+    if (provinceCode != null) {
+      params['province_code'] = provinceCode;
+    } else if (province != null) {
+      params['province'] = province;
+    }
     final uri = Uri.parse(
       '$baseUrl/weather/district-summary',
-    ).replace(queryParameters: {'province': province, 'hours': '$hours'});
-    final response = await http.get(uri);
+    ).replace(queryParameters: params);
+    final response = await _cachedGet(uri);
     final data = processResponse(response);
     if (data is List) {
       return data.map((e) => DistrictSummary.fromJson(e)).toList();
@@ -111,7 +152,7 @@ class WeatherService extends BaseService {
     final uri = Uri.parse(
       '$baseUrl/weather/region-summary',
     ).replace(queryParameters: {'hours': '$hours'});
-    final response = await http.get(uri);
+    final response = await _cachedGet(uri);
     final data = processResponse(response);
     if (data is List) {
       return data.map((e) => RegionSummary.fromJson(e)).toList();
@@ -120,14 +161,14 @@ class WeatherService extends BaseService {
   }
 
   Future<List<Map<String, dynamic>>> fetchBestSolarCities({
-    int limit = 400,
+    int limit = 1000,
   }) async {
     debugPrint('[WeatherService.fetchBestSolarCities] Çağrıldı: limit=$limit');
     final uri = Uri.parse(
       '$baseUrl/weather/best-solar',
     ).replace(queryParameters: {'limit': '$limit'});
 
-    final response = await http.get(uri);
+    final response = await _cachedGet(uri);
     
     final data = processResponse(response);
      if (data is List) {
@@ -144,8 +185,9 @@ class WeatherService extends BaseService {
   /// Animasyon için kullanılabilir veri tarih aralığını döndürür.
   /// { daily_min, daily_max, hourly_min, hourly_max }
   Future<Map<String, dynamic>> fetchAnimationRange() async {
-    final response = await http.get(
+    final response = await _cachedGet(
       Uri.parse('$baseUrl/weather/animation/range'),
+      ttl: _kTrendTtl,
     );
     final data = processResponse(response);
     if (data is Map<String, dynamic>) return data;
@@ -181,8 +223,10 @@ class WeatherService extends BaseService {
 
   /// DB'de kayıtlı yıllar listesi (zaman aralığı seçici için).
   Future<List<int>> fetchAvailableYears() async {
-    final response =
-        await http.get(Uri.parse('$baseUrl/weather/available-years'));
+    final response = await _cachedGet(
+      Uri.parse('$baseUrl/weather/available-years'),
+      ttl: _kStaticTtl,
+    );
     final data = processResponse(response);
     if (data is List) return data.cast<int>();
     return [];
@@ -208,7 +252,7 @@ class WeatherService extends BaseService {
     final uri = Uri.parse(
       '$baseUrl/weather/monthly-trend',
     ).replace(queryParameters: params);
-    final response = await http.get(uri);
+    final response = await _cachedGet(uri, ttl: _kTrendTtl);
     final data = processResponse(response);
     if (data is List) {
       return data.map((e) => TrendPoint.fromJson(e)).toList();
@@ -229,7 +273,7 @@ class WeatherService extends BaseService {
     final uri = Uri.parse(
       '$baseUrl/weather/province-summary-range',
     ).replace(queryParameters: {'start': fmtDate(start), 'end': fmtDate(end)});
-    final response = await http.get(uri);
+    final response = await _cachedGet(uri, ttl: _kTrendTtl);
     final data = processResponse(response);
     if (data is List) {
       return data.map((e) => ProvinceSummary.fromJson(e)).toList();
@@ -259,12 +303,23 @@ class WeatherService extends BaseService {
         lastUpdate: weather.lastUpdate,
         recordCount: weather.recordCount,
         avgShortwaveRadiation: avgRadiationWm2,
-        avgDirectRadiation: null, 
+        avgDirectRadiation: null,
         avgDiffuseRadiation: null,
         totalDailyIrradianceKwhM2: dailyKwhM2,
         avgCloudCover: null,
         avgTemperature: weather.avgTemperature,
       );
     }).toList();
+  }
+
+  /// Arka plan veri toplayıcısının sağlık durumunu döndürür.
+  /// {healthy, minutesAgo, records48h}
+  Future<Map<String, dynamic>> fetchCollectorStatus() async {
+    final uri = Uri.parse('$baseUrl/weather/collector-status');
+    final response = await http.get(uri).timeout(const Duration(seconds: 8));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(processResponse(response));
+    }
+    return {'healthy': false, 'minutes_ago': null, 'records_48h': 0};
   }
 }

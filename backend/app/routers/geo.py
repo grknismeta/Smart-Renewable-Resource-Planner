@@ -27,7 +27,7 @@ def get_city_for_coords(lat: float, lon: float):
     Örnek: GET /geo/city?lat=39.92&lon=32.85
     """
     if analyzer is None:
-        return {"province": "Bilinmiyor", "district": "Bilinmiyor"}
+        return {"province": "", "district": ""}
     try:
         from shapely.geometry import Point
         point = Point(lon, lat)
@@ -35,7 +35,7 @@ def get_city_for_coords(lat: float, lon: float):
         return info
     except Exception as e:
         logger.debug("Reverse geocoding hatası ({}, {}): {}", lat, lon, e)
-        return {"province": "Bilinmiyor", "district": "Bilinmiyor"}
+        return {"province": "", "district": ""}
 
 
 @router.post("/check-suitability")

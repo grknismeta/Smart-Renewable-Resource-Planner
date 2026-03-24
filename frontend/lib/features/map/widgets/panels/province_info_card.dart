@@ -315,7 +315,7 @@ class ProvinceInfoCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                 child: Text(
-                  provinceName.isNotEmpty ? 'İl: $provinceName' : '',
+                  'Hava durumu verisi yükleniyor...',
                   style: TextStyle(
                     color: theme.secondaryTextColor,
                     fontSize: 11,

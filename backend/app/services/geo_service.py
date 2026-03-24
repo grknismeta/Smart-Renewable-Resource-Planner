@@ -297,7 +297,7 @@ class GeoService:
         }
 
     def _get_location_info(self, point, lat, lon):
-        info = {"province": "Bilinmiyor", "district": "Bilinmiyor"}
+        info = {"province": "", "district": ""}
         if self.provinces_gdf is not None:
             # Spatial index (cx) ile hızlı arama
             try:

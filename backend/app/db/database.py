@@ -13,7 +13,16 @@ DATABASE_URL = os.getenv(
 )
 
 # pool_pre_ping: bağlantı düşmüşse otomatik yenile
-_engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+# pool_size: aynı anda açık tutulacak bağlantı sayısı
+# max_overflow: anlık yük artışlarında pool_size üstüne açılabilecek ek bağlantı
+# pool_recycle: 1 saat sonra bağlantıyı yenile (PostgreSQL idle timeout'larına karşı)
+_engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=20,
+    max_overflow=10,
+    pool_recycle=3600,
+)
 _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
 # ─── Logical Base'ler — kod organizasyonu için korundu, hepsi aynı engine ──

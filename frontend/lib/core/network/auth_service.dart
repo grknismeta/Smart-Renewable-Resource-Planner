@@ -34,4 +34,21 @@ class AuthService extends BaseService {
       throw Exception(detail);
     }
   }
+
+  /// Token'ın hâlâ geçerli olup olmadığını /users/me endpoint'i ile doğrular.
+  /// 200 → true, diğer tüm durumlar (401, network hatası vb.) → false.
+  Future<bool> validateToken(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/users/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
 }

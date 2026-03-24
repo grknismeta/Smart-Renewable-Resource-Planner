@@ -10,12 +10,16 @@ mixin MapLayerMixin on BaseViewModel {
   // Abstract dependency
   ApiService get apiService;
 
-  /// notifyListeners() çağrısını mevcut frame sonrasına erteler.
-  /// Pointer event (tap/hover) işlenirken çağrılan state değişikliklerinde
-  /// widget tree mutasyonunu önler — mouse_tracker re-entrant assertion fix.
+  /// Aynı frame içindeki tüm safeNotify() çağrılarını tek bir notifyListeners()'a
+  /// indirger. Pointer event (tap/hover) sırasında widget tree mutasyonunu önler
+  /// (mouse_tracker re-entrant assertion fix).
+  bool _notifyScheduled = false;
+
   void safeNotify() {
+    if (_notifyScheduled) return;
+    _notifyScheduled = true;
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      // ChangeNotifier dispose edildiyse çağırma
+      _notifyScheduled = false;
       try {
         notifyListeners();
       } catch (_) {}

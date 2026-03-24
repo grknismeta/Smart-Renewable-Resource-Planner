@@ -65,9 +65,14 @@ def process_response(response, city: dict) -> List[HourlyWeatherData]:
         if ts.tzinfo is not None:
             ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
 
+        # İlçe kayıtları için city_name = province adı kullan
+        # → district-summary sorgusu city_name == province ile çalışır
+        _district = city.get("district")
+        _city_name = city.get("province", city["name"]) if _district else city["name"]
         record = HourlyWeatherData(
-            city_name=city["name"],
-            district_name=city.get("district"),
+            city_name=_city_name,
+            district_name=_district,
+            location_code=city.get("code"),
             latitude=city["lat"],
             longitude=city["lon"],
             timestamp=ts,

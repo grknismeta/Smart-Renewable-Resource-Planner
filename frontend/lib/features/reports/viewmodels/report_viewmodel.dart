@@ -72,6 +72,27 @@ class ReportViewModel extends BaseViewModel {
     notifyListeners();
   }
 
+  /// İl adına göre provinceSummaries listesinde arar ve otomatik seçer.
+  /// Haritadan initialProvince ile açıldığında çağrılır.
+  void selectProvinceByName(String name) {
+    if (name.isEmpty || _provinceSummaries.isEmpty) return;
+    final norm = _asciiLower(name);
+    final idx = _provinceSummaries.indexWhere(
+      (p) => _asciiLower(p.provinceName) == norm,
+    );
+    if (idx >= 0) setSelectedProvinceIndex(idx);
+  }
+
+  static String _asciiLower(String s) {
+    const tr = 'ıİğĞşŞçÇüÜöÖ';
+    const en = 'iiggssccuuoo';
+    var r = s.toLowerCase();
+    for (var i = 0; i < tr.length; i++) {
+      r = r.replaceAll(tr[i], en[i]);
+    }
+    return r;
+  }
+
   // ── Trend state (Tab 4) ───────────────────────────────────────────────────
   String _trendCity = '';
   String _trendMetric = 'solar'; // solar | wind | temperature

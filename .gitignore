@@ -31,9 +31,21 @@ Thumbs.db
 backend/Data/
 backend/data/
 backend/tamdb/
+
+# Logs
 backend/logs/
+
+# Geçici hata çıktıları
 backend/*_err.txt
+
+# Büyük veri / backup dosyalar
 backend/manifest_cihaz_*.json
 backend/turkey_districts_*backup*.json
+backend/turkey_districts_*BACKUP*.json
 backend/turkey_districts_part*.json
+backend/reference_coords.sql
+
+# Debug
 git_files.txt
+
+backend/*.db          ← database.db, srrp_dev.db, system_data.db, user_data.db

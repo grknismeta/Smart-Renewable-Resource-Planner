@@ -161,6 +161,8 @@ class DistrictSummary {
   final double? avgRadiation;
   final double? avgTemperature;
   final int recordCount;
+  /// Konum kodu (ör. "ist14" = İstanbul/Kadıköy). Eşleştirme için kullanılır.
+  final String? locationCode;
 
   const DistrictSummary({
     required this.districtName,
@@ -171,6 +173,7 @@ class DistrictSummary {
     this.avgRadiation,
     this.avgTemperature,
     required this.recordCount,
+    this.locationCode,
   });
 
   factory DistrictSummary.fromJson(Map<String, dynamic> json) {
@@ -183,6 +186,7 @@ class DistrictSummary {
       avgRadiation: (json['avg_radiation'] as num?)?.toDouble(),
       avgTemperature: (json['avg_temperature'] as num?)?.toDouble(),
       recordCount: (json['record_count'] as num?)?.toInt() ?? 0,
+      locationCode: json['location_code'] as String?,
     );
   }
 }

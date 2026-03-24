@@ -392,7 +392,7 @@ def get_grid_map_data(
     return db.query(models.GridAnalysis).filter(
         models.GridAnalysis.type == type,
         models.GridAnalysis.overall_score > 0.0
-    ).all()
+    ).order_by(models.GridAnalysis.overall_score.desc()).limit(1000).all()
 
 @router.post("/{pin_id}/analyze", response_model=schemas.PinResponse)
 async def analyze_pin(

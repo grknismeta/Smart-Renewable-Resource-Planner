@@ -1,12 +1,11 @@
-import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:frontend/core/constants/map_constants.dart';
 
 class MapUtils {
   MapUtils._();
 
-  /// Constraints the given position to be within Turkey's bounds.
-  /// Returns null if the position is within bounds, or the constrained position if it was out of bounds.
+  /// Türkiye sınırları dışındaki koordinatları sınır içine çeker.
+  /// Sınır içindeyse null döner.
   static LatLng? constrainToTurkey(LatLng center) {
     double lat = center.latitude;
     double lon = center.longitude;
@@ -28,17 +27,7 @@ class MapUtils {
       changed = true;
     }
 
-    if (changed) {
-      return LatLng(lat, lon);
-    }
+    if (changed) return LatLng(lat, lon);
     return null;
-  }
-  
-  /// Helper to move controller if needed
-  static void constrainMapCamera(MapController controller) {
-    final constrained = constrainToTurkey(controller.camera.center);
-    if (constrained != null) {
-      controller.move(constrained, controller.camera.zoom);
-    }
   }
 }

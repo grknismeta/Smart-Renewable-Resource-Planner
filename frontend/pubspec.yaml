@@ -17,13 +17,8 @@ dependencies:
   http: ^1.6.0
 
   # --- Harita ---
-  latlong2: ^0.9.1
-  flutter_map: ^8.2.2
+  latlong2: ^0.9.1  # Pin dialog ve coğrafi hesaplamalar için LatLng tipi
   maplibre: ^0.2.2
-  # flutter_map_cancellable_tile_provider kaldırıldı — flutter_map 7.0+'dan
-  # itibaren CancellableNetworkTileProvider doğrudan flutter_map içinde mevcut.
-  vector_map_tiles: ^9.0.0-beta.8
-  vector_tile_renderer: ^6.0.0
 
   # --- State Management ---
   provider: ^6.1.5+1
@@ -49,7 +44,7 @@ dependencies:
 
   # --- Bağlantı Durumu ---
   connectivity_plus: ^6.1.3
-  flutter_map_animations: ^0.9.0
+
 
 dev_dependencies:
   flutter_test:

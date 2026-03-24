@@ -10,6 +10,8 @@ class MapViewMapLibre extends StatelessWidget {
 
   /// Stub: web dışında desteklenmez.
   static void flyTo(double lat, double lon, {double zoom = 10.0}) {}
+  static void zoomIn() {}
+  static void zoomOut() {}
 
   /// Stub: web dışında no-op.
   static void setupProvinceSelect(bool enable) {}
@@ -17,6 +19,7 @@ class MapViewMapLibre extends StatelessWidget {
   static void setupProvinceMode({String? regionFilter}) {}
   static void setupDistrictMode(String provinceName) {}
   static void clearSelectionMode() {}
+  static void setInteractive(bool enable) {}
 
   @override
   Widget build(BuildContext context) {

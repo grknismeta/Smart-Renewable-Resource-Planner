@@ -10,7 +10,7 @@ class ReportService extends BaseService {
     required String region,
     required String type,
     String interval = 'Yıllık',
-    int limit = 400,
+    int limit = 1000,
     String? province,
   }) async {
     final params = <String, String>{

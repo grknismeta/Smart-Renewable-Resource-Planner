@@ -52,11 +52,6 @@ class Pin(UserBase):
     analysis = relationship("PinAnalysis", back_populates="pin", uselist=False, cascade="all, delete-orphan")
     scenarios = relationship("Scenario", back_populates="pin", cascade="all, delete-orphan", foreign_keys="Scenario.pin_id", passive_deletes=True)
 
-    # --- LEGACY UYUMLULUK (Eski router'ların patlamaması için geçici) ---
-    # Eski kodlar pin.turbine_model_id ararsa hata almamaları için:
-    # turbine_model_id = Column(Integer, nullable=True) 
-    # panel_model_id = Column(Integer, nullable=True)
-
 class PinAnalysis(UserBase):
     __tablename__ = "pin_analyses"
     id = Column(Integer, primary_key=True, index=True)
@@ -175,21 +170,8 @@ class HourlyWeatherData(SystemBase):
     # Yağış
     precipitation = Column(Float)  # mm
 
-
-# --- LEGACY MODELLER (Eski Routers'ı kurtarmak için) ---
-# backend/routers/turbines.py ve solar_panels.py dosyaları hala bunları import ediyor.
-# Projeyi refactor edene kadar bunları silmemeliyiz.
-class SolarPanel(SystemBase):
-    __tablename__ = "legacy_solar_panels" # Tablo adı çakışmasın
-    id = Column(Integer, primary_key=True, index=True)
-    model_name = Column(String)
-    is_default = Column(Boolean, default=False)
-
-class Turbine(SystemBase):
-    __tablename__ = "legacy_turbines"
-    id = Column(Integer, primary_key=True, index=True)
-    model_name = Column(String)
-    is_default = Column(Boolean, default=False)
+    # Konum kodu (ör. "ist0" = İstanbul il, "ist14" = Kadıköy)
+    location_code = Column(String(10), nullable=True, index=True)
 
 # ===============================================
 # C) KULLANICI PIN VERİLERİ (UserPinsBase) - user_pins_data.db

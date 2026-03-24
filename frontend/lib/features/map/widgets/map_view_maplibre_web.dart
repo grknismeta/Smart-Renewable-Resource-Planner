@@ -9,7 +9,8 @@ import 'package:provider/provider.dart';
 import 'package:frontend/core/constants/map_constants.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/features/map/models/map_models.dart';
-import 'package:frontend/features/map/layers/map_layers_system.dart';
+import 'package:frontend/features/map/layers/map_layers_system.dart'
+    show computeLayerPng;
 import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/data/models/weather_model.dart';
 
@@ -48,6 +49,12 @@ external void _jsStopWindParticles();
 
 @JS('window.srrpFlyTo')
 external void _jsFlyTo(double lat, double lon, double zoom);
+
+@JS('window.srrpZoomIn')
+external void _jsZoomIn();
+
+@JS('window.srrpZoomOut')
+external void _jsZoomOut();
 
 @JS('window.srrpSetPinHoverFn')
 external void _jsSetPinHoverFn(JSFunction fn);
@@ -428,6 +435,16 @@ class MapViewMapLibre extends StatefulWidget {
   /// MapLibre haritasını belirtilen konuma uçurur (JS shim üzerinden).
   static void flyTo(double lat, double lon, {double zoom = 10.0}) {
     if (kIsWeb) _jsFlyTo(lat, lon, zoom);
+  }
+
+  /// Haritayı bir adım yakınlaştır.
+  static void zoomIn() {
+    if (kIsWeb) _jsZoomIn();
+  }
+
+  /// Haritayı bir adım uzaklaştır.
+  static void zoomOut() {
+    if (kIsWeb) _jsZoomOut();
   }
 
   /// İl seçim modunu JS katmanları ile aç/kapat (geriye dönük uyumluluk).

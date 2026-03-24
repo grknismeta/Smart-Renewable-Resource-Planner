@@ -190,6 +190,7 @@ def _fetch_city_stats(hours: int) -> List[dict]:
             FROM hourly_weather_data
             WHERE timestamp >= :since
               AND wind_speed_10m IS NOT NULL
+              AND district_name IS NULL
             GROUP BY city_name
             HAVING COUNT(*) >= 6
             ORDER BY avg_wind DESC NULLS LAST
@@ -224,17 +225,19 @@ async def get_recommendations(
     cities: List[RecommendedCity] = []
 
     for row in stats:
-        avg_wind = float(row["avg_wind"] or 0)
-        max_wind = float(row["max_wind"] or 0)
-        std_wind = float(row["std_wind"] or 0)
+        # Open-Meteo varsayılan birimi km/h — m/s'ye çevir (÷ 3.6)
+        # Tüm eşik değerleri (> 7, >= 5 vb.) ve Weibull hesapları m/s bekler.
+        avg_wind = float(row["avg_wind"] or 0) / 3.6
+        max_wind = float(row["max_wind"] or 0) / 3.6
+        std_wind = float(row["std_wind"] or 0) / 3.6   # std sapma doğrusal ölçeklenir
         avg_rad  = float(row["avg_radiation"] or 0)
         total_rad_kwh = float(row["total_radiation_kwh"] or 0)
         count    = int(row["record_count"] or 0)
 
-        # Hız ve yön dizilerini Python listesine çevir
+        # Hız ve yön dizilerini Python listesine çevir (km/h → m/s)
         raw_speeds = row.get("speeds_arr") or []
         raw_dirs   = row.get("dirs_arr") or []
-        speeds = [float(s) for s in raw_speeds if s is not None]
+        speeds = [float(s) / 3.6 for s in raw_speeds if s is not None]
         dirs   = [float(d) for d in raw_dirs   if d is not None]
 
         k = _weibull_k(speeds) if speeds else 1.0
@@ -279,12 +282,12 @@ async def get_recommendations(
     )[:top_n]
 
     wind_stable      = sorted(
-        [c for c in cities if c.weibull_k and c.weibull_k > 2.5 and c.avg_wind_speed and c.avg_wind_speed >= 4],
+        [c for c in cities if c.weibull_k and c.weibull_k > 2.5 and c.avg_wind_speed and c.avg_wind_speed >= 5.0],
         key=lambda c: (c.weibull_k or 0), reverse=True,
     )[:top_n]
 
     wind_circulation = sorted(
-        [c for c in cities if c.wind_std and c.wind_std > 2.5 and c.avg_wind_speed and c.avg_wind_speed >= 4],
+        [c for c in cities if c.wind_std and c.wind_std > 3.0 and c.avg_wind_speed and c.avg_wind_speed >= 5.0],
         key=lambda c: (c.wind_std or 0), reverse=True,
     )[:top_n]
 

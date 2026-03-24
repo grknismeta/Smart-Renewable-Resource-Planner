@@ -15,10 +15,12 @@ class GeoService extends BaseService {
       );
       if (response.statusCode == 200) {
         final data = processResponse(response) as Map<String, dynamic>;
-        return {
-          'province': data['province']?.toString() ?? '',
-          'district': data['district']?.toString() ?? '',
-        };
+        // "Bilinmiyor" eski DB kayıtları için de boş döndür
+        String prov = data['province']?.toString() ?? '';
+        String dist = data['district']?.toString() ?? '';
+        if (prov == 'Bilinmiyor') prov = '';
+        if (dist == 'Bilinmiyor') dist = '';
+        return {'province': prov, 'district': dist};
       }
     } catch (_) {}
     return {};

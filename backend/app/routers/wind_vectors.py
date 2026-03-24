@@ -26,12 +26,19 @@ def get_wind_vectors():
     """
     Son 24 saatteki ortalama rüzgar hızı ve yönünden U/V bileşenlerini hesaplar.
 
-    U = speed × sin(direction)  (doğu-batı bileşeni)
-    V = speed × cos(direction)  (kuzey-güney bileşeni)
+    Open-Meteo rüzgar yönü meteorolojik konvansiyonla verilir:
+    direction = rüzgarın GELDİĞİ yön (0° = kuzeyden, 90° = doğudan, …)
+
+    Parçacık animasyonu için rüzgarın GİTTİĞİ yönü hesaplamalıyız:
+    U =  -speed × sin(direction_rad)  → doğu bileşeni (pozitif = doğuya)
+    V =  -speed × cos(direction_rad)  → kuzey bileşeni (pozitif = kuzeye)
+
+    Örnek: direction=0° (kuzeyden geliyor, güneye gidiyor)
+      U = -sin(0) = 0, V = -cos(0) = -1  → bearing=180° (güney) ✓
     """
     db = SystemSessionLocal()
     try:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)  # 24h yerine 7 gün — veri olmadığında boş dönmesin
 
         rows = (
             db.query(
@@ -54,12 +61,13 @@ def get_wind_vectors():
             if not city_info:
                 continue
 
-            speed = float(row.avg_speed or 0)
+            # Open-Meteo varsayılan birimi km/h — m/s'ye çevir (÷ 3.6)
+            speed_ms = float(row.avg_speed or 0) / 3.6
             direction = float(row.avg_dir or 0)
             dir_rad = radians(direction)
 
-            u = speed * sin(dir_rad)
-            v = speed * cos(dir_rad)
+            u = -speed_ms * sin(dir_rad)
+            v = -speed_ms * cos(dir_rad)
 
             result.append({
                 "city": row.city_name,
@@ -67,7 +75,7 @@ def get_wind_vectors():
                 "lon": city_info["lon"],
                 "u": round(u, 3),
                 "v": round(v, 3),
-                "speed": round(speed, 2),
+                "speed": round(speed_ms, 2),
             })
 
         return result

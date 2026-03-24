@@ -10,8 +10,6 @@ import 'package:frontend/features/reports/widgets/tabs/province_drill_tab.dart';
 import 'package:frontend/features/reports/widgets/tabs/scenario_compare_tab.dart';
 import 'package:frontend/features/reports/widgets/tabs/monthly_trend_tab.dart';
 import 'package:frontend/features/reports/widgets/tabs/export_tab.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:frontend/features/reports/widgets/report_map.dart';
 import 'package:frontend/shared/widgets/app_background.dart';
 
@@ -32,23 +30,21 @@ class ReportScreen extends StatefulWidget {
 class _ReportScreenState extends State<ReportScreen> {
   static const int _kTabCount = 6;
 
-  static const _regions = [
-    'Tümü', 'Marmara', 'Ege', 'Akdeniz',
-    'İç Anadolu', 'Karadeniz', 'Doğu Anadolu', 'Güneydoğu Anadolu',
-  ];
-  static const _types = ['Wind', 'Solar', 'Hydro'];
-
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
+    Future.microtask(() async {
       if (!mounted) return;
       final reportVM =
           Provider.of<ReportViewModel>(context, listen: false);
-      reportVM.init();
+      await reportVM.init();
+      if (!mounted) return;
       if (widget.initialProvince != null) {
         reportVM.fetchReport(province: widget.initialProvince);
+        // Summaries yüklendikten sonra ili otomatik seç
+        reportVM.selectProvinceByName(widget.initialProvince!);
       }
+      if (!mounted) return;
       Provider.of<ScenarioViewModel>(context, listen: false)
           .loadScenarios();
     });
@@ -59,15 +55,14 @@ class _ReportScreenState extends State<ReportScreen> {
     context.watch<ThemeViewModel>();
     return DefaultTabController(
       length: _kTabCount,
+      // Haritadan il seçilerek açıldıysa doğrudan İl Analizi tab'ına git
+      initialIndex: widget.initialProvince != null ? 1 : 0,
       child: Scaffold(
         body: AppBackground(
           child: SafeArea(
             child: Column(
               children: [
-                _AppBar(
-                  regions: _regions,
-                  types: _types,
-                ),
+                const _AppBar(),
                 Expanded(
                   child: TabBarView(
                     children: [
@@ -93,13 +88,7 @@ class _ReportScreenState extends State<ReportScreen> {
 // ── AppBar ────────────────────────────────────────────────────────────────────
 
 class _AppBar extends StatelessWidget {
-  final List<String> regions;
-  final List<String> types;
-
-  const _AppBar({
-    required this.regions,
-    required this.types,
-  });
+  const _AppBar();
 
   @override
   Widget build(BuildContext context) {
@@ -117,8 +106,13 @@ class _AppBar extends StatelessWidget {
                 IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new_rounded,
                       size: 18, color: Colors.white70),
-                  onPressed: () =>
-                      Navigator.of(context).pushReplacementNamed('/map'),
+                  onPressed: () {
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    } else {
+                      Navigator.of(context).pushReplacementNamed('/map');
+                    }
+                  },
                   tooltip: 'Haritaya Dön',
                   constraints:
                       const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -137,29 +131,6 @@ class _AppBar extends StatelessWidget {
                 // Zaman aralığı seçici
                 const _TimeRangeSelector(),
               ],
-            ),
-          ),
-
-          // ── Filtre Chip'leri ──────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _FilterDropdown(
-                    items: regions,
-                    getValue: (vm) => vm.selectedRegion,
-                    onChanged: (vm, v) => vm.fetchReport(region: v),
-                  ),
-                  const SizedBox(width: 8),
-                  _FilterDropdown(
-                    items: types,
-                    getValue: (vm) => vm.selectedType,
-                    onChanged: (vm, v) => vm.fetchReport(type: v),
-                  ),
-                ],
-              ),
             ),
           ),
 
@@ -428,80 +399,18 @@ class _SmallDropdown<T> extends StatelessWidget {
   }
 }
 
-// ── Filter Dropdown ───────────────────────────────────────────────────────────
-
-class _FilterDropdown extends StatelessWidget {
-  final List<String> items;
-  final String Function(ReportViewModel vm) getValue;
-  final void Function(ReportViewModel vm, String v) onChanged;
-
-  const _FilterDropdown({
-    required this.items,
-    required this.getValue,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final vm = context.watch<ReportViewModel>();
-    final current = getValue(vm);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: DropdownButton<String>(
-        value: items.contains(current) ? current : items.first,
-        isDense: true,
-        dropdownColor: const Color(0xFF1C2533),
-        underline: const SizedBox.shrink(),
-        icon: const Icon(Icons.keyboard_arrow_down,
-            color: Colors.white60, size: 15),
-        style: const TextStyle(color: Colors.white, fontSize: 11),
-        items: items
-            .map((e) => DropdownMenuItem<String>(
-                  value: e,
-                  child: Text(e,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 11)),
-                ))
-            .toList(),
-        onChanged: (v) {
-          if (v != null) {
-            onChanged(Provider.of<ReportViewModel>(context, listen: false),
-                v);
-          }
-        },
-      ),
-    );
-  }
-}
-
 // ── Harita Tab Sarmalayıcı ────────────────────────────────────────────────────
 
 /// Tab 5 içinde rapor haritasını gösterir.
-class _MapTabWrapper extends StatefulWidget {
+class _MapTabWrapper extends StatelessWidget {
   const _MapTabWrapper();
-
-  @override
-  State<_MapTabWrapper> createState() => _MapTabWrapperState();
-}
-
-class _MapTabWrapperState extends State<_MapTabWrapper> {
-  final MapController _mapController = MapController();
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<ReportViewModel>();
     return ReportMap(
-      mapController: _mapController,
       type: vm.selectedType,
-      onSiteFocused: (site) {
-        _mapController.move(
-            LatLng(site.latitude, site.longitude), 8.0);
-      },
+      onSiteFocused: (_) {},
     );
   }
 }

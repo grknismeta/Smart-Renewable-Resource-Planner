@@ -1,7 +1,5 @@
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:frontend/core/widgets/glass_container.dart';
@@ -20,12 +18,6 @@ class _AuthScreenState extends State<AuthScreen> {
   final _emailController = TextEditingController(text: "");
   final _passwordController = TextEditingController(text: "");
   final _confirmPasswordController = TextEditingController();
-
-  final LatLng _center = const LatLng(39.0, 35.5);
-  final LatLngBounds _turkeyBounds = LatLngBounds(
-    const LatLng(34.0, 24.0),
-    const LatLng(44.0, 46.0),
-  );
 
   void _submit() async {
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
@@ -112,27 +104,15 @@ class _AuthScreenState extends State<AuthScreen> {
           resizeToAvoidBottomInset: false,
           body: Stack(
             children: [
-              FlutterMap(
-                options: MapOptions(
-                  initialCenter: _center,
-                  initialZoom: 6.0,
-                  interactionOptions: const InteractionOptions(
-                    flags: InteractiveFlag.none,
-                  ),
-                  cameraConstraint: CameraConstraint.contain(
-                    bounds: _turkeyBounds,
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF0D1117), Color(0xFF1A2332), Color(0xFF0D1B2A)],
                   ),
                 ),
-                children: [
-                  TileLayer(
-                    tileProvider: NetworkTileProvider(),
-                    urlTemplate:
-                        'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-                  ),
-                ],
               ),
-
-              Container(color: Colors.black.withValues(alpha: 0.3)),
 
               Center(
                 child: SingleChildScrollView(
