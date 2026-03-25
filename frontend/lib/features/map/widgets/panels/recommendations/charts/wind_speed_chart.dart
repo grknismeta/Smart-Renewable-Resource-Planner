@@ -17,7 +17,20 @@ class WindSpeedChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (hourlyData.isEmpty) return const SizedBox.shrink();
+    if (hourlyData.isEmpty) {
+      return Container(
+        height: 60,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Text(
+          'Rüzgar verisi mevcut değil',
+          style: TextStyle(color: Colors.white38, fontSize: 11),
+        ),
+      );
+    }
 
     final sorted = List<CityWeatherData>.from(hourlyData)
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));

@@ -22,7 +22,20 @@ class EnergyPotentialChart extends StatelessWidget {
     final windPotential = windSpeed * windSpeed * windSpeed * 0.15;
     final solarPotential = city.totalRadiationKwh ?? 0;
 
-    if (windPotential == 0 && solarPotential == 0) return const SizedBox.shrink();
+    if (windPotential == 0 && solarPotential == 0) {
+      return Container(
+        height: 60,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Text(
+          'Enerji potansiyeli verisi mevcut değil',
+          style: TextStyle(color: Colors.white38, fontSize: 11),
+        ),
+      );
+    }
 
     final maxVal = [windPotential, solarPotential].reduce((a, b) => a > b ? a : b);
 

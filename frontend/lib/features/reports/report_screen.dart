@@ -11,6 +11,7 @@ import 'package:frontend/features/reports/widgets/tabs/scenario_compare_tab.dart
 import 'package:frontend/features/reports/widgets/tabs/monthly_trend_tab.dart';
 import 'package:frontend/features/reports/widgets/tabs/export_tab.dart';
 import 'package:frontend/features/reports/widgets/report_map.dart';
+import 'package:frontend/features/reports/widgets/report_map_view.dart';
 import 'package:frontend/shared/widgets/app_background.dart';
 
 /// Raporlar ekranı — Sprint 6 yeniden tasarım
@@ -401,16 +402,34 @@ class _SmallDropdown<T> extends StatelessWidget {
 
 // ── Harita Tab Sarmalayıcı ────────────────────────────────────────────────────
 
-/// Tab 5 içinde rapor haritasını gösterir.
+/// Tab 5 — MapLibre harita (sol) + Bölge listesi (sağ) yan yana.
 class _MapTabWrapper extends StatelessWidget {
   const _MapTabWrapper();
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<ReportViewModel>();
-    return ReportMap(
-      type: vm.selectedType,
-      onSiteFocused: (_) {},
+    final screenWidth = MediaQuery.of(context).size.width;
+    // Dar ekranda sadece harita, geniş ekranda split view
+    if (screenWidth < 800) {
+      return ReportMapView(onSiteFocused: (_) {});
+    }
+    return Row(
+      children: [
+        // Sol: MapLibre harita
+        Expanded(
+          flex: 3,
+          child: ReportMapView(onSiteFocused: (_) {}),
+        ),
+        // Sağ: Bölge listesi
+        SizedBox(
+          width: 320,
+          child: ReportMap(
+            type: vm.selectedType,
+            onSiteFocused: (_) {},
+          ),
+        ),
+      ],
     );
   }
 }

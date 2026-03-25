@@ -139,6 +139,25 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
         ),
         if (_styleExpanded) ...[
           const SizedBox(height: 6),
+          // Tema ile otomatik eşitleme toggle
+          InkWell(
+            onTap: () => vm.setAutoMapStyleSync(!vm.autoMapStyleSync),
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(children: [
+                Icon(Icons.sync_rounded, size: 14,
+                    color: vm.autoMapStyleSync ? Colors.deepPurpleAccent : theme.secondaryTextColor),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Tema ile Eşitle', style: TextStyle(
+                  color: vm.autoMapStyleSync ? theme.textColor : theme.secondaryTextColor, fontSize: 12))),
+                if (vm.autoMapStyleSync)
+                  const Icon(Icons.check_rounded, size: 13, color: Colors.deepPurpleAccent),
+              ]),
+            ),
+          ),
+          Divider(height: 1, color: theme.secondaryTextColor.withValues(alpha: 0.1)),
+          const SizedBox(height: 4),
           ...MlBaseStyle.values.map(_styleOpt),
         ],
 

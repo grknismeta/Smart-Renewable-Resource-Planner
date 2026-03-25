@@ -20,10 +20,10 @@ class PinDetailsDialog extends StatefulWidget {
 
   const PinDetailsDialog({super.key, required this.pin});
 
-  static void show(BuildContext context, Pin pin) {
-    showDialog(
+  static Future<void> show(BuildContext context, Pin pin) {
+    return showDialog(
       context: context,
-      barrierDismissible: true, // Allow clicking outside
+      barrierDismissible: true,
       builder: (_) => PinDetailsDialog(pin: pin),
     );
   }

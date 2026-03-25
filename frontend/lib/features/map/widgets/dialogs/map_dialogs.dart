@@ -36,8 +36,8 @@ class MapDialogs {
   }
 
   /// Pin aksiyonları için dialog gösterir (New Details Dialog)
-  static void showPinActionsDialog(BuildContext context, Pin pin) {
-    PinDetailsDialog.show(context, pin);
+  static Future<void> showPinActionsDialog(BuildContext context, Pin pin) {
+    return PinDetailsDialog.show(context, pin);
   }
 
   /// Yeni pin ekleme dialog'u gösterir

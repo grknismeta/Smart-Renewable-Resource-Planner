@@ -20,6 +20,7 @@ import 'package:frontend/features/reports/report_screen.dart';
 import 'package:frontend/features/scenarios/widgets/scenario_mini_report_panel.dart';
 import 'package:frontend/features/map/widgets/panels/time_slider_panel.dart';
 import 'package:frontend/core/network/api_service.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 
 
 class MapScreen extends StatefulWidget {
@@ -56,6 +57,10 @@ class _MapScreenState extends State<MapScreen> {
     final theme = Provider.of<ThemeViewModel>(context);
     return Consumer2<MapViewModel, ScenarioViewModel>(
       builder: (context, mapViewModel, scenarioVM, child) {
+        // Tema değişiminde harita stilini otomatik senkronize et
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) mapViewModel.syncBaseStyleWithTheme(theme.isDarkMode);
+        });
         return Scaffold(
           body: Stack(
             children: [
@@ -65,8 +70,7 @@ class _MapScreenState extends State<MapScreen> {
                   mapViewModel,
                   LatLng(p.lat.toDouble(), p.lng.toDouble()),
                 ),
-                onPinTap: (Pin pin) =>
-                    MapDialogs.showPinActionsDialog(context, pin),
+                onPinTap: (Pin pin) => _showPinDialog(pin),
               ),
 
               // 2. Overlay'ler (Dashboard, Açıklama, Lejandlar)
@@ -131,9 +135,11 @@ class _MapScreenState extends State<MapScreen> {
                   top: 72,
                   left: 0,
                   right: mapViewModel.isRecommendationsPanelOpen ? 380 : 0,
-                  child: _RegionFilterChips(
-                    mapViewModel: mapViewModel,
-                    theme: theme,
+                  child: PointerInterceptor(
+                    child: _RegionFilterChips(
+                      mapViewModel: mapViewModel,
+                      theme: theme,
+                    ),
                   ),
                 ),
 
@@ -149,9 +155,11 @@ class _MapScreenState extends State<MapScreen> {
                   bottom: MediaQuery.of(context).size.height * 0.22,
                   left: 0,
                   right: mapViewModel.isRecommendationsPanelOpen ? 380 : 0,
-                  child: PlacementIndicator(
-                    placingPinType: mapViewModel.placingPinType,
-                    onCancel: mapViewModel.stopPlacingMarker,
+                  child: PointerInterceptor(
+                    child: PlacementIndicator(
+                      placingPinType: mapViewModel.placingPinType,
+                      onCancel: mapViewModel.stopPlacingMarker,
+                    ),
                   ),
                 ),
 
@@ -162,9 +170,11 @@ class _MapScreenState extends State<MapScreen> {
                       : MediaQuery.of(context).size.height * 0.22,
                   left: 0,
                   right: mapViewModel.isRecommendationsPanelOpen ? 380 : 0,
-                  child: RegionSelectionIndicator(
-                    points: mapViewModel.selectionPoints,
-                    onCancel: mapViewModel.clearRegionSelection,
+                  child: PointerInterceptor(
+                    child: RegionSelectionIndicator(
+                      points: mapViewModel.selectionPoints,
+                      onCancel: mapViewModel.clearRegionSelection,
+                    ),
                   ),
                 ),
 
@@ -176,11 +186,13 @@ class _MapScreenState extends State<MapScreen> {
                 bottom: 0,
                 right: mapViewModel.isRecommendationsPanelOpen ? 0 : -380,
                 width: 380,
-                child: RecommendationsSidePanel(
-                  theme: theme,
-                  mapViewModel: mapViewModel,
-                  onCityNavigate: (lat, lon) =>
-                      MapViewMapLibre.flyTo(lat, lon, zoom: 10.0),
+                child: PointerInterceptor(
+                  child: RecommendationsSidePanel(
+                    theme: theme,
+                    mapViewModel: mapViewModel,
+                    onCityNavigate: (lat, lon) =>
+                        MapViewMapLibre.flyTo(lat, lon, zoom: 10.0),
+                  ),
                 ),
               ),
 
@@ -190,11 +202,13 @@ class _MapScreenState extends State<MapScreen> {
                   bottom: 12,
                   left: 20,
                   right: mapViewModel.isRecommendationsPanelOpen ? 400 : 20,
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: TimeSliderPanel(
-                      theme: theme,
-                      mapViewModel: mapViewModel,
+                  child: PointerInterceptor(
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: TimeSliderPanel(
+                        theme: theme,
+                        mapViewModel: mapViewModel,
+                      ),
                     ),
                   ),
                 ),
@@ -207,7 +221,7 @@ class _MapScreenState extends State<MapScreen> {
                 Positioned(
                   bottom: 100,
                   left: 20,
-                  child: ProvinceInfoCard(
+                  child: PointerInterceptor(child: ProvinceInfoCard(
                     provinceName: mapViewModel.selectedProvinceName ?? '',
                     summary: mapViewModel.selectedProvinceSummary,
                     districtSummary: mapViewModel.selectedDistrictSummary,
@@ -242,7 +256,7 @@ class _MapScreenState extends State<MapScreen> {
                               ),
                             )
                         : null,
-                  ),
+                  )),
                 ),
 
               // 7. Senaryo Paneli (soldan kayar)
@@ -253,10 +267,12 @@ class _MapScreenState extends State<MapScreen> {
                 bottom: 0,
                 left: _showScenariosPanel ? 0 : -330,
                 width: 320,
-                child: ScenarioSidePanel(
-                  theme: theme,
-                  onClose: () =>
-                      setState(() => _showScenariosPanel = false),
+                child: PointerInterceptor(
+                  child: ScenarioSidePanel(
+                    theme: theme,
+                    onClose: () =>
+                        setState(() => _showScenariosPanel = false),
+                  ),
                 ),
               ),
 
@@ -265,17 +281,19 @@ class _MapScreenState extends State<MapScreen> {
                 Positioned(
                   bottom: 180,
                   right: 20,
-                  child: ScenarioMiniReportPanel(
-                    theme: theme,
-                    scenarioVM: scenarioVM,
+                  child: PointerInterceptor(
+                    child: ScenarioMiniReportPanel(
+                      theme: theme,
+                      scenarioVM: scenarioVM,
+                    ),
                   ),
                 ),
 
               // 9. Collector Sağlık Rozeti — sol alt köşe
-              const Positioned(
+              Positioned(
                 bottom: 12,
                 left: 12,
-                child: _CollectorStatusBadge(),
+                child: PointerInterceptor(child: const _CollectorStatusBadge()),
               ),
             ],
           ),
@@ -300,10 +318,24 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// Pin dialog'unu açar — açılmadan önce click guard aktifleştirilir,
+  /// dialog kapanınca devre dışı bırakılır.
+  Future<void> _showPinDialog(Pin pin) async {
+    MapViewMapLibre.setClickGuard(true);
+    try {
+      await MapDialogs.showPinActionsDialog(context, pin);
+    } finally {
+      MapViewMapLibre.setClickGuard(false);
+    }
+  }
+
   Future<void> _checkGeoSuitability(
       MapViewModel viewModel, LatLng point) async {
     if (_isProcessingGeoCheck) return;
     _isProcessingGeoCheck = true;
+
+    // Dialog açılınca click guard aktifleştir
+    MapViewMapLibre.setClickGuard(true);
 
     final theme = Provider.of<ThemeViewModel>(context, listen: false);
 
@@ -351,6 +383,7 @@ class _MapScreenState extends State<MapScreen> {
       );
     } finally {
       _isProcessingGeoCheck = false;
+      MapViewMapLibre.setClickGuard(false);
     }
   }
 }

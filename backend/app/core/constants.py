@@ -27,6 +27,8 @@ TURKEY_CITIES = [
     {"name": "Yumurtalık", "province": "Adana", "district": "Yumurtalık", "lat": 36.7676, "lon": 35.7916},
     {"name": "Yüreğir", "province": "Adana", "district": "Yüreğir", "lat": 36.9895, "lon": 35.3409},
     {"name": "İmamoğlu", "province": "Adana", "district": "İmamoğlu", "lat": 37.2577, "lon": 35.6613},
+    {"name": "Çukurova", "province": "Adana", "district": "Çukurova", "lat": 37.0023, "lon": 35.3451},
+    {"name": "Sarıçam", "province": "Adana", "district": "Sarıçam", "lat": 37.0704, "lon": 35.4015},
 
     # ADIYAMAN
     {"name": "Besni", "province": "Adiyaman", "district": "Besni", "lat": 37.6911, "lon": 37.8623},
@@ -130,6 +132,10 @@ TURKEY_CITIES = [
     {"name": "Antalya", "province": "Antalya", "district": None, "lat": 36.8969, "lon": 30.7133},
     {"name": "Serik", "province": "Antalya", "district": "Serik", "lat": 36.9169, "lon": 31.1047},
     {"name": "İbradi", "province": "Antalya", "district": "İbradi", "lat": 37.0969, "lon": 31.5969},
+    {"name": "Muratpaşa", "province": "Antalya", "district": "Muratpaşa", "lat": 36.8872, "lon": 30.7039},
+    {"name": "Konyaaltı", "province": "Antalya", "district": "Konyaaltı", "lat": 36.8691, "lon": 30.6352},
+    {"name": "Kepez", "province": "Antalya", "district": "Kepez", "lat": 36.9334, "lon": 30.7167},
+    {"name": "Döşemealtı", "province": "Antalya", "district": "Döşemealtı", "lat": 37.0447, "lon": 30.5996},
 
     # ARDAHAN
     {"name": "Damal", "province": "Ardahan", "district": "Damal", "lat": 41.3423, "lon": 42.841},
@@ -322,6 +328,10 @@ TURKEY_CITIES = [
     {"name": "Çermik", "province": "Diyarbakir", "district": "Çermik", "lat": 38.1355, "lon": 39.4497},
     {"name": "Çüngüş", "province": "Diyarbakir", "district": "Çüngüş", "lat": 38.2118, "lon": 39.2881},
     {"name": "Çınar", "province": "Diyarbakir", "district": "Çınar", "lat": 37.7237, "lon": 40.4151},
+    {"name": "Bağlar", "province": "Diyarbakir", "district": "Bağlar", "lat": 37.8964, "lon": 40.1864},
+    {"name": "Kayapınar", "province": "Diyarbakir", "district": "Kayapınar", "lat": 37.9380, "lon": 40.1659},
+    {"name": "Sur", "province": "Diyarbakir", "district": "Sur", "lat": 37.9129, "lon": 40.2339},
+    {"name": "Yenişehir", "province": "Diyarbakir", "district": "Yenişehir", "lat": 37.9247, "lon": 40.2116},
 
     # DÜZCE
     {"name": "Akçakoca", "province": "Düzce", "district": "Akçakoca", "lat": 41.0882, "lon": 31.124},
@@ -461,6 +471,10 @@ TURKEY_CITIES = [
     {"name": "Samandağ", "province": "Hatay", "district": "Samandağ", "lat": 36.0852, "lon": 35.9799},
     {"name": "Yayladağı", "province": "Hatay", "district": "Yayladağı", "lat": 35.903, "lon": 36.0626},
     {"name": "İskenderun", "province": "Hatay", "district": "İskenderun", "lat": 36.5902, "lon": 36.171},
+    {"name": "Antakya", "province": "Hatay", "district": "Antakya", "lat": 36.2028, "lon": 36.1597},
+    {"name": "Defne", "province": "Hatay", "district": "Defne", "lat": 36.2205, "lon": 36.1421},
+    {"name": "Arsuz", "province": "Hatay", "district": "Arsuz", "lat": 36.3944, "lon": 35.8914},
+    {"name": "Payas", "province": "Hatay", "district": "Payas", "lat": 36.7549, "lon": 36.2311},
 
     # ISPARTA
     {"name": "Aksu", "province": "Isparta", "district": "Aksu", "lat": 37.7989, "lon": 31.0711},
@@ -795,6 +809,10 @@ TURKEY_CITIES = [
     {"name": "Silifke", "province": "Mersin", "district": "Silifke", "lat": 36.3778, "lon": 33.926},
     {"name": "Tarsus", "province": "Mersin", "district": "Tarsus", "lat": 36.9165, "lon": 34.8951},
     {"name": "Çamlıyayla", "province": "Mersin", "district": "Çamlıyayla", "lat": 37.1665, "lon": 34.5934},
+    {"name": "Akdeniz", "province": "Mersin", "district": "Akdeniz", "lat": 36.7994, "lon": 34.6177},
+    {"name": "Mezitli", "province": "Mersin", "district": "Mezitli", "lat": 36.7609, "lon": 34.5246},
+    {"name": "Toroslar", "province": "Mersin", "district": "Toroslar", "lat": 36.8452, "lon": 34.5821},
+    {"name": "Yenişehir", "province": "Mersin", "district": "Yenişehir", "lat": 36.8114, "lon": 34.5786},
 
     # MUGLA
     {"name": "Bodrum", "province": "Mugla", "district": "Bodrum", "lat": 37.0344, "lon": 27.4307},
@@ -810,6 +828,7 @@ TURKEY_CITIES = [
     {"name": "Ortaca", "province": "Mugla", "district": "Ortaca", "lat": 36.8389, "lon": 28.7655},
     {"name": "Ula", "province": "Mugla", "district": "Ula", "lat": 37.1029, "lon": 28.4164},
     {"name": "Yatağan", "province": "Mugla", "district": "Yatağan", "lat": 37.3417, "lon": 28.1395},
+    {"name": "Seydikemer", "province": "Mugla", "district": "Seydikemer", "lat": 36.6328, "lon": 29.3419},
 
     # MUS
     {"name": "Bulanık", "province": "Mus", "district": "Bulanık", "lat": 39.0924, "lon": 42.2708},
@@ -895,6 +914,9 @@ TURKEY_CITIES = [
     {"name": "Sapanca", "province": "Sakarya", "district": "Sapanca", "lat": 40.6931, "lon": 30.2734},
     {"name": "Söğütlü", "province": "Sakarya", "district": "Söğütlü", "lat": 40.9039, "lon": 30.4717},
     {"name": "Taraklı", "province": "Sakarya", "district": "Taraklı", "lat": 40.3966, "lon": 30.4922},
+    {"name": "Adapazarı", "province": "Sakarya", "district": "Adapazarı", "lat": 40.7667, "lon": 30.4000},
+    {"name": "Serdivan", "province": "Sakarya", "district": "Serdivan", "lat": 40.7141, "lon": 30.3528},
+    {"name": "Erenler", "province": "Sakarya", "district": "Erenler", "lat": 40.7361, "lon": 30.3392},
 
     # SAMSUN
     {"name": "Alaçam", "province": "Samsun", "district": "Alaçam", "lat": 41.6069, "lon": 35.5973},
@@ -928,6 +950,9 @@ TURKEY_CITIES = [
     {"name": "Siverek", "province": "Sanliurfa", "district": "Siverek", "lat": 37.7541, "lon": 39.3177},
     {"name": "Suruç", "province": "Sanliurfa", "district": "Suruç", "lat": 36.9752, "lon": 38.4243},
     {"name": "Viranşehir", "province": "Sanliurfa", "district": "Viranşehir", "lat": 37.2329, "lon": 39.762},
+    {"name": "Haliliye", "province": "Sanliurfa", "district": "Haliliye", "lat": 37.1654, "lon": 38.7856},
+    {"name": "Karaköprü", "province": "Sanliurfa", "district": "Karaköprü", "lat": 37.2019, "lon": 38.7527},
+    {"name": "Eyyübiye", "province": "Sanliurfa", "district": "Eyyübiye", "lat": 37.1467, "lon": 38.8063},
 
     # SIIRT
     {"name": "Aydınlar", "province": "Siirt", "district": "Aydınlar", "lat": 37.9501, "lon": 42.0125},
@@ -988,6 +1013,8 @@ TURKEY_CITIES = [
     {"name": "Çerkezköy", "province": "Tekirdag", "district": "Çerkezköy", "lat": 41.2862, "lon": 27.9995},
     {"name": "Çorlu", "province": "Tekirdag", "district": "Çorlu", "lat": 41.1591, "lon": 27.8041},
     {"name": "Şarköy", "province": "Tekirdag", "district": "Şarköy", "lat": 40.6149, "lon": 27.1122},
+    {"name": "Kapaklı", "province": "Tekirdag", "district": "Kapaklı", "lat": 41.3280, "lon": 28.0235},
+    {"name": "Ergene", "province": "Tekirdag", "district": "Ergene", "lat": 41.2739, "lon": 27.8953},
 
     # TOKAT
     {"name": "Almus", "province": "Tokat", "district": "Almus", "lat": 40.375, "lon": 36.9037},
@@ -1022,6 +1049,8 @@ TURKEY_CITIES = [
     {"name": "Çarşıbaşı", "province": "Trabzon", "district": "Çarşıbaşı", "lat": 41.0826, "lon": 39.3785},
     {"name": "Çaykara", "province": "Trabzon", "district": "Çaykara", "lat": 40.7479, "lon": 40.242},
     {"name": "Şalpazarı", "province": "Trabzon", "district": "Şalpazarı", "lat": 40.9418, "lon": 39.1938},
+    {"name": "Ortahisar", "province": "Trabzon", "district": "Ortahisar", "lat": 41.0027, "lon": 39.7168},
+    {"name": "Akçaabat", "province": "Trabzon", "district": "Akçaabat", "lat": 41.0186, "lon": 39.5627},
 
     # TUNCELI
     {"name": "Hozat", "province": "Tunceli", "district": "Hozat", "lat": 39.1076, "lon": 39.2194},
@@ -1054,6 +1083,8 @@ TURKEY_CITIES = [
     {"name": "Çaldıran", "province": "Van", "district": "Çaldıran", "lat": 39.1355, "lon": 43.9029},
     {"name": "Çatak", "province": "Van", "district": "Çatak", "lat": 38.0069, "lon": 43.0592},
     {"name": "Özalp", "province": "Van", "district": "Özalp", "lat": 38.6534, "lon": 43.9897},
+    {"name": "Tuşba", "province": "Van", "district": "Tuşba", "lat": 38.5481, "lon": 43.3811},
+    {"name": "İpekyolu", "province": "Van", "district": "İpekyolu", "lat": 38.5040, "lon": 43.3772},
 
     # YALOVA
     {"name": "Altınova", "province": "Yalova", "district": "Altınova", "lat": 40.6963, "lon": 29.5099},
@@ -1230,6 +1261,13 @@ LOCATION_CODE_MAP: Dict[str, Any] = {
     city["code"]: city
     for city in TURKEY_CITIES
     if city.get("code")
+}
+
+# GeoJSON ilçe adı → Backend ilçe adı eşleme tablosu
+# GeoJSON dosyalarında farklı yazılan ilçe adlarını backend'deki TURKEY_CITIES karşılıklarına çevirir
+DISTRICT_NAME_MAP: Dict[str, str] = {
+    "19 Mayıs": "Ondokuz Mayıs",
+    "19 MAYIS": "Ondokuz Mayıs",
 }
 
 

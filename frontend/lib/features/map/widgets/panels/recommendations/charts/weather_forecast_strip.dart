@@ -16,7 +16,20 @@ class WeatherForecastStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (hourlyData.isEmpty) return const SizedBox.shrink();
+    if (hourlyData.isEmpty) {
+      return Container(
+        height: 60,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Text(
+          'Tahmin verisi mevcut değil',
+          style: TextStyle(color: Colors.white38, fontSize: 11),
+        ),
+      );
+    }
 
     // Saatlik veriyi günlük gruplara ayır
     final dailyGroups = <String, List<CityWeatherData>>{};

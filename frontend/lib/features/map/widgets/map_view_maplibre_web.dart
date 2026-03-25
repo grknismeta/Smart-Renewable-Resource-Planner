@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:js_interop';
@@ -95,6 +96,9 @@ external void _jsSetDistrictClickFn(JSFunction fn);
 
 @JS('window.srrpSetMapInteractive')
 external void _jsSetMapInteractive(bool enable);
+
+@JS('window.srrpSetClickGuard')
+external void _jsSetClickGuard(bool active);
 
 // ─── Lazy Loader JS Interop ───────────────────────────────────────────────────
 
@@ -452,11 +456,18 @@ class MapViewMapLibre extends StatefulWidget {
     if (kIsWeb) _jsSetupProvinceSelect(enable);
   }
 
-  /// Harita etkileşimini aç/kapat.
-  /// Flutter overlay widget'ları (panel, slider vb.) pointer event'lerinin
-  /// MapLibre canvas'ına sızmasını önlemek için çağrılır.
+  /// Harita etkileşimini aç/kapat (drag, scroll, zoom).
   static void setInteractive(bool enable) {
     if (kIsWeb) _jsSetMapInteractive(enable);
+  }
+
+  /// Dialog açıkken harita tıklamalarını bastırmak için kullanılır.
+  /// `_onMapClick` bu bayrak aktifken hiçbir şey yapmaz.
+  /// JS tarafındaki seçim katmanı tıklamaları da bastırılır.
+  static bool _clickGuardActive = false;
+  static void setClickGuard(bool active) {
+    _clickGuardActive = active;
+    if (kIsWeb) _jsSetClickGuard(active);
   }
 
   /// Bölge seçim modunu başlat.
@@ -503,6 +514,9 @@ class MapViewMapLibre extends StatefulWidget {
 class _MapViewMapLibreState extends State<MapViewMapLibre> {
   ml.StyleController? _style;
   bool _styleLoaded = false;
+
+  /// Safety timer: _styleLoaded hâlâ false ise zorla true yap
+  Timer? _styleLoadTimeout;
 
   /// Eşzamanlı _syncAll çağrılarını engeller (race condition koruması)
   bool _syncing = false;
@@ -577,7 +591,16 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     if (kIsWeb) {
       _jsEnsureMapLibre(
         (() {
-          if (mounted) setState(() => _mapLibreScriptReady = true);
+          if (mounted) {
+            setState(() => _mapLibreScriptReady = true);
+            // Safety timeout: 10sn içinde style load olmadıysa spinner'ı kaldır
+            _styleLoadTimeout = Timer(const Duration(seconds: 10), () {
+              if (mounted && !_styleLoaded) {
+                debugPrint('[MapLibre] Style load timeout — spinner zorla kaldırılıyor');
+                setState(() => _styleLoaded = true);
+              }
+            });
+          }
         }).toJS,
       );
     } else {
@@ -631,6 +654,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
   @override
   void dispose() {
+    _styleLoadTimeout?.cancel();
     _vmRef?.removeListener(_onVmChanged);
     if (kIsWeb && _hoverCallbackRegistered) {
       _jsSetPinHoverFn((() {}).toJS);
@@ -711,9 +735,15 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       final levelChanged = vm.selectionLevel != _lastSelectionLevel;
       final regionChanged = vm.selectedRegionName != _lastRegionName;
       final provinceChanged = vm.selectedProvinceName != _lastProvinceName;
+      // İlçe seçildiğinde (selectedDistrictName != null) harita katmanlarını
+      // yeniden kurma — sadece veri kartı güncellenir. Harita katmanları
+      // yalnızca seviye değiştiğinde veya il→ilçe geçişinde (districtName null) güncellenir.
+      final isDistrictDataOnly = provinceChanged &&
+          vm.selectionLevel == SelectionLevel.district &&
+          vm.selectedDistrictName != null;
       if (levelChanged ||
           (regionChanged && vm.selectionLevel == SelectionLevel.province) ||
-          (provinceChanged && vm.selectionLevel == SelectionLevel.district)) {
+          (provinceChanged && vm.selectionLevel == SelectionLevel.district && !isDistrictDataOnly)) {
         _syncSelectionMode(vm);
         _lastSelectionLevel = vm.selectionLevel;
         _lastRegionName = vm.selectedRegionName;
@@ -932,8 +962,14 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _lastParticleVectorsLen = 0;
         if (kIsWeb) _jsStopWindParticles();
 
-        await _initLayers();
+        // _initLayers hata verse bile spinner'ı kaldır
+        try {
+          await _initLayers();
+        } catch (e) {
+          debugPrint('[MapLibre] _initLayers hatası (spinner yine kaldırılacak): $e');
+        }
 
+        _styleLoadTimeout?.cancel();
         if (mounted) setState(() => _styleLoaded = true);
 
         if (mounted) {
@@ -956,6 +992,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   // exception yutulup onPinTap hiç çağrılmıyordu.
 
   Future<void> _onMapClick(ml.Position point) async {
+    // Dialog açıkken harita tıklamalarını yoksay
+    if (MapViewMapLibre._clickGuardActive) return;
+
     final vm = Provider.of<MapViewModel>(context, listen: false);
 
     // 1. Pin yakınlık kontrolü
@@ -978,8 +1017,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     // Zoom ne kadar yüksekse, eşik o kadar sıkı olmalı.
     // Yaklaşık formül: threshold = 0.5 / 2^(zoom - 5)
     // Zoom 6'da ≈ 0.25°, Zoom 10'da ≈ 0.016°, Zoom 14'de ≈ 0.001°
-    // Controller erişilemezse sabit 0.08° (≈8km) kullan.
-    const double fixedThreshold = 0.08;
+    // Controller erişilemezse eskiden 0.08° (≈8km) sabitti. İlçe tıklamalarını bozduğu için 0.015° seviyesine düşürüldü.
+    const double fixedThreshold = 0.015;
 
     Pin? nearest;
     double minDist = double.infinity;

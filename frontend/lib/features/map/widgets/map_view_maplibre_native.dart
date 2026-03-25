@@ -128,6 +128,7 @@ class MapViewMapLibre extends StatefulWidget {
   static void setupDistrictMode(String provinceName) {}
   static void clearSelectionMode() {}
   static void setInteractive(bool enable) {}
+  static void setClickGuard(bool active) {}
 
   @override
   State<MapViewMapLibre> createState() => _MapViewMapLibreState();
@@ -260,7 +261,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
   Pin? _nearestPin(List<Pin> pins, ml.Position point) {
     if (pins.isEmpty) return null;
-    const double fixedThreshold = 0.08;
+    // İlçe tıklamalarını bozduğu için 0.08° yerine 0.015° seviyesine düşürüldü.
+    const double fixedThreshold = 0.015;
 
     Pin? nearest;
     double minDist = double.infinity;

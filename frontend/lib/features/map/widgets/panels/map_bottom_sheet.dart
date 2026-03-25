@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'dart:ui' as ui; // Import dart:ui
 import 'package:frontend/features/map/widgets/panels/sidebar/sidebar_widgets.dart'; // Barrel export for DataPanel, ScenarioButton etc.
 import 'package:frontend/features/map/widgets/panels/sidebar/report_button.dart'; // Explicit import if not in barrel? Checked: it's not in barrel list I saw (it had sidebar_header, footer, data, scenario, pins, launcher). Wait, sidebar_widgets.dart didn't list report_button.dart.
@@ -35,7 +36,7 @@ class MapBottomSheet extends StatelessWidget {
               ui.PointerDeviceKind.trackpad,
             },
           ),
-          child: Container(
+          child: PointerInterceptor(child: Container(
             decoration: BoxDecoration(
               color: theme.cardColor.withValues(alpha: 0.98),
               borderRadius: const BorderRadius.vertical(
@@ -135,7 +136,7 @@ class MapBottomSheet extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
+            )),
           ),
         );
       },

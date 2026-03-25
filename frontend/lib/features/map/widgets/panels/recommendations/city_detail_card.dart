@@ -157,6 +157,29 @@ class CityDetailCard extends StatelessWidget {
           // 7 Günlük Tahmin
           WeatherForecastStrip(hourlyData: hourlyData!, theme: theme),
           const SizedBox(height: 10),
+        ]
+        else if (!isLoading) ...[
+          // Veri yüklenemedi — placeholder
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: const Column(
+              children: [
+                Icon(Icons.cloud_off_rounded, color: Colors.white30, size: 32),
+                SizedBox(height: 8),
+                Text(
+                  'Bu bölgenin detaylı verisi yüklenemedi',
+                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
         ],
 
         // ML Placeholder

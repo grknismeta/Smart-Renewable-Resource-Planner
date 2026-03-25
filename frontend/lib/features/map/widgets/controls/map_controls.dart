@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
-// Remove import 'legacy_map_controls.dart'
 
 class MapControls extends StatelessWidget {
   final ThemeViewModel theme;
@@ -53,7 +53,7 @@ class MapControls extends StatelessWidget {
         Positioned(
           top: 20,
           right: 20,
-          child: Column(
+          child: PointerInterceptor(child: Column(
             children: [
               // Add Pin
               MapControlButton(
@@ -126,20 +126,20 @@ class MapControls extends StatelessWidget {
                   theme: theme,
                 ),
             ],
-          ),
+          )),
         ),
 
         // 2. Zoom Buttons (Bottom Left)
         Positioned(
           bottom: 40, // Sheet is minimized (only handle at ~20-30px), so 40-50 is safe.
           left: 20,
-          child: Column(
+          child: PointerInterceptor(child: Column(
             children: [
               _buildZoomButton(Icons.add, onZoomIn),
               const SizedBox(height: 8),
               _buildZoomButton(Icons.remove, onZoomOut),
             ],
-          ),
+          )),
         ),
       ],
     );

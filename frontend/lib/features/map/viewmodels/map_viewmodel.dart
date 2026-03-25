@@ -80,6 +80,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   // --- MapLibre 3D Modu ---
   MlHeatmapMode _mlHeatmapMode = MlHeatmapMode.none;
   MlBaseStyle _mlBaseStyle = MlBaseStyle.darkMatter;
+  bool _autoMapStyleSync = true; // Tema ile otomatik stil senkronizasyonu
   bool _show3DTurbines = false;
   bool _showGlobe = false;
   bool _show3DBuildings = false;
@@ -149,6 +150,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   // MapLibre 3D getters
   MlHeatmapMode get mlHeatmapMode => _mlHeatmapMode;
   MlBaseStyle get mlBaseStyle => _mlBaseStyle;
+  bool get autoMapStyleSync => _autoMapStyleSync;
   bool get show3DTurbines => _show3DTurbines;
   bool get showGlobe => _showGlobe;
   bool get show3DBuildings => _show3DBuildings;
@@ -220,6 +222,17 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   /// GADM NAME_1 ("Istanbul") ile DB city_name ("İstanbul") arasındaki
   /// diacritic/case farklarını gidererek karşılaştırma yapar.
+  // GeoJSON ilçe adı → Backend ilçe adı eşleme tablosu
+  static const _districtNameMap = <String, String>{
+    '19 Mayıs': 'Ondokuz Mayıs',
+    '19 MAYIS': 'Ondokuz Mayıs',
+  };
+
+  /// GeoJSON'dan gelen adı backend karşılığına çevir
+  static String _mapDistrictName(String name) {
+    return _districtNameMap[name] ?? name;
+  }
+
   static String _normalizeProvinceName(String name) {
     return name
         .toLowerCase()
@@ -296,9 +309,25 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     safeNotify();
   }
 
-  void setMlBaseStyle(MlBaseStyle style) {
+  void setMlBaseStyle(MlBaseStyle style, {bool fromThemeSync = false}) {
     _mlBaseStyle = style;
+    if (!fromThemeSync) _autoMapStyleSync = false;
     safeNotify();
+  }
+
+  void setAutoMapStyleSync(bool value) {
+    _autoMapStyleSync = value;
+    safeNotify();
+  }
+
+  /// Tema değiştiğinde harita stilini otomatik güncelle
+  void syncBaseStyleWithTheme(bool isDark) {
+    if (!_autoMapStyleSync) return;
+    final target = isDark ? MlBaseStyle.darkMatter : MlBaseStyle.positron;
+    if (_mlBaseStyle != target) {
+      _mlBaseStyle = target;
+      safeNotify();
+    }
   }
 
   // Isı haritası parametre setters
@@ -495,31 +524,16 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   }
 
   /// İlçe seçildi.
-  /// [province]: İlçenin bağlı olduğu il adı VEYA plaka kodu (ör: "34", "55").
-  ///   Plaka kodu ise (1-2 haneli sayı) doğrudan API province_code olarak kullanılır;
-  ///   isim ise PROVINCE_GEO_TO_CODE üzerinden çözülür.
+  /// [province]: İlçenin bağlı olduğu il adı (GeoJSON NAME_1 formatında, ör: "Uşak", "İstanbul").
   void selectDistrict(String districtName, {String? province}) {
-    _selectedDistrictName = districtName;
+    _selectedDistrictName = _mapDistrictName(districtName);
 
     if (province != null && province.isNotEmpty) {
-      // Plaka kodu tespiti: 1-2 haneli rakamdan oluşan string (ör: "34", "5")
-      final isCode = province.length <= 2 && RegExp(r'^\d+$').hasMatch(province);
-      if (isCode) {
-        final needsLoad = _selectedProvinceCode != province || _districtSummaries.isEmpty;
-        _selectedProvinceCode = province;
-        // İsim mevcut değilse kodu göster (API'den gelen province_name ile sonradan güncellenir)
-        _selectedProvinceName ??= province;
-        if (needsLoad) {
-          _districtSummaries = [];
-          loadDistrictSummaries(province, isCode: true);
-        }
-      } else {
-        final needsLoad = _selectedProvinceName != province || _districtSummaries.isEmpty;
-        _selectedProvinceName = province;
-        if (needsLoad) {
-          _districtSummaries = [];
-          loadDistrictSummaries(province);
-        }
+      final needsLoad = _selectedProvinceName != province || _districtSummaries.isEmpty;
+      _selectedProvinceName = province;
+      if (needsLoad) {
+        _districtSummaries = [];
+        loadDistrictSummaries(province);
       }
     }
 
@@ -586,26 +600,15 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     }
   }
 
-  Future<void> loadDistrictSummaries(String province, {int hours = 168, bool isCode = false}) async {
+  Future<void> loadDistrictSummaries(String province, {int hours = 168}) async {
     if (_isLoadingDistrictSummaries) return;
     _isLoadingDistrictSummaries = true;
     safeNotify();
     try {
       _districtSummaries = await _apiService.weather.fetchDistrictSummary(
-        province: isCode ? null : province,
-        provinceCode: isCode ? province : null,
+        province: province,
         hours: hours,
       );
-      // Yüklenen veri province_name içeriyorsa görüntüleme adını güncelle.
-      // Sadece mevcut isim null ya da plaka kodu ise güncelle (kullanıcıya görünen adı ezme).
-      if (isCode && _districtSummaries.isNotEmpty && _selectedProvinceCode == province) {
-        final currentName = _selectedProvinceName;
-        final isCurrentlyACode = currentName == null ||
-            RegExp(r'^\d+$').hasMatch(currentName);
-        if (isCurrentlyACode) {
-          _selectedProvinceName = _districtSummaries.first.provinceName;
-        }
-      }
     } catch (e) {
       debugPrint('[MapViewModel.loadDistrictSummaries] Hata: $e');
       _districtSummaries = [];

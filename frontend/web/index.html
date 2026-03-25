@@ -131,6 +131,14 @@
           instance.getCanvas().style.cursor = 'default';
         });
 
+        // ── Eksik İkonları Şeffaf Piksel ile Doldur (Uyarı Kirliliğini Önle) ──
+        instance.on('styleimagemissing', function(e) {
+          const id = e.id;
+          // 1x1 şeffaf RGBA piksel data
+          const data = new Uint8Array([0, 0, 0, 0]);
+          instance.addImage(id, { width: 1, height: 1, data: data });
+        });
+
         return instance;
       }
     });
@@ -514,6 +522,12 @@
     // Dart Listener.onPointerDown/Up'tan çağrılır.
     // NOT: pointerEvents CSS'e DOKUNMA — kaldırılırsa click olayları gelmez.
     window._mapInteractive = true;
+    // Click guard: Dialog açıkken seçim katmanı tıklamalarını da bastır.
+    // Dart tarafından MapViewMapLibre.setClickGuard ile kontrol edilir.
+    window._srrpClickGuard = false;
+    window.srrpSetClickGuard = function (active) {
+      window._srrpClickGuard = !!active;
+    };
     window.srrpSetMapInteractive = function (enable) {
       window._mapInteractive = enable;
       const map = window._srrpMap;
@@ -536,6 +550,15 @@
         }
       } catch (e) { console.error('[SRRP] srrpSetMapInteractive:', e); }
     };
+
+    // ── Pencere odak geri geldiğinde harita etkileşimini sıfırla ─────
+    // Kullanıcı başka uygulamaya geçip döndüğünde interaktivite kilitli kalmasın.
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && window._srrpMap) {
+        window.srrpSetMapInteractive(true);
+        window._srrpClickGuard = false;
+      }
+    });
 
     // ── Temel stil fill-extrusion layer'larını gizle/göster ─────────
     // Liberty gibi stiller kendi bina katmanlarıyla gelir; toggle için hepsini kontrol et.
@@ -859,37 +882,39 @@
     var _selClickFn      = null;
 
     // ── Benzersiz renk paleti (il/ilçe/bölge renklendir) ─────────────────────
-    // Renk çifti mesafesi gözetilerek gruplandırıldı:
-    //  Sıcak tonlar (turuncu/kırmızı/pembe), Soğuk tonlar (mavi/cyan/indigo),
-    //  Doğal tonlar (yeşil/teal/lime), Nötr tonlar (amber/sarı/mor/kahve)
-    // Greedy graph-coloring için yeterli mesafe: bitişik iki poligon aynı grubu almaz.
+    // 20 renk, yüksek kontrast, CIEDE2000 algısal mesafesi gözetilmiş.
+    // Sıcak / Soğuk / Doğal / Nötr gruplar dönüşümlü sıralanır
+    // → komşu indeksler bile belirgin farklı görünür.
     var _srrpUniqPalette = [
-      'rgba(79,195,247,0.42)',    //  0 açık mavi
-      'rgba(255,112,67,0.42)',    //  1 turuncu
-      'rgba(102,187,106,0.42)',   //  2 yeşil
-      'rgba(171,71,188,0.42)',    //  3 mor
-      'rgba(255,238,88,0.42)',    //  4 sarı
-      'rgba(239,83,80,0.42)',     //  5 kırmızı
-      'rgba(38,198,218,0.42)',    //  6 cyan
-      'rgba(255,202,40,0.42)',    //  7 amber
-      'rgba(38,166,154,0.42)',    //  8 teal
-      'rgba(236,64,122,0.42)',    //  9 pembe
-      'rgba(92,107,192,0.42)',    // 10 indigo
-      'rgba(156,204,101,0.42)',   // 11 açık yeşil
-      'rgba(66,165,245,0.42)',    // 12 orta mavi
-      'rgba(141,110,99,0.42)',    // 13 kahve
-      'rgba(255,167,38,0.42)',    // 14 portakal
+      'rgba(66,165,245,0.52)',    //  0 mavi
+      'rgba(255,112,67,0.52)',    //  1 turuncu
+      'rgba(102,187,106,0.52)',   //  2 yeşil
+      'rgba(171,71,188,0.52)',    //  3 mor
+      'rgba(255,238,88,0.52)',    //  4 sarı
+      'rgba(239,83,80,0.52)',     //  5 kırmızı
+      'rgba(38,198,218,0.52)',    //  6 cyan
+      'rgba(141,110,99,0.52)',    //  7 kahve
+      'rgba(38,166,154,0.52)',    //  8 teal
+      'rgba(236,64,122,0.52)',    //  9 pembe
+      'rgba(92,107,192,0.52)',    // 10 indigo
+      'rgba(156,204,101,0.52)',   // 11 açık yeşil
+      'rgba(255,167,38,0.52)',    // 12 portakal
+      'rgba(79,195,247,0.52)',    // 13 açık mavi
+      'rgba(205,220,57,0.52)',    // 14 lime
+      'rgba(186,104,200,0.52)',   // 15 leylak
+      'rgba(255,202,40,0.52)',    // 16 amber
+      'rgba(0,150,136,0.52)',     // 17 koyu teal
+      'rgba(244,143,177,0.52)',   // 18 gül
+      'rgba(121,134,203,0.52)',   // 19 pastel indigo
     ];
 
     /**
      * Greedy graph-coloring: bitişik poligonlar birbirinden farklı renk alır.
      *
-     * Algoritma:
-     *  1. querySourceFeatures ile tüm feature'ları topla (değere göre tekilleştir).
-     *  2. Her feature için bounding-box hesapla.
-     *  3. İki feature'ın bbox'ları örtüşüyorsa komşu say.
-     *  4. Greedy: her feature'a komşularının almadığı en küçük indeksli rengi ver.
-     *  5. MapLibre 'match' ifadesi oluştur → layer'a ekle.
+     * Komşuluk tespiti: VERTEX-SHARING
+     *  Her polygon'un tüm vertex'leri ~100m hassasiyetle key'e dönüştürülür.
+     *  Aynı vertex key'ini paylaşan polygon'lar = gerçek komşu.
+     *  Bbox overlap'e göre çok daha doğru sonuç verir.
      */
     function _addUniqueColorLayer(srcId, hoverProp, hitFilter) {
       var map = window._srrpMap;
@@ -898,48 +923,50 @@
       // Önceki unique katmanı temizle
       try { if (map.getLayer('srrp-sel-unique')) map.removeLayer('srrp-sel-unique'); } catch(_) {}
 
-      function _bbox(feature) {
+      // Polygon vertex'lerini topla → Set<string> olarak döndür
+      function _vertexKeys(feature) {
+        var keys = {};
         try {
           var geom = feature.geometry;
-          if (!geom) return null;
-          var rings = geom.type === 'Polygon'
-            ? geom.coordinates
-            : (geom.type === 'MultiPolygon' ? [].concat.apply([], geom.coordinates) : null);
-          if (!rings) return null;
-          var minLon=Infinity, minLat=Infinity, maxLon=-Infinity, maxLat=-Infinity;
-          rings.forEach(function(ring) {
-            ring.forEach(function(c) {
-              if (c[0]<minLon) minLon=c[0]; if (c[0]>maxLon) maxLon=c[0];
-              if (c[1]<minLat) minLat=c[1]; if (c[1]>maxLat) maxLat=c[1];
-            });
-          });
-          return [minLon, minLat, maxLon, maxLat];
-        } catch(_) { return null; }
-      }
-
-      function _bboxOverlap(a, b) {
-        if (!a || !b) return false;
-        return a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+          if (!geom) return keys;
+          var allRings;
+          if (geom.type === 'Polygon') {
+            allRings = geom.coordinates;
+          } else if (geom.type === 'MultiPolygon') {
+            allRings = [];
+            for (var p = 0; p < geom.coordinates.length; p++) {
+              for (var r = 0; r < geom.coordinates[p].length; r++) {
+                allRings.push(geom.coordinates[p][r]);
+              }
+            }
+          } else { return keys; }
+          for (var i = 0; i < allRings.length; i++) {
+            var ring = allRings[i];
+            for (var j = 0; j < ring.length; j++) {
+              // ~100m hassasiyet: Math.round(coord * 1000)
+              var k = Math.round(ring[j][0] * 1000) + ',' + Math.round(ring[j][1] * 1000);
+              keys[k] = true;
+            }
+          }
+        } catch(_) {}
+        return keys;
       }
 
       function _build() {
         var raw = map.querySourceFeatures(srcId);
-        // Değere göre tekilleştir; her değer için bbox sakla
+        // Değere göre tekilleştir; her değer için vertex key'leri birleştir
         var byVal = {};
         raw.forEach(function(f) {
           var val = f.properties && f.properties[hoverProp];
           if (!val) return;
-          if (!byVal[val]) byVal[val] = { val: val, bbox: _bbox(f) };
-          else {
-            // MultiPolygon: bbox genişlet
-            var b2 = _bbox(f);
-            if (b2 && byVal[val].bbox) {
-              var b1 = byVal[val].bbox;
-              byVal[val].bbox = [
-                Math.min(b1[0],b2[0]), Math.min(b1[1],b2[1]),
-                Math.max(b1[2],b2[2]), Math.max(b1[3],b2[3])
-              ];
-            }
+          var vk = _vertexKeys(f);
+          if (!byVal[val]) {
+            byVal[val] = { val: val, vkeys: vk };
+          } else {
+            // MultiPolygon tile'lar: vertex key'leri birleştir
+            var existing = byVal[val].vkeys;
+            var newKeys = Object.keys(vk);
+            for (var i = 0; i < newKeys.length; i++) existing[newKeys[i]] = true;
           }
         });
 
@@ -949,27 +976,47 @@
           return;
         }
 
-        // Komşuluk listesi — O(n²) ama n<=1000 için < 5ms
-        var adj = {};
-        vals.forEach(function(v) { adj[v] = []; });
+        // Vertex → feature listesi haritası oluştur
+        var vertexToFeatures = {};
         for (var i = 0; i < vals.length; i++) {
-          for (var j = i + 1; j < vals.length; j++) {
-            if (_bboxOverlap(byVal[vals[i]].bbox, byVal[vals[j]].bbox)) {
-              adj[vals[i]].push(vals[j]);
-              adj[vals[j]].push(vals[i]);
+          var v = vals[i];
+          var kList = Object.keys(byVal[v].vkeys);
+          for (var j = 0; j < kList.length; j++) {
+            var vk = kList[j];
+            if (!vertexToFeatures[vk]) vertexToFeatures[vk] = [];
+            vertexToFeatures[vk].push(v);
+          }
+        }
+
+        // Komşuluk grafiğini oluştur (ortak vertex paylaşanlar)
+        var adj = {};
+        vals.forEach(function(v) { adj[v] = {}; });
+        var vfKeys = Object.keys(vertexToFeatures);
+        for (var i = 0; i < vfKeys.length; i++) {
+          var feats = vertexToFeatures[vfKeys[i]];
+          if (feats.length < 2) continue;
+          for (var a = 0; a < feats.length; a++) {
+            for (var b = a + 1; b < feats.length; b++) {
+              adj[feats[a]][feats[b]] = true;
+              adj[feats[b]][feats[a]] = true;
             }
           }
         }
 
-        // Greedy coloring: en çok komşusu olanı önce boyamak daha iyi sonuç verir
-        vals.sort(function(a,b) { return adj[b].length - adj[a].length; });
+        // adj objelerini diziye çevir
+        var adjArr = {};
+        vals.forEach(function(v) { adjArr[v] = Object.keys(adj[v]); });
+
+        // Greedy coloring: en çok komşusu olanı önce boya
+        vals.sort(function(a,b) { return adjArr[b].length - adjArr[a].length; });
         var colorOf = {};
         var P = _srrpUniqPalette.length;
         vals.forEach(function(v) {
           var usedByNeighbor = {};
-          adj[v].forEach(function(nb) {
-            if (colorOf[nb] !== undefined) usedByNeighbor[colorOf[nb]] = true;
-          });
+          var nb = adjArr[v];
+          for (var i = 0; i < nb.length; i++) {
+            if (colorOf[nb[i]] !== undefined) usedByNeighbor[colorOf[nb[i]]] = true;
+          }
           var c = 0;
           while (usedByNeighbor[c] && c < P - 1) c++;
           colorOf[v] = c;
@@ -989,7 +1036,7 @@
           source: srcId,
           paint: {
             'fill-color': matchParts,
-            'fill-outline-color': 'rgba(255,255,255,0.20)',
+            'fill-outline-color': 'rgba(255,255,255,0.25)',
             'fill-opacity': 1
           }
         };
@@ -997,9 +1044,10 @@
         try {
           var before = map.getLayer('srrp-sel-hit') ? 'srrp-sel-hit' : undefined;
           map.addLayer(spec, before);
-          console.log('[SRRP] Graph-coloring: ' + vals.length + ' bölge, ' +
-            Object.keys(colorOf).reduce(function(mx,v){ return Math.max(mx,colorOf[v]); },0)+1 +
-            ' renk kullanıldı.');
+          var maxC = 0;
+          for (var v in colorOf) { if (colorOf[v] > maxC) maxC = colorOf[v]; }
+          console.log('[SRRP] Graph-coloring (vertex-adj): ' + vals.length + ' bölge, ' +
+            (maxC + 1) + '/' + P + ' renk kullanıldı.');
         } catch(e) {
           console.warn('[SRRP] Unique color layer eklenemedi:', e);
         }
@@ -1136,17 +1184,16 @@
       };
 
       _selClickFn = function (e) {
+        if (window._srrpClickGuard) return;
         if (!e.features || !e.features.length) return;
         var props = e.features[0].properties;
-        // composite modda "il|ilçe" formatında gönder (Dart tarafı province bağlamını bilsin)
+        // composite modda "ilAdı|ilçeAdı" formatında gönder
         // normal modda birincil değeri gönder
         var val;
         if (composite) {
           var prov2 = props[hoverProp]  || '';
           var dist2 = props[hoverProp2] || '';
-          // İl adı yerine 3 harfli kod gönder → DB sorgusu Türkçe karakter bağımsız
-          var pCode = (window.SRRP_PROVINCE_CODES && window.SRRP_PROVINCE_CODES[prov2]) || prov2;
-          val = pCode + '|' + dist2;
+          val = prov2 + '|' + dist2;
         } else {
           val = props[hoverProp] || '';
         }

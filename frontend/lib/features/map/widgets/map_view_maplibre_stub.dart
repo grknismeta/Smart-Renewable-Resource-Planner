@@ -20,6 +20,7 @@ class MapViewMapLibre extends StatelessWidget {
   static void setupDistrictMode(String provinceName) {}
   static void clearSelectionMode() {}
   static void setInteractive(bool enable) {}
+  static void setClickGuard(bool active) {}
 
   @override
   Widget build(BuildContext context) {
