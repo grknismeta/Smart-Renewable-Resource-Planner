@@ -83,6 +83,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   bool _autoMapStyleSync = true; // Tema ile otomatik stil senkronizasyonu
   bool _show3DTurbines = false;
   bool _showGlobe = false;
+
+  /// Globe açılmadan önce Türkiye özelliklerinin durumunu saklar.
+  Map<String, dynamic>? _preGlobeState;
   bool _show3DBuildings = false;
   bool _show3DTerrain = false;
   bool _showCloudLayer = false;
@@ -379,7 +382,44 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   }
 
   void toggleShowGlobe() {
-    _showGlobe = !_showGlobe;
+    if (!_showGlobe) {
+      // Globe açılıyor → Türkiye özelliklerini kaydet ve kapat
+      _preGlobeState = {
+        'heatmapMode': _mlHeatmapMode,
+        'windParticles': showWindParticles,
+        'cloudLayer': _showCloudLayer,
+        'terrain': _show3DTerrain,
+        'buildings': _show3DBuildings,
+        'selectionLevel': _selectionLevel,
+        'provinceModeActive': _isProvinceModeActive,
+        'turbines': _show3DTurbines,
+      };
+      // Türkiye'ye özgü özellikleri kapat
+      _mlHeatmapMode = MlHeatmapMode.none;
+      if (showWindParticles) toggleWindParticles(false);
+      _showCloudLayer = false;
+      _show3DTerrain = false;
+      _show3DBuildings = false;
+      _show3DTurbines = false;
+      _selectionLevel = SelectionLevel.none;
+      _isProvinceModeActive = false;
+      _showGlobe = true;
+    } else {
+      // Globe kapatılıyor → önceki durumu geri yükle
+      _showGlobe = false;
+      if (_preGlobeState != null) {
+        final s = _preGlobeState!;
+        _mlHeatmapMode = s['heatmapMode'] as MlHeatmapMode? ?? MlHeatmapMode.none;
+        if (s['windParticles'] == true) toggleWindParticles(true);
+        _showCloudLayer = s['cloudLayer'] as bool? ?? false;
+        _show3DTerrain = s['terrain'] as bool? ?? false;
+        _show3DBuildings = s['buildings'] as bool? ?? false;
+        _show3DTurbines = s['turbines'] as bool? ?? false;
+        _selectionLevel = s['selectionLevel'] as SelectionLevel? ?? SelectionLevel.none;
+        _isProvinceModeActive = s['provinceModeActive'] as bool? ?? false;
+        _preGlobeState = null;
+      }
+    }
     safeNotify();
   }
 

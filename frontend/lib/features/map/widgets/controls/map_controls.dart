@@ -21,6 +21,7 @@ class MapControls extends StatelessWidget {
   final bool isDistrictsModeActive;
   final VoidCallback? onToggleAnimation;
   final bool isAnimationMode;
+  final bool isGlobeMode;
 
   const MapControls({
     super.key,
@@ -42,6 +43,7 @@ class MapControls extends StatelessWidget {
     this.isDistrictsModeActive = false,
     this.onToggleAnimation,
     this.isAnimationMode = false,
+    this.isGlobeMode = false,
   });
 
   @override
@@ -79,11 +81,13 @@ class MapControls extends StatelessWidget {
               if (onToggleRecommendations != null)
                 MapControlButton(
                   icon: Icons.auto_awesome_rounded,
-                  tooltip: "Önerilen Bölgeler",
-                  onTap: onToggleRecommendations!,
-                  color: isRecommendationsPanelOpen
-                      ? Colors.purpleAccent
-                      : theme.textColor,
+                  tooltip: isGlobeMode ? "Global modda kullanılamaz" : "Önerilen Bölgeler",
+                  onTap: isGlobeMode ? () {} : onToggleRecommendations!,
+                  color: isGlobeMode
+                      ? theme.secondaryTextColor.withValues(alpha: 0.3)
+                      : isRecommendationsPanelOpen
+                          ? Colors.purpleAccent
+                          : theme.textColor,
                   theme: theme,
                 ),
               const SizedBox(height: 16),
@@ -92,11 +96,13 @@ class MapControls extends StatelessWidget {
               if (onOpenProvincesMode != null)
                 MapControlButton(
                   icon: Icons.apartment_rounded,
-                  tooltip: "İl Modu",
-                  onTap: onOpenProvincesMode!,
-                  color: isProvincesModeActive
-                      ? Colors.tealAccent
-                      : theme.textColor,
+                  tooltip: isGlobeMode ? "Global modda kullanılamaz" : "İl Modu",
+                  onTap: isGlobeMode ? () {} : onOpenProvincesMode!,
+                  color: isGlobeMode
+                      ? theme.secondaryTextColor.withValues(alpha: 0.3)
+                      : isProvincesModeActive
+                          ? Colors.tealAccent
+                          : theme.textColor,
                   theme: theme,
                 ),
               const SizedBox(height: 16),
@@ -105,11 +111,13 @@ class MapControls extends StatelessWidget {
               if (onOpenDistrictsMode != null)
                 MapControlButton(
                   icon: Icons.grid_view_rounded,
-                  tooltip: "İlçe Modu",
-                  onTap: onOpenDistrictsMode!,
-                  color: isDistrictsModeActive
-                      ? Colors.orangeAccent
-                      : theme.textColor,
+                  tooltip: isGlobeMode ? "Global modda kullanılamaz" : "İlçe Modu",
+                  onTap: isGlobeMode ? () {} : onOpenDistrictsMode!,
+                  color: isGlobeMode
+                      ? theme.secondaryTextColor.withValues(alpha: 0.3)
+                      : isDistrictsModeActive
+                          ? Colors.orangeAccent
+                          : theme.textColor,
                   theme: theme,
                 ),
               const SizedBox(height: 16),
@@ -118,11 +126,13 @@ class MapControls extends StatelessWidget {
               if (onToggleAnimation != null)
                 MapControlButton(
                   icon: Icons.play_circle_outline_rounded,
-                  tooltip: "Zaman Simülasyonu",
-                  onTap: onToggleAnimation!,
-                  color: isAnimationMode
-                      ? Colors.cyanAccent
-                      : theme.textColor,
+                  tooltip: isGlobeMode ? "Global modda kullanılamaz" : "Zaman Simülasyonu",
+                  onTap: isGlobeMode ? () {} : onToggleAnimation!,
+                  color: isGlobeMode
+                      ? theme.secondaryTextColor.withValues(alpha: 0.3)
+                      : isAnimationMode
+                          ? Colors.cyanAccent
+                          : theme.textColor,
                   theme: theme,
                 ),
             ],

@@ -67,6 +67,8 @@
         const style = map.getStyle();
         if (!style || !style.layers) return;
 
+        var provCount = 0, distCount = 0;
+
         for (const layer of style.layers) {
           if (layer.type !== 'line') continue;
           const id = layer.id.toLowerCase();
@@ -83,23 +85,23 @@
                          (id.includes('boundary') && id.includes('county'));
 
           if (isProv) {
-            // Dash pattern kaldır → solid
+            provCount++;
             try { map.setPaintProperty(id, 'line-dasharray', [1, 0]); } catch(_) {}
-            // Rengi ve kalınlığı yeniden ayarla
             try { map.setPaintProperty(id, 'line-color', 'rgba(220,220,220,0.55)'); } catch(_) {}
             try { map.setPaintProperty(id, 'line-width',
               ['interpolate', ['linear'], ['zoom'], 3, 0.4, 6, 0.8, 10, 1.4]); } catch(_) {}
             try { map.setPaintProperty(id, 'line-opacity', 1); } catch(_) {}
             try { map.setLayoutProperty(id, 'visibility', 'visible'); } catch(_) {}
           } else if (isDist) {
-            // Zoom < 7'de gizle, ≥ 7'de göster
+            distCount++;
             try { map.setPaintProperty(id, 'line-opacity',
               ['step', ['zoom'], 0, 7, 0.55]); } catch(_) {}
             try { map.setPaintProperty(id, 'line-dasharray', [1, 0]); } catch(_) {}
             try { map.setLayoutProperty(id, 'visibility', 'visible'); } catch(_) {}
           }
         }
-        console.log('[SRRP] Admin sınır düzeltmeleri uygulandı');
+        console.log('[SRRP] Admin sınır düzeltmeleri uygulandı — il:', provCount, 'ilçe:', distCount,
+                     '(toplam line layer:', style.layers.filter(l => l.type === 'line').length + ')');
       } catch (e) {
         console.warn('[SRRP] Admin border fix hatası:', e);
       }
@@ -336,13 +338,15 @@
 
     window.srrpLoadBorderLayers = function(provUrl, distUrl, regUrl) {
       const map = window._srrpMap;
-      if (!map) return;
+      if (!map) { console.warn('[SRRP] srrpLoadBorderLayers: map yok'); return; }
 
       const PROV_SRC  = 'srrp-borders-provinces';
       const DIST_SRC  = 'srrp-borders-districts';
       const REG_SRC   = 'srrp-borders-regions';
       const PROV_LINE = 'srrp-provinces-line';
       const DIST_LINE = 'srrp-districts-line';
+
+      console.log('[SRRP] Sınır katmanları yükleniyor…');
 
       // Temizle (stil değişiminde yeniden kurulur)
       [PROV_LINE, DIST_LINE].forEach(function(id) {
@@ -353,8 +357,16 @@
       });
 
       // İl + bölge source: URL doğrudan yükle (Türkiye dışı veri yok)
-      map.addSource(PROV_SRC, { type: 'geojson', data: provUrl });
-      if (regUrl) map.addSource(REG_SRC, { type: 'geojson', data: regUrl });
+      try {
+        map.addSource(PROV_SRC, { type: 'geojson', data: provUrl });
+        console.log('[SRRP] İl GeoJSON source eklendi:', provUrl);
+      } catch(e) { console.error('[SRRP] İl source eklenemedi:', e); }
+
+      if (regUrl) {
+        try {
+          map.addSource(REG_SRC, { type: 'geojson', data: regUrl });
+        } catch(e) { console.error('[SRRP] Bölge source eklenemedi:', e); }
+      }
 
       // İlçe source: fetch et → Türkiye dışı feature'ları ele → source'a ekle
       fetch(distUrl)
@@ -367,18 +379,24 @@
             console.log('[SRRP] İlçe GeoJSON: ' + removed + ' Türkiye dışı feature elendi.');
           }
           map.addSource(DIST_SRC, { type: 'geojson', data: filtered });
+          console.log('[SRRP] İlçe GeoJSON source eklendi, feature sayısı:', filtered.features.length);
           // Kaynak eklenince sınır çizgilerini çiz
           _addDistrictLines(map, DIST_SRC, PROV_SRC, DIST_LINE, PROV_LINE);
         })
         .catch(function(err) {
           console.error('[SRRP] İlçe GeoJSON yüklenemedi, URL ile fallback:', err);
           // Hata halinde filtresiz yükle
-          map.addSource(DIST_SRC, { type: 'geojson', data: distUrl });
-          _addDistrictLines(map, DIST_SRC, PROV_SRC, DIST_LINE, PROV_LINE);
+          try {
+            map.addSource(DIST_SRC, { type: 'geojson', data: distUrl });
+            _addDistrictLines(map, DIST_SRC, PROV_SRC, DIST_LINE, PROV_LINE);
+          } catch(e2) { console.error('[SRRP] İlçe fallback da başarısız:', e2); }
         });
     };
 
     function _addDistrictLines(map, DIST_SRC, PROV_SRC, DIST_LINE, PROV_LINE) {
+      // beforeId: srrp-pins-shadow varsa onun altına, yoksa en üste ekle
+      var beforeId = map.getLayer('srrp-pins-shadow') ? 'srrp-pins-shadow' : undefined;
+
       // İlçe sınırı (ince, zoom >= 6'da görünür, pin katmanının altında)
       try {
         map.addLayer({
@@ -387,11 +405,12 @@
           source: DIST_SRC,
           minzoom: 6,
           paint: {
-            'line-color': '#556677',
-            'line-width': 0.5,
-            'line-opacity': 0.55
+            'line-color': '#8899aa',
+            'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.4, 10, 0.8],
+            'line-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0.3, 8, 0.55]
           }
-        }, 'srrp-pins-shadow');
+        }, beforeId);
+        console.log('[SRRP] İlçe sınır katmanı eklendi');
       } catch(e) { console.warn('[SRRP] dist-line:', e); }
 
       // İl sınırı (belirgin, her zoom'da görünür)
@@ -401,11 +420,12 @@
           type: 'line',
           source: PROV_SRC,
           paint: {
-            'line-color': '#aabbcc',
-            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 0.8, 8, 1.5],
-            'line-opacity': 0.7
+            'line-color': '#bbccdd',
+            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 0.8, 6, 1.2, 10, 1.8],
+            'line-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0.5, 5, 0.75]
           }
-        }, 'srrp-pins-shadow');
+        }, beforeId);
+        console.log('[SRRP] İl sınır katmanı eklendi');
       } catch(e) { console.warn('[SRRP] prov-line:', e); }
     }
 
@@ -483,6 +503,19 @@
       if (!map) return;
       try {
         map.setProjection({ type: enable ? 'globe' : 'mercator' });
+        if (enable) {
+          // Global mod: sınır kısıtlamasını kaldır, dünya gezinebilir
+          window._srrpSavedMaxBounds = map.getMaxBounds();
+          map.setMaxBounds(null);
+          console.log('[SRRP] Globe ON — maxBounds kaldırıldı');
+        } else {
+          // Türkiye moduna dön: sınır kısıtlamasını geri yükle
+          if (window._srrpSavedMaxBounds) {
+            map.setMaxBounds(window._srrpSavedMaxBounds);
+            window._srrpSavedMaxBounds = null;
+            console.log('[SRRP] Globe OFF — maxBounds geri yüklendi');
+          }
+        }
       } catch (e) { console.error('[SRRP] srrpSetGlobe:', e); }
     };
 
@@ -720,6 +753,15 @@
       canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;';
       container.appendChild(canvas);
       const ctx = canvas.getContext('2d');
+
+      // Harita resize olduğunda canvas boyutunu güncelle
+      map.on('resize', function() {
+        const w = container.clientWidth  || mlCanvas.width  || 800;
+        const h = container.clientHeight || mlCanvas.height || 600;
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w; canvas.height = h;
+        }
+      });
 
       console.log('[SRRP] Wind particles başlatılıyor:', vectors.length, 'vektör',
                   'container:', container.clientWidth, 'x', container.clientHeight,
@@ -1456,12 +1498,32 @@
       fetch('https://api.rainviewer.com/public/weather-maps.json')
         .then(function(r) { return r.json(); })
         .then(function(data) {
+          // 1) Önce IR uydu verisini dene
           var ir = data.satellite && data.satellite.infrared;
-          if (!ir || !ir.length) return;
-          var latest = ir[ir.length - 1];
-          // renk=0 (siyah-beyaz), smooth=0, snow=0 → doğal görünüm
-          var tileUrl = 'https://tilecache.rainviewer.com' + latest.path
-            + '/512/{z}/{x}/{y}/0/0_0.png';
+          var latest = null;
+          var tileUrl = '';
+          var host = data.host || 'https://tilecache.rainviewer.com';
+
+          if (ir && ir.length > 0) {
+            latest = ir[ir.length - 1];
+            // renk=0 (siyah-beyaz), smooth=0, snow=0 → doğal görünüm
+            tileUrl = host + latest.path + '/512/{z}/{x}/{y}/0/0_0.png';
+            console.log('[SRRP] Bulut: IR uydu verisi kullanılıyor, frame:', ir.length);
+          } else {
+            // 2) IR yoksa radar verisine fallback (yağış/bulut gösterimi)
+            var past = data.radar && data.radar.past;
+            if (past && past.length > 0) {
+              latest = past[past.length - 1];
+              // renk=2 (evrensel renk), smooth=1, snow=1
+              tileUrl = host + latest.path + '/512/{z}/{x}/{y}/2/1_1.png';
+              console.log('[SRRP] Bulut: IR boş, radar fallback kullanılıyor, frame:', past.length);
+            }
+          }
+
+          if (!latest || !tileUrl) {
+            console.warn('[SRRP] Bulut: Ne IR ne radar verisi mevcut.');
+            return;
+          }
 
           // Mevcut kaynağı kaldır, yenisini ekle (setData yok — raster source güncelleme)
           try {
@@ -1489,11 +1551,10 @@
               'raster-opacity': window._cloudOpacity || 0.70,
               'raster-fade-duration': 600,
               'raster-resampling': 'linear',
-              // IR beyazı gerçek buluta dönüştür: karanlık (kara uzay) şeffaf, beyaz (bulut) opak
               'raster-brightness-min': 0.0,
               'raster-brightness-max': 1.0,
               'raster-contrast': 0.15,
-              'raster-saturation': -0.8,  // renk modu 0 zaten siyah-beyaz ama emin ol
+              'raster-saturation': -0.8,
             }
           }, _cloudBefore);
 

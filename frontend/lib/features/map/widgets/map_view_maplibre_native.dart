@@ -121,6 +121,28 @@ class MapViewMapLibre extends StatefulWidget {
     );
   }
 
+  /// Haritayı bir adım yakınlaştır.
+  static Future<void> zoomIn() async {
+    final curZoom = _activeController?.camera?.zoom;
+    if (curZoom != null) {
+      _activeController?.animateCamera(
+        zoom: curZoom + 1.0,
+        nativeDuration: const Duration(milliseconds: 300),
+      );
+    }
+  }
+
+  /// Haritayı bir adım uzaklaştır.
+  static Future<void> zoomOut() async {
+    final curZoom = _activeController?.camera?.zoom;
+    if (curZoom != null) {
+      _activeController?.animateCamera(
+        zoom: curZoom - 1.0,
+        nativeDuration: const Duration(milliseconds: 300),
+      );
+    }
+  }
+
   /// Native: web-only özellik, no-op.
   static void setupProvinceSelect(bool enable) {}
   static void setupRegionMode() {}

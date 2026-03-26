@@ -72,6 +72,9 @@ class RecommendationsResponse(BaseModel):
     wind_circulation: List[RecommendedCity]   # Yüksek σ (değişken ama yoğun)
     wind_weak: List[RecommendedCity]          # Güçsüz rüzgar
     solar_top: List[RecommendedCity]          # En yüksek ışınım
+    solar_irradiance_top: List[RecommendedCity]   # En yüksek anlık ışınım (W/m²)
+    wind_annual_efficiency: List[RecommendedCity]  # Yıllık rüzgar verimliliği (k × v̄)
+    solar_annual_efficiency: List[RecommendedCity] # Yıllık ışınım verimliliği (toplam kWh/m²)
     generated_at: datetime
     hours_analyzed: int
 
@@ -301,12 +304,34 @@ async def get_recommendations(
         key=lambda c: c.avg_radiation or 0, reverse=True,
     )[:top_n]
 
+    # En yüksek anlık ışınım — peak W/m² değerine göre sıralı
+    solar_irradiance_top = sorted(
+        [c for c in cities if c.avg_radiation and c.avg_radiation > 200],
+        key=lambda c: c.avg_radiation or 0, reverse=True,
+    )[:top_n]
+
+    # Yıllık rüzgar verimliliği — hem güçlü hem tutarlı rüzgar (k × avg_wind)
+    wind_annual_efficiency = sorted(
+        [c for c in cities if c.avg_wind_speed and c.avg_wind_speed >= 3.0
+         and c.weibull_k and c.weibull_k >= 1.5],
+        key=lambda c: (c.weibull_k or 1.0) * (c.avg_wind_speed or 0), reverse=True,
+    )[:top_n]
+
+    # Yıllık güneş verimliliği — birikimli toplam ışınım (kWh/m²)
+    solar_annual_efficiency = sorted(
+        [c for c in cities if c.total_radiation_kwh and c.total_radiation_kwh > 0],
+        key=lambda c: c.total_radiation_kwh or 0, reverse=True,
+    )[:top_n]
+
     return RecommendationsResponse(
         wind_strong=wind_strong,
         wind_stable=wind_stable,
         wind_circulation=wind_circulation,
         wind_weak=wind_weak,
         solar_top=solar_top,
+        solar_irradiance_top=solar_irradiance_top,
+        wind_annual_efficiency=wind_annual_efficiency,
+        solar_annual_efficiency=solar_annual_efficiency,
         generated_at=datetime.now(timezone.utc),
         hours_analyzed=hours,
     )

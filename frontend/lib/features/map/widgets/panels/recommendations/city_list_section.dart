@@ -20,20 +20,32 @@ class CityListSection extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       children: [
+        // ── Rüzgar Kategorileri ──
         if (data.windStrong.isNotEmpty)
           _CategoryGroup(
-            title: 'Güçlü Rüzgar',
-            subtitle: 'v̄ > 7 m/s',
+            title: 'En İyi Rüzgar',
+            subtitle: 'v̄ > 7 m/s — güçlü potansiyel',
             icon: Icons.air,
             color: Colors.redAccent,
             cities: data.windStrong,
             theme: theme,
             onCityTap: onCityTap,
           ),
+        if (data.windAnnualEfficiency.isNotEmpty)
+          _CategoryGroup(
+            title: 'Yıllık Rüzgar Verimliliği',
+            subtitle: 'Weibull k × hız — en verimli bölgeler',
+            icon: Icons.trending_up_rounded,
+            color: Colors.tealAccent,
+            cities: data.windAnnualEfficiency,
+            theme: theme,
+            onCityTap: onCityTap,
+            valueFn: (c) => 'k:${c.weibullK?.toStringAsFixed(1) ?? "-"} ${c.avgWindSpeed?.toStringAsFixed(1) ?? "-"} m/s',
+          ),
         if (data.windStable.isNotEmpty)
           _CategoryGroup(
             title: 'Stabil Rüzgar',
-            subtitle: 'Weibull k > 2.5',
+            subtitle: 'Weibull k > 2.5 — tutarlı esen bölgeler',
             icon: Icons.waves,
             color: Colors.blueAccent,
             cities: data.windStable,
@@ -43,17 +55,29 @@ class CityListSection extends StatelessWidget {
         if (data.windCirculation.isNotEmpty)
           _CategoryGroup(
             title: 'Yüksek Sirkülasyon',
-            subtitle: 'Değişken ama yoğun',
+            subtitle: 'Yüksek değişkenlik — verimsizlik riski',
             icon: Icons.cyclone,
             color: Colors.cyanAccent,
             cities: data.windCirculation,
             theme: theme,
             onCityTap: onCityTap,
           ),
+        if (data.windWeak.isNotEmpty)
+          _CategoryGroup(
+            title: 'Zayıf Rüzgar',
+            subtitle: '2–5.5 m/s — düşük verimli bölgeler',
+            icon: Icons.air_outlined,
+            color: Colors.grey,
+            cities: data.windWeak,
+            theme: theme,
+            onCityTap: onCityTap,
+          ),
+
+        // ── Güneş Kategorileri ──
         if (data.solarTop.isNotEmpty)
           _CategoryGroup(
             title: 'En İyi Güneş',
-            subtitle: 'Yüksek ışınım',
+            subtitle: 'Ortalama ışınım en yüksek',
             icon: Icons.wb_sunny,
             color: Colors.orangeAccent,
             cities: data.solarTop,
@@ -61,15 +85,27 @@ class CityListSection extends StatelessWidget {
             onCityTap: onCityTap,
             isSolar: true,
           ),
-        if (data.windWeak.isNotEmpty)
+        if (data.solarIrradianceTop.isNotEmpty)
           _CategoryGroup(
-            title: 'Zayıf Rüzgar',
-            subtitle: '2–5.5 m/s potansiyel',
-            icon: Icons.air_outlined,
-            color: Colors.grey,
-            cities: data.windWeak,
+            title: 'En Yüksek Işınım',
+            subtitle: '> 200 W/m² — peak ışınım bölgeleri',
+            icon: Icons.flare_rounded,
+            color: Colors.amber,
+            cities: data.solarIrradianceTop,
             theme: theme,
             onCityTap: onCityTap,
+            isSolar: true,
+          ),
+        if (data.solarAnnualEfficiency.isNotEmpty)
+          _CategoryGroup(
+            title: 'Yıllık Işınım Verimliliği',
+            subtitle: 'Toplam birikimli ışınım (kWh/m²)',
+            icon: Icons.solar_power_rounded,
+            color: Colors.deepOrangeAccent,
+            cities: data.solarAnnualEfficiency,
+            theme: theme,
+            onCityTap: onCityTap,
+            valueFn: (c) => '${c.totalRadiationKwh?.toStringAsFixed(1) ?? "-"} kWh',
           ),
       ],
     );
@@ -85,6 +121,7 @@ class _CategoryGroup extends StatefulWidget {
   final ThemeViewModel theme;
   final void Function(RecommendedCity) onCityTap;
   final bool isSolar;
+  final String Function(RecommendedCity)? valueFn;
 
   const _CategoryGroup({
     required this.title,
@@ -95,6 +132,7 @@ class _CategoryGroup extends StatefulWidget {
     required this.theme,
     required this.onCityTap,
     this.isSolar = false,
+    this.valueFn,
   });
 
   @override
@@ -171,6 +209,7 @@ class _CategoryGroupState extends State<_CategoryGroup> {
                 color: widget.color,
                 theme: widget.theme,
                 isSolar: widget.isSolar,
+                valueFn: widget.valueFn,
                 onTap: () => widget.onCityTap(city),
               );
             }).toList(),
@@ -192,6 +231,7 @@ class _CityTile extends StatelessWidget {
   final Color color;
   final ThemeViewModel theme;
   final bool isSolar;
+  final String Function(RecommendedCity)? valueFn;
   final VoidCallback onTap;
 
   const _CityTile({
@@ -199,6 +239,7 @@ class _CityTile extends StatelessWidget {
     required this.color,
     required this.theme,
     required this.isSolar,
+    this.valueFn,
     required this.onTap,
   });
 
@@ -246,9 +287,11 @@ class _CityTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                isSolar
-                    ? '${city.avgRadiation?.toStringAsFixed(0) ?? "-"} W/m²'
-                    : '${city.avgWindSpeed?.toStringAsFixed(1) ?? "-"} m/s',
+                valueFn != null
+                    ? valueFn!(city)
+                    : isSolar
+                        ? '${city.avgRadiation?.toStringAsFixed(0) ?? "-"} W/m²'
+                        : '${city.avgWindSpeed?.toStringAsFixed(1) ?? "-"} m/s',
                 style: TextStyle(
                   color: color,
                   fontSize: 10,

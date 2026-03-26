@@ -294,6 +294,18 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                   _effectRow('Canlı Akış', Icons.air_rounded,
                       vm.showWindParticles, Colors.cyanAccent,
                       () => vm.toggleWindParticles(!vm.showWindParticles), badge: 'LIVE'),
+                  if (vm.isWindLoading)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 36, top: 4),
+                      child: Text('Rüzgar verisi yükleniyor…',
+                          style: TextStyle(fontSize: 11, color: theme.secondaryTextColor)),
+                    ),
+                  if (vm.showWindParticles && vm.windDataEmpty && !vm.isWindLoading)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 36, top: 4),
+                      child: Text('Rüzgar verisi mevcut değil',
+                          style: TextStyle(fontSize: 11, color: Colors.orange.shade300)),
+                    ),
                 ],
 
                 const SizedBox(height: 10),

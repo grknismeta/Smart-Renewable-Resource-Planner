@@ -127,6 +127,7 @@ class _MapScreenState extends State<MapScreen> {
                 isDistrictsModeActive: mapViewModel.isDistrictsModeActive,
                 onToggleAnimation: () => mapViewModel.toggleAnimationMode(),
                 isAnimationMode: mapViewModel.isAnimationMode,
+                isGlobeMode: mapViewModel.showGlobe,
               ),
 
               // 3b. Bölge Filtre Şeridi — İl modu aktifken üstte kayar chip'ler

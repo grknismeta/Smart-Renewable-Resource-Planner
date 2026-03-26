@@ -98,6 +98,9 @@ class RecommendationsData {
   final List<RecommendedCity> windCirculation;
   final List<RecommendedCity> windWeak;
   final List<RecommendedCity> solarTop;
+  final List<RecommendedCity> solarIrradianceTop;
+  final List<RecommendedCity> windAnnualEfficiency;
+  final List<RecommendedCity> solarAnnualEfficiency;
   final DateTime generatedAt;
   final int hoursAnalyzed;
 
@@ -107,6 +110,9 @@ class RecommendationsData {
     required this.windCirculation,
     required this.windWeak,
     required this.solarTop,
+    required this.solarIrradianceTop,
+    required this.windAnnualEfficiency,
+    required this.solarAnnualEfficiency,
     required this.generatedAt,
     required this.hoursAnalyzed,
   });
@@ -124,6 +130,9 @@ class RecommendationsData {
       windCirculation: parseList('wind_circulation'),
       windWeak: parseList('wind_weak'),
       solarTop: parseList('solar_top'),
+      solarIrradianceTop: parseList('solar_irradiance_top'),
+      windAnnualEfficiency: parseList('wind_annual_efficiency'),
+      solarAnnualEfficiency: parseList('solar_annual_efficiency'),
       generatedAt: DateTime.tryParse(json['generated_at'] as String? ?? '') ??
           DateTime.now(),
       hoursAnalyzed: (json['hours_analyzed'] as num?)?.toInt() ?? 168,
@@ -135,5 +144,8 @@ class RecommendationsData {
       windStable.isEmpty &&
       windCirculation.isEmpty &&
       windWeak.isEmpty &&
-      solarTop.isEmpty;
+      solarTop.isEmpty &&
+      solarIrradianceTop.isEmpty &&
+      windAnnualEfficiency.isEmpty &&
+      solarAnnualEfficiency.isEmpty;
 }

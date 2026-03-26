@@ -45,6 +45,7 @@ mixin MapLayerMixin on BaseViewModel {
   // ─── Rüzgar Parçacık + Yükseklik Katmanı State ──────────────────────────
   bool _showWindParticles = false;
   bool _isWindLoading = false;
+  bool _windDataEmpty = false;
   bool _showElevation = false;
   WindParticleQuality _windQuality = WindParticleQuality.balanced;
   List<WindVector> _windVectors = [];
@@ -53,6 +54,7 @@ mixin MapLayerMixin on BaseViewModel {
 
   bool get showWindParticles => _showWindParticles;
   bool get isWindLoading => _isWindLoading;
+  bool get windDataEmpty => _windDataEmpty;
   bool get showElevation => _showElevation;
   WindParticleQuality get windQuality => _windQuality;
   List<WindVector> get windVectors => _windVectors;
@@ -215,15 +217,22 @@ mixin MapLayerMixin on BaseViewModel {
 
   Future<void> _fetchWindVectors() async {
     _isWindLoading = true;
+    _windDataEmpty = false;
     safeNotify();
     try {
       final data = await apiService.windVector.fetchWindVectors();
       _windVectors = data.map((d) => WindVector.fromJson(d)).toList();
+      _windDataEmpty = _windVectors.isEmpty;
+      if (_windDataEmpty) {
+        debugPrint('[Wind] Backend boş veri döndü — veritabanında rüzgar verisi yok.');
+      } else {
+        debugPrint('[Wind] ${_windVectors.length} rüzgar vektörü yüklendi.');
+      }
     } catch (e) {
       debugPrint('Wind vectors fetch error: $e');
+      _windDataEmpty = true;
     } finally {
       _isWindLoading = false;
-      // await sonrası pointer event bağlamından çıkıldı, doğrudan bildirim güvenli
       notifyListeners();
     }
   }
