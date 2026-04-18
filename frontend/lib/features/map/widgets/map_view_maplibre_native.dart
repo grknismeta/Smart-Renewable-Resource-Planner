@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:maplibre/maplibre.dart' as ml;
 import 'package:provider/provider.dart';
-
+// http import kaldırıldı — il/ilçe seçimi artık tamamen client-side (asset GeoJSON)
 import 'package:frontend/core/constants/map_constants.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/features/map/models/map_models.dart';
@@ -21,8 +23,29 @@ const _heatmapGridSourceId = 'srrp-heatmap-grid';
 const _heatmapSolarId     = 'srrp-heatmap-solar';
 const _heatmapWindId      = 'srrp-heatmap-wind';
 
+const _clusterSourceId    = 'srrp-clusters';
+const _clusterCircleId    = 'srrp-cluster-circles';
+const _clusterCountId     = 'srrp-cluster-counts';
+
+const _cloudSourceId      = 'srrp-cloud-tiles';
+const _cloudLayerId       = 'srrp-cloud-layer';
+
+const _bordersSourceId    = 'srrp-borders';
+const _bordersFillLayerId = 'srrp-borders-fill';
+const _bordersLineLayerId = 'srrp-borders-line';
+
+// İl modu overlay: seçili ilin ilçeleri + mavi sınır (ana borders'ın üstünde)
+const _overlaySourceId    = 'srrp-overlay-borders';
+const _overlayFillLayerId = 'srrp-overlay-fill';
+const _overlayLineLayerId = 'srrp-overlay-line';
+const _overlayProvLineId  = 'srrp-overlay-prov-line';
+
 const _hillshadeSourceId  = 'srrp-hillshade-dem';
 const _hillshadeLayerId   = 'srrp-hillshade';
+
+const _animProvSourceId   = 'srrp-anim-provinces';
+const _animProvFillId     = 'srrp-anim-provinces-fill';
+const _animProvLineId     = 'srrp-anim-provinces-line';
 
 // ─── Heatmap Paint Tanımları ──────────────────────────────────────────────────
 
@@ -62,7 +85,7 @@ String _pinColorHex(String type) {
   switch (type.toLowerCase()) {
     case 'güneş paneli': case 'solar':  return '#FFA726';
     case 'rüzgar türbini': case 'wind': return '#29B6F6';
-    case 'hidroelektrik': case 'hes': case 'hydro': return '#42A5F5';
+    case 'hidroelektrik': case 'hes': case 'hydro': return '#1DB954';
     default:                            return '#66BB6A';
   }
 }
@@ -101,6 +124,62 @@ String _heatmapGridToGeoJson(List<HeatmapPoint> points) {
   }).toList()});
 }
 
+// ─── Flutter-level Pin Kümeleme ──────────────────────────────────────────────
+
+/// Zoom seviyesine göre grid-based pin kümeleme.
+/// Her grid hücresindeki pinleri tek bir cluster noktasına toplar.
+class _PinCluster {
+  final double centerLat;
+  final double centerLon;
+  final List<Pin> pins;
+  _PinCluster(this.centerLat, this.centerLon, this.pins);
+}
+
+List<_PinCluster> _clusterPins(List<Pin> pins, double zoom) {
+  if (pins.isEmpty) return [];
+  // Zoom arttıkça grid küçülür → daha az kümeleme
+  // zoom 4 → gridSize ~2.0°, zoom 8 → ~0.125°, zoom 12 → ~0.008°
+  final gridSize = 32.0 / math.pow(2, zoom.clamp(1, 18));
+  final Map<String, List<Pin>> grid = {};
+  for (final p in pins) {
+    final gx = (p.longitude / gridSize).floor();
+    final gy = (p.latitude / gridSize).floor();
+    final key = '$gx,$gy';
+    (grid[key] ??= []).add(p);
+  }
+  return grid.values.map((group) {
+    final lat = group.fold(0.0, (s, p) => s + p.latitude) / group.length;
+    final lon = group.fold(0.0, (s, p) => s + p.longitude) / group.length;
+    return _PinCluster(lat, lon, group);
+  }).toList();
+}
+
+String _clustersToGeoJson(List<_PinCluster> clusters) {
+  return jsonEncode({
+    'type': 'FeatureCollection',
+    'features': clusters
+        .where((c) => c.pins.length > 1)
+        .map((c) => {
+              'type': 'Feature',
+              'geometry': {
+                'type': 'Point',
+                'coordinates': [c.centerLon, c.centerLat],
+              },
+              'properties': {
+                'count': c.pins.length,
+                'label': '${c.pins.length}',
+              },
+            })
+        .toList(),
+  });
+}
+
+/// Kümelenmiş pinlerden tekil (kümelenmemiş) pinleri döndürür.
+String _unclusteredPinsToGeoJson(List<_PinCluster> clusters) {
+  final singles = clusters.where((c) => c.pins.length == 1).expand((c) => c.pins).toList();
+  return _pinsToGeoJson(singles);
+}
+
 // ─── MapViewMapLibre (Native) ─────────────────────────────────────────────────
 
 class MapViewMapLibre extends StatefulWidget {
@@ -111,6 +190,9 @@ class MapViewMapLibre extends StatefulWidget {
 
   /// Aktif native MapController referansı (state tarafından atanır).
   static ml.MapController? _activeController;
+
+  /// Wind overlay gibi dış widget'ların kamera dönüşümü yapabilmesi için.
+  static ml.MapController? get activeControllerForOverlay => _activeController;
 
   /// Native: MapLibre SDK animasyonlu kamera geçişi.
   static void flyTo(double lat, double lon, {double zoom = 10.0}) {
@@ -151,6 +233,13 @@ class MapViewMapLibre extends StatefulWidget {
   static void clearSelectionMode() {}
   static void setInteractive(bool enable) {}
   static void setClickGuard(bool active) {}
+  static void setMaxBounds(
+      double swLng, double swLat, double neLng, double neLat) {
+    // Native'de maxBounds MapOptions ile init-time'da ayarlanıyor.
+    // Runtime değişikliği globe toggle ile widget rebuild üzerinden yapılır.
+  }
+  static void clearMaxBounds() {}
+  static void setShowcasePins(String geojsonStr) {}
 
   @override
   State<MapViewMapLibre> createState() => _MapViewMapLibreState();
@@ -170,8 +259,35 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   bool _windActive      = false;
   bool _hillshadeActive = false;
   bool _lastTerrain     = false;
+  bool _lastClustering  = false;
+  bool _clusterLayersActive = false;
+  bool _lastCloud       = false;
+  bool _cloudActive     = false;
+  bool _bordersActive   = false;
+  bool _overlayActive   = false;
+  bool _lastProvincesMode = false;
+  SelectionLevel _lastSelectionLevel = SelectionLevel.none;
+  String? _lastSelectedProvince;
+  String? _lastSelectedRegion;
+  String? _lastSelectedDistrict;
+
+  // Choropleth
+  ChoroplethMode _lastChoropleth = ChoroplethMode.none;
+  bool _choroplethSourceAdded = false;
+  bool _choroplethLayerActive = false;
+
+  // Animation province polygon layer
+  bool _animProvActive = false;
+  int _lastAnimFrame = -1;
 
   MapViewModel? _vmRef;
+
+  /// GeoJSON önbelleği — her seferinde backend'den indirmemek için.
+  static String? _cachedProvincesGeoJson;
+  static String? _cachedDistrictsGeoJson;
+
+  /// Geo sorgusu sırasında yükleniyor göstergesi.
+  bool _geoLoading = false;
 
   // ─── Lifecycle ────────────────────────────────────────────────────
 
@@ -204,7 +320,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     if (_syncing) return;
     _syncing = true;
     try {
-      await _syncPins(vm.pins, vm.show3DTurbines);
+      await _syncPins(vm.filteredPins, vm.show3DTurbines, vm.showPinClusters);
     } catch (e) {
       debugPrint('[MapLibre-Native] _syncPins hata: $e');
     }
@@ -228,7 +344,30 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     } catch (e) {
       debugPrint('[MapLibre-Native] _syncTerrain hata: $e');
     }
-    // Globe ve 3D buildings native'de JS shim olmadan desteklenmiyor — atla
+    // Choropleth
+    try {
+      await _syncChoropleth(vm);
+    } catch (e) {
+      debugPrint('[MapLibre-Native] _syncChoropleth hata: $e');
+    }
+    // Bulut katmanı
+    try {
+      await _syncCloudLayer(vm.showCloudLayer);
+    } catch (e) {
+      debugPrint('[MapLibre-Native] _syncCloudLayer hata: $e');
+    }
+    // Animasyon il polygon'ları
+    try {
+      await _syncAnimationProvinces(vm);
+    } catch (e) {
+      debugPrint('[MapLibre-Native] _syncAnimationProvinces hata: $e');
+    }
+    // İl/İlçe sınırları
+    try {
+      await _syncBorders(vm);
+    } catch (e) {
+      debugPrint('[MapLibre-Native] _syncBorders hata: $e');
+    }
     _syncing = false;
   }
 
@@ -245,6 +384,21 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _lastHeatmap  = MlHeatmapMode.none;
         _last3D       = false;
         _lastTerrain  = false;
+        _lastClustering = false;
+        _clusterLayersActive = false;
+        _lastCloud = false;
+        _cloudActive = false;
+        _bordersActive = false;
+        _lastProvincesMode = false;
+        _lastSelectionLevel = SelectionLevel.none;
+        _lastSelectedProvince = null;
+        _lastSelectedRegion = null;
+        _lastSelectedDistrict = null;
+        _lastChoropleth = ChoroplethMode.none;
+        _choroplethSourceAdded = false;
+        _choroplethLayerActive = false;
+        _animProvActive = false;
+        _lastAnimFrame = -1;
         _lastPins    = [];
         _lastSummary = [];
 
@@ -260,6 +414,16 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       case ml.MapEventClick(:final point):
         await _onMapClick(point);
 
+      case ml.MapEventLongClick(:final point):
+        await _onMapLongPress(point);
+
+      case ml.MapEventCameraIdle():
+        // Zoom değişiminde cluster'ları güncelle
+        if (_lastClustering && mounted) {
+          final vm = Provider.of<MapViewModel>(context, listen: false);
+          await _updateClusterData(vm.filteredPins);
+        }
+
       default:
         break;
     }
@@ -270,34 +434,868 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   Future<void> _onMapClick(ml.Position point) async {
     final vm = Provider.of<MapViewModel>(context, listen: false);
 
-    if (widget.onPinTap != null && vm.pins.isNotEmpty) {
-      final pin = _nearestPin(vm.pins, point);
+    // 1) Pin tıklaması: her zaman en yüksek öncelik
+    if (widget.onPinTap != null && vm.filteredPins.isNotEmpty) {
+      final pin = _nearestPin(vm.filteredPins, point);
       if (pin != null) {
         widget.onPinTap!(pin);
         return;
       }
     }
 
+    // 2) İl/İlçe modu aktifse (master switch) → tek tıklama ile seç
+    //    isProvinceModeActive = master switch (tüm seviyeler)
+    //    isProvincesModeActive = sadece province seviyesi (district'te false olur!)
+    if (vm.isProvinceModeActive) {
+      await _selectGeoAtPoint(point);
+      return;
+    }
+
+    // 3) Choropleth aktifse → tıklanan ilçeyi tespit et, tooltip göster
+    if (vm.choroplethMode != ChoroplethMode.none) {
+      await _queryChoroplethAtPoint(point, vm);
+      return;
+    }
+
+    // 4) Normal harita tıklaması (pin ekleme vs.)
     widget.onMapTap?.call(point);
   }
 
+  /// Ekran pikseli bazlı en yakın pin tespiti.
+  /// Sabit derece eşiği yerine, dokunma noktasını ekran koordinatına dönüştürüp
+  /// pin'in ekran konumuyla karşılaştırır. Böylece her zoom seviyesinde
+  /// tutarlı ~40px dokunma alanı sağlanır.
   Pin? _nearestPin(List<Pin> pins, ml.Position point) {
     if (pins.isEmpty) return null;
-    // İlçe tıklamalarını bozduğu için 0.08° yerine 0.015° seviyesine düşürüldü.
-    const double fixedThreshold = 0.015;
+    final controller = MapViewMapLibre._activeController;
+    if (controller == null) return null;
 
-    Pin? nearest;
-    double minDist = double.infinity;
-    for (final p in pins) {
-      final dLat = p.latitude  - point.lat.toDouble();
-      final dLon = p.longitude - point.lng.toDouble();
-      final dist = dLat * dLat + dLon * dLon;
-      if (dist < minDist) {
-        minDist = dist;
-        nearest = p;
+    // Dokunma toleransı: 40px (parmak ucu genişliği ~7mm ≈ 40px @2.5dpi)
+    const double tapRadiusPx = 40.0;
+
+    try {
+      final tapScreen = controller.toScreenLocationSync(point);
+      Pin? nearest;
+      double minDistSq = double.infinity;
+
+      for (final p in pins) {
+        final pinScreen = controller.toScreenLocationSync(
+          ml.Position(p.longitude, p.latitude),
+        );
+        final dx = tapScreen.dx - pinScreen.dx;
+        final dy = tapScreen.dy - pinScreen.dy;
+        final distSq = dx * dx + dy * dy;
+        if (distSq < minDistSq) {
+          minDistSq = distSq;
+          nearest = p;
+        }
+      }
+
+      return minDistSq < (tapRadiusPx * tapRadiusPx) ? nearest : null;
+    } catch (_) {
+      // toScreenLocationSync henüz hazır değilse fallback
+      return null;
+    }
+  }
+
+  // ─── İl/İlçe Seçimi (3 seviyeli navigasyon) ───────────────────
+
+  bool _geoSelectBusy = false;
+
+  /// Parsed GeoJSON feature cache (parse bir kez yapılsın diye).
+  static List<Map<String, dynamic>>? _parsedProvinceFeatures;
+  static List<Map<String, dynamic>>? _parsedDistrictFeatures;
+
+  /// Asset GeoJSON'ından feature listesini parse eder (lazy, tek sefer).
+  Future<List<Map<String, dynamic>>> _getProvinceFeatures() async {
+    if (_parsedProvinceFeatures != null) return _parsedProvinceFeatures!;
+    final raw = await _fetchProvincesGeoJson();
+    if (raw == null) return [];
+    final geojson = jsonDecode(raw) as Map<String, dynamic>;
+    final allFeatures = List<Map<String, dynamic>>.from(geojson['features'] ?? []);
+    // Türkiye sınırları dışındaki feature'ları filtrele
+    _parsedProvinceFeatures = allFeatures.where(_isFeatureInTurkey).toList();
+    return _parsedProvinceFeatures!;
+  }
+
+  Future<List<Map<String, dynamic>>> _getDistrictFeatures() async {
+    if (_parsedDistrictFeatures != null) return _parsedDistrictFeatures!;
+    final raw = await _fetchDistrictsGeoJson();
+    if (raw == null) return [];
+    final geojson = jsonDecode(raw) as Map<String, dynamic>;
+    final allFeatures = List<Map<String, dynamic>>.from(geojson['features'] ?? []);
+    // Türkiye sınırları dışındaki feature'ları filtrele (Yunan adaları vb.)
+    _parsedDistrictFeatures = allFeatures.where(_isFeatureInTurkey).toList();
+    return _parsedDistrictFeatures!;
+  }
+
+  /// Feature'ın centroid'inin Türkiye sınırları içinde olup olmadığını kontrol eder.
+  /// Web tarafındaki _filterDistrictGeoJson() ile aynı mantık.
+  static bool _isFeatureInTurkey(Map<String, dynamic> feature) {
+    const minLon = 25.0, maxLon = 46.0, minLat = 35.0, maxLat = 43.0;
+    try {
+      final geom = feature['geometry'] as Map<String, dynamic>?;
+      if (geom == null) return false;
+      final type = geom['type'] as String?;
+      List<dynamic>? ring;
+      if (type == 'Polygon') {
+        ring = (geom['coordinates'] as List)[0] as List;
+      } else if (type == 'MultiPolygon') {
+        ring = ((geom['coordinates'] as List)[0] as List)[0] as List;
+      }
+      if (ring == null || ring.isEmpty) return false;
+      double sumLon = 0, sumLat = 0;
+      for (final c in ring) {
+        sumLon += (c[0] as num).toDouble();
+        sumLat += (c[1] as num).toDouble();
+      }
+      final cLon = sumLon / ring.length;
+      final cLat = sumLat / ring.length;
+      return cLon >= minLon && cLon <= maxLon && cLat >= minLat && cLat <= maxLat;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Ray-casting point-in-polygon testi.
+  /// Tamamen client-side — backend'e gerek yok.
+  static bool _pointInPolygon(double lat, double lon, List<dynamic> ring) {
+    bool inside = false;
+    int j = ring.length - 1;
+    for (int i = 0; i < ring.length; i++) {
+      final xi = (ring[i][0] as num).toDouble(); // lon
+      final yi = (ring[i][1] as num).toDouble(); // lat
+      final xj = (ring[j][0] as num).toDouble();
+      final yj = (ring[j][1] as num).toDouble();
+
+      if (((yi > lat) != (yj > lat)) &&
+          (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+      j = i;
+    }
+    return inside;
+  }
+
+  /// GeoJSON geometry içinde nokta kontrolü (Polygon + MultiPolygon).
+  static bool _pointInGeometry(double lat, double lon, Map<String, dynamic> geometry) {
+    final type = geometry['type'] as String? ?? '';
+    final coords = geometry['coordinates'];
+    if (coords == null) return false;
+
+    if (type == 'Polygon') {
+      // İlk ring = dış sınır
+      return _pointInPolygon(lat, lon, coords[0]);
+    } else if (type == 'MultiPolygon') {
+      for (final polygon in coords) {
+        if (_pointInPolygon(lat, lon, polygon[0])) return true;
       }
     }
-    return minDist < (fixedThreshold * fixedThreshold) ? nearest : null;
+    return false;
+  }
+
+  /// Dokunulan noktadaki il/ilçeyi gömülü GeoJSON'dan bulur.
+  /// Tamamen offline — backend bağımsız.
+  Future<void> _selectGeoAtPoint(ml.Position point) async {
+    if (!mounted || _geoSelectBusy) return;
+    _geoSelectBusy = true;
+    setState(() => _geoLoading = true);
+
+    final vm = Provider.of<MapViewModel>(context, listen: false);
+    final lat = point.lat.toDouble();
+    final lon = point.lng.toDouble();
+
+    try {
+      String province = '';
+      String district = '';
+
+      // Her zaman ilçe GeoJSON'ından ara — hem il hem ilçe bilgisini verir
+      final districts = await _getDistrictFeatures();
+      for (final f in districts) {
+        final geom = f['geometry'] as Map<String, dynamic>?;
+        if (geom == null) continue;
+        if (_pointInGeometry(lat, lon, geom)) {
+          final props = f['properties'] as Map<String, dynamic>? ?? {};
+          province = (props['NAME_1'] ?? '').toString();
+          district = (props['NAME_2'] ?? '').toString();
+          break;
+        }
+      }
+
+      // İlçe GeoJSON'da bulunamadıysa il GeoJSON'da dene
+      if (province.isEmpty) {
+        final provinces = await _getProvinceFeatures();
+        for (final f in provinces) {
+          final geom = f['geometry'] as Map<String, dynamic>?;
+          if (geom == null) continue;
+          if (_pointInGeometry(lat, lon, geom)) {
+            final props = f['properties'] as Map<String, dynamic>? ?? {};
+            province = (props['NAME_1'] ?? '').toString();
+            break;
+          }
+        }
+      }
+
+      if (!mounted || province.isEmpty) return;
+
+      final initialMode = vm.initialSelectionMode;
+
+      // ────────────────────────────────────────────────────────
+      // BÖLGE MODU
+      // ────────────────────────────────────────────────────────
+      if (initialMode == SelectionLevel.region) {
+        final tappedRegion = _findRegionForProvince(province);
+
+        if (vm.selectedRegionName == null) {
+          // Henüz bölge seçilmemiş → bölge seç
+          if (tappedRegion != null && tappedRegion.isNotEmpty) {
+            vm.selectRegion(tappedRegion);
+            _flyToRegionBounds(tappedRegion);
+          }
+        } else if (tappedRegion != vm.selectedRegionName) {
+          // Başka bölgeye tıklandı → o bölgeye geç
+          if (tappedRegion != null && tappedRegion.isNotEmpty) {
+            vm.selectRegion(tappedRegion);
+            _flyToRegionBounds(tappedRegion);
+          }
+        } else if (vm.selectionLevel == SelectionLevel.province) {
+          // Aynı bölgede il tıklandı → ilçeleri göster
+          vm.selectProvince(province);
+          await _loadDistrictBorders(province);
+          _flyToProvinceCentroid(province);
+        } else if (vm.selectionLevel == SelectionLevel.district) {
+          // İlçe seviyesinde: ilçe veya başka il
+          if (district.isNotEmpty && province == vm.selectedProvinceName) {
+            vm.selectDistrict(district, province: province);
+            await _loadDistrictBorders(province, highlightDistrict: district);
+          } else {
+            // Başka il → o ilin ilçelerine geç
+            vm.selectProvince(province);
+            await _loadDistrictBorders(province);
+            _flyToProvinceCentroid(province);
+          }
+        }
+      }
+      // ────────────────────────────────────────────────────────
+      // İL MODU
+      // ────────────────────────────────────────────────────────
+      else if (initialMode == SelectionLevel.province) {
+        if (vm.selectionLevel == SelectionLevel.province ||
+            province != vm.selectedProvinceName) {
+          // Yeni il seçimi veya başka ile geçiş
+          // Ana il sınırları korunur, üstüne seçili ilin ilçeleri overlay olarak eklenir
+          vm.selectProvince(province);
+          await _showProvinceOverlay(province);
+          _flyToProvinceCentroid(province);
+        } else if (vm.selectionLevel == SelectionLevel.district &&
+                   district.isNotEmpty &&
+                   province == vm.selectedProvinceName) {
+          // Aynı ildeyken ilçe seçimi — overlay'ı güncelle (seçili ilçe vurgulu)
+          vm.selectDistrict(district, province: province);
+          // İlçe seçiminde overlay'ı yeniden çizmeye gerek yok — bilgi paneli güncellenir
+        }
+      }
+      // ────────────────────────────────────────────────────────
+      // İLÇE MODU
+      // ────────────────────────────────────────────────────────
+      else if (initialMode == SelectionLevel.district) {
+        if (district.isNotEmpty) {
+          vm.selectDistrict(district, province: province);
+          // İlçe modunda renkleri değiştirme — sadece bilgi göster
+        }
+      }
+      // ────────────────────────────────────────────────────────
+      // DİĞER (none, beklenmedik)
+      // ────────────────────────────────────────────────────────
+      else {
+        vm.selectProvince(province);
+        await _loadDistrictBorders(province);
+        _flyToProvinceCentroid(province);
+      }
+    } catch (e) {
+      debugPrint('[GEO] Seçim hatası: $e');
+    } finally {
+      _geoSelectBusy = false;
+      if (mounted) setState(() => _geoLoading = false);
+    }
+  }
+
+  /// Choropleth aktifken tıklanan ilçeyi tespit edip tooltip verisini ViewModel'e iletir.
+  Future<void> _queryChoroplethAtPoint(ml.Position point, MapViewModel vm) async {
+    final lat = point.lat.toDouble();
+    final lon = point.lng.toDouble();
+    try {
+      final districts = await _getDistrictFeatures();
+      for (final f in districts) {
+        final geom = f['geometry'] as Map<String, dynamic>?;
+        if (geom == null) continue;
+        if (_pointInGeometry(lat, lon, geom)) {
+          final props = f['properties'] as Map<String, dynamic>? ?? {};
+          final province = (props['NAME_1'] ?? '').toString();
+          final district = (props['NAME_2'] ?? '').toString();
+          if (province.isNotEmpty && district.isNotEmpty) {
+            vm.setChoroplethTap(province, district);
+          }
+          return;
+        }
+      }
+      // Türkiye dışına tıklandıysa tooltip'i kapat
+      vm.clearChoroplethTap();
+    } catch (e) {
+      debugPrint('[MapLibre-Native] Choropleth sorgu hatası: $e');
+    }
+  }
+
+  /// Seçilen ilin centroidine kamerayı uçurur.
+  /// Cache'lenmiş ilçe GeoJSON'ından ilin bounding box'ını hesaplar.
+  void _flyToProvinceCentroid(String provinceName) {
+    final cached = _cachedDistrictsGeoJson;
+    if (cached == null) {
+      // Cache yoksa sadece zoom yap
+      final curZoom = MapViewMapLibre._activeController?.camera?.zoom ?? 6.0;
+      if (curZoom < 8.0) {
+        MapViewMapLibre._activeController?.animateCamera(
+          zoom: 8.0,
+          nativeDuration: const Duration(milliseconds: 600),
+        );
+      }
+      return;
+    }
+
+    try {
+      final geojson = jsonDecode(cached) as Map<String, dynamic>;
+      final features = geojson['features'] as List? ?? [];
+      final normTarget = _normalizeForMatch(provinceName);
+
+      double minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+      bool found = false;
+
+      for (final f in features) {
+        final props = f['properties'] as Map<String, dynamic>? ?? {};
+        final name1 = (props['NAME_1'] ?? '').toString();
+        if (_normalizeForMatch(name1) != normTarget) continue;
+        found = true;
+
+        // Geometry koordinatlarından bbox hesapla
+        _extractCoordsFromGeometry(f['geometry'], (lon, lat) {
+          if (lat < minLat) minLat = lat;
+          if (lat > maxLat) maxLat = lat;
+          if (lon < minLon) minLon = lon;
+          if (lon > maxLon) maxLon = lon;
+        });
+      }
+
+      if (!found) return;
+
+      final centerLat = (minLat + maxLat) / 2;
+      final centerLon = (minLon + maxLon) / 2;
+      // Bbox genişliğine göre zoom hesapla
+      final latSpan = maxLat - minLat;
+      final lonSpan = maxLon - minLon;
+      final span = math.max(latSpan, lonSpan);
+      // span 0.5° → zoom ~10, span 2° → zoom ~8, span 5° → zoom ~6
+      final zoom = (10.0 - (math.log(span.clamp(0.1, 20)) / math.ln2) * 1.2).clamp(6.0, 12.0);
+
+      MapViewMapLibre._activeController?.animateCamera(
+        center: ml.Position(centerLon, centerLat),
+        zoom: zoom,
+        nativeDuration: const Duration(milliseconds: 700),
+      );
+    } catch (e) {
+      debugPrint('[MapLibre-Native] flyToProvinceCentroid hata: $e');
+    }
+  }
+
+  /// GeoJSON geometry'sinden tüm koordinatları çıkarır (Polygon, MultiPolygon).
+  static void _extractCoordsFromGeometry(
+    dynamic geometry,
+    void Function(double lon, double lat) callback,
+  ) {
+    if (geometry == null) return;
+    final type = geometry['type'] as String? ?? '';
+    final coords = geometry['coordinates'];
+    if (coords == null) return;
+
+    if (type == 'Polygon') {
+      for (final ring in coords) {
+        for (final pt in ring) {
+          callback((pt[0] as num).toDouble(), (pt[1] as num).toDouble());
+        }
+      }
+    } else if (type == 'MultiPolygon') {
+      for (final polygon in coords) {
+        for (final ring in polygon) {
+          for (final pt in ring) {
+            callback((pt[0] as num).toDouble(), (pt[1] as num).toDouble());
+          }
+        }
+      }
+    }
+  }
+
+  /// İlçe GeoJSON'ını gömülü asset'ten yükler (tek sefer, sonra cache).
+  /// Backend bağımsız — offline çalışır.
+  Future<String?> _fetchDistrictsGeoJson() async {
+    if (_cachedDistrictsGeoJson != null) return _cachedDistrictsGeoJson;
+    try {
+      final raw = await rootBundle.loadString('assets/geo/turkey_districts.json');
+      _cachedDistrictsGeoJson = raw;
+      return raw;
+    } catch (e) {
+      debugPrint('[MapLibre-Native] İlçe GeoJSON asset yükleme hatası: $e');
+    }
+    return null;
+  }
+
+  /// İl GeoJSON'ını gömülü asset'ten yükler (tek sefer, sonra cache).
+  /// Backend bağımsız — offline çalışır.
+  Future<String?> _fetchProvincesGeoJson() async {
+    if (_cachedProvincesGeoJson != null) return _cachedProvincesGeoJson;
+    try {
+      final raw = await rootBundle.loadString('assets/geo/turkey_provinces.json');
+      _cachedProvincesGeoJson = raw;
+      return raw;
+    } catch (e) {
+      debugPrint('[MapLibre-Native] İl GeoJSON asset yükleme hatası: $e');
+    }
+    return null;
+  }
+
+  /// Web benzeri 10 renkli palet — komşu bölgelerin farklı renk alması için.
+  static const _regionPalette = [
+    'rgba(231,76,60,0.35)',   // kırmızı
+    'rgba(88,214,141,0.35)',  // yeşil
+    'rgba(244,208,63,0.35)',  // sarı
+    'rgba(52,152,219,0.35)',  // mavi
+    'rgba(155,89,182,0.35)',  // mor
+    'rgba(230,126,34,0.35)',  // turuncu
+    'rgba(26,188,156,0.35)',  // turkuaz
+    'rgba(241,196,15,0.35)',  // altın
+    'rgba(46,134,193,0.35)',  // koyu mavi
+    'rgba(243,156,18,0.35)',  // amber
+  ];
+
+  /// 7 bölge için sabit renk haritası — haritada bölgeleri görsel olarak ayırır.
+  static const _regionColorMap = <String, String>{
+    'marmara':             'rgba(52,152,219,0.35)',   // mavi
+    'ege':                 'rgba(88,214,141,0.35)',   // yeşil
+    'akdeniz':             'rgba(244,208,63,0.35)',   // sarı
+    'ic anadolu':          'rgba(155,89,182,0.35)',   // mor
+    'karadeniz':           'rgba(26,188,156,0.35)',   // turkuaz
+    'dogu anadolu':        'rgba(231,76,60,0.35)',    // kırmızı
+    'guneydogu anadolu':   'rgba(230,126,34,0.35)',   // turuncu
+  };
+
+  /// Graph coloring ile komşu feature'ların aynı/benzer renkleri almamasını sağlar.
+  /// Vertex-paylaşım bazlı komşuluk tespiti: ~0.001° hassasiyet (~100m).
+  /// Web'deki _addUniqueColorLayer() ile aynı mantık.
+  static String _colorizeFeatures(List<dynamic> features, {bool useRegionColors = false}) {
+    if (features.isEmpty) return jsonEncode({'type': 'FeatureCollection', 'features': features});
+
+    // 1) Her feature için vertex key → feature indeks haritası oluştur
+    final vertexToFeatures = <String, Set<int>>{};
+    for (int i = 0; i < features.length; i++) {
+      final geom = (features[i] as Map)['geometry'] as Map<String, dynamic>?;
+      if (geom == null) continue;
+      final coords = _extractAllCoords(geom);
+      for (final c in coords) {
+        // ~100m hassasiyet: koordinatı 1000'e çarp, yuvarla
+        final key = '${(c[0] * 1000).round()},${(c[1] * 1000).round()}';
+        vertexToFeatures.putIfAbsent(key, () => <int>{}).add(i);
+      }
+    }
+
+    // 2) Komşuluk grafiği oluştur
+    final adj = List<Set<int>>.generate(features.length, (_) => <int>{});
+    for (final group in vertexToFeatures.values) {
+      if (group.length < 2) continue;
+      final indices = group.toList();
+      for (int a = 0; a < indices.length; a++) {
+        for (int b = a + 1; b < indices.length; b++) {
+          adj[indices[a]].add(indices[b]);
+          adj[indices[b]].add(indices[a]);
+        }
+      }
+    }
+
+    // 3) Greedy graph coloring — komşu sayısına göre sıralı
+    final order = List<int>.generate(features.length, (i) => i);
+    order.sort((a, b) => adj[b].length.compareTo(adj[a].length));
+    final colors = List<int>.filled(features.length, -1);
+    for (final idx in order) {
+      final usedColors = <int>{};
+      for (final neighbor in adj[idx]) {
+        if (colors[neighbor] >= 0) usedColors.add(colors[neighbor]);
+      }
+      int c = 0;
+      while (usedColors.contains(c)) { c++; }
+      colors[idx] = c;
+    }
+
+    // 4) Renk ata
+    for (int i = 0; i < features.length; i++) {
+      final props = (features[i]['properties'] as Map<String, dynamic>?) ?? {};
+      if (useRegionColors) {
+        final region = (props['REGION'] ?? '').toString();
+        final normRegion = region.toLowerCase()
+            .replaceAll('ı', 'i').replaceAll('ş', 's').replaceAll('ğ', 'g')
+            .replaceAll('ü', 'u').replaceAll('ö', 'o').replaceAll('ç', 'c')
+            .replaceAll('â', 'a').trim();
+        props['_color'] = _regionColorMap[normRegion]
+            ?? _regionPalette[colors[i] % _regionPalette.length];
+      } else {
+        props['_color'] = _regionPalette[colors[i] % _regionPalette.length];
+      }
+      features[i]['properties'] = props;
+    }
+    return jsonEncode({'type': 'FeatureCollection', 'features': features});
+  }
+
+  /// Geometry'den tüm koordinatları düz liste olarak çıkarır.
+  static List<List<double>> _extractAllCoords(Map<String, dynamic> geom) {
+    final result = <List<double>>[];
+    final type = geom['type'] as String? ?? '';
+    final coords = geom['coordinates'];
+    if (coords == null) return result;
+
+    if (type == 'Polygon') {
+      for (final ring in coords as List) {
+        for (final pt in ring as List) {
+          result.add([(pt[0] as num).toDouble(), (pt[1] as num).toDouble()]);
+        }
+      }
+    } else if (type == 'MultiPolygon') {
+      for (final polygon in coords as List) {
+        for (final ring in polygon as List) {
+          for (final pt in ring as List) {
+            result.add([(pt[0] as num).toDouble(), (pt[1] as num).toDouble()]);
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  /// İlçe sınırlarını yükler ve haritada gösterir.
+  /// [provinceName] null ise tüm Türkiye ilçeleri gösterilir (İlçe modu).
+  Future<void> _loadDistrictBorders(String? provinceName, {String? highlightDistrict}) async {
+    final style = _style;
+    if (style == null || !_styleLoaded) return;
+
+    _bordersSyncing = true;
+    await _removeBorderLayers();
+
+    try {
+      final features = await _getDistrictFeatures();
+      final List<Map<String, dynamic>> filtered;
+      if (provinceName != null && provinceName.isNotEmpty) {
+        // Belirli ilin ilçeleri
+        final normTarget = _normalizeForMatch(provinceName);
+        filtered = features.where((f) {
+          final props = f['properties'] as Map<String, dynamic>? ?? {};
+          final name1 = (props['NAME_1'] ?? '').toString();
+          return _normalizeForMatch(name1) == normTarget;
+        }).toList();
+      } else {
+        // Tüm ilçeler (İlçe modu)
+        filtered = features;
+      }
+
+      if (filtered.isEmpty) return;
+
+      // Deep copy + graph coloring (komşu ilçeler farklı renk alır)
+      final deepCopy = filtered.map((f) => jsonDecode(jsonEncode(f))).toList();
+      var colorizedJson = _colorizeFeatures(deepCopy);
+
+      // Seçili ilçeyi vurgula (graph coloring sonrası override)
+      if (highlightDistrict != null) {
+        final normDistrict = _normalizeForMatch(highlightDistrict);
+        final parsed = jsonDecode(colorizedJson) as Map<String, dynamic>;
+        for (final f in (parsed['features'] as List)) {
+          final props = f['properties'] as Map<String, dynamic>;
+          final name2 = (props['NAME_2'] ?? '').toString();
+          if (_normalizeForMatch(name2) == normDistrict) {
+            props['_color'] = 'rgba(52,152,219,0.6)';
+          }
+        }
+        colorizedJson = jsonEncode(parsed);
+      }
+
+      // Güvenlik: stale source/layer kalmış olabilir — yeniden temizle
+      try { await style.removeLayer(_bordersLineLayerId); } catch (_) {}
+      try { await style.removeLayer(_bordersFillLayerId); } catch (_) {}
+      try { await style.removeSource(_bordersSourceId); } catch (_) {}
+
+      await style.addSource(ml.GeoJsonSource(
+        id: _bordersSourceId,
+        data: colorizedJson,
+      ));
+
+      // Renkli dolgu — her ilçe farklı renk
+      await style.addLayer(
+        ml.FillStyleLayer(
+          id: _bordersFillLayerId,
+          sourceId: _bordersSourceId,
+          paint: <String, Object>{
+            'fill-color': ['get', '_color'],
+            'fill-opacity': 1.0,
+          },
+        ),
+        belowLayerId: _pinsShadowLayerId,
+      );
+
+      // Sınır çizgileri
+      await style.addLayer(
+        ml.LineStyleLayer(
+          id: _bordersLineLayerId,
+          sourceId: _bordersSourceId,
+          paint: <String, Object>{
+            'line-color': 'rgba(44,62,80,0.6)',
+            'line-width': 1.5,
+            'line-opacity': 0.8,
+          },
+        ),
+        belowLayerId: _pinsShadowLayerId,
+      );
+
+      _bordersActive = true;
+    } catch (e) {
+      debugPrint('[MapLibre-Native] İlçe sınırları yükleme hatası: $e');
+    } finally {
+      _bordersSyncing = false;
+    }
+  }
+
+  /// İl sınırlarını yükler — bölge filtresi varsa sadece o bölgenin illeri.
+  Future<void> _loadProvinceBorders({String? regionFilter}) async {
+    final style = _style;
+    if (style == null || !_styleLoaded) return;
+
+    _bordersSyncing = true;
+    await _removeBorderLayers();
+
+    try {
+      final allFeatures = await _getProvinceFeatures();
+      if (allFeatures.isEmpty) return;
+
+      // Bölge filtresi uygula
+      final features = regionFilter != null
+          ? allFeatures.where((f) {
+              final props = f['properties'] as Map<String, dynamic>? ?? {};
+              final region = (props['REGION'] ?? '').toString();
+              return _normalizeForMatch(region) == _normalizeForMatch(regionFilter);
+            }).toList()
+          : allFeatures;
+
+      if (features.isEmpty) return;
+
+      // Deep copy + graph coloring (komşu iller farklı renk alır)
+      final colorized = _colorizeFeatures(
+        features.map((f) => jsonDecode(jsonEncode(f))).toList(),
+        useRegionColors: true,
+      );
+
+      // Güvenlik: stale source/layer kalmış olabilir
+      try { await style.removeLayer(_bordersLineLayerId); } catch (_) {}
+      try { await style.removeLayer(_bordersFillLayerId); } catch (_) {}
+      try { await style.removeSource(_bordersSourceId); } catch (_) {}
+
+      await style.addSource(ml.GeoJsonSource(
+        id: _bordersSourceId,
+        data: colorized,
+      ));
+
+      // Renkli dolgu — her il farklı renk
+      await style.addLayer(
+        ml.FillStyleLayer(
+          id: _bordersFillLayerId,
+          sourceId: _bordersSourceId,
+          paint: <String, Object>{
+            'fill-color': ['get', '_color'],
+            'fill-opacity': 1.0,
+          },
+        ),
+        belowLayerId: _pinsShadowLayerId,
+      );
+
+      // Sınır çizgileri
+      await style.addLayer(
+        ml.LineStyleLayer(
+          id: _bordersLineLayerId,
+          sourceId: _bordersSourceId,
+          paint: <String, Object>{
+            'line-color': 'rgba(160,181,200,0.65)',
+            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 0.6, 6, 1.0, 10, 1.5],
+            'line-opacity': 0.7,
+          },
+        ),
+        belowLayerId: _pinsShadowLayerId,
+      );
+
+      _bordersActive = true;
+    } catch (e) {
+      debugPrint('[MapLibre-Native] İl sınırları yükleme hatası: $e');
+    } finally {
+      _bordersSyncing = false;
+    }
+  }
+
+  Future<void> _removeBorderLayers() async {
+    final style = _style;
+    if (style == null) return;
+    // Katmanlar ve source varsa kaldır — _bordersActive false olsa bile temizle
+    // (race condition'larda stale layer kalmasını önler)
+    try { await style.removeLayer(_bordersLineLayerId); } catch (_) {}
+    try { await style.removeLayer(_bordersFillLayerId); } catch (_) {}
+    try { await style.removeSource(_bordersSourceId); } catch (_) {}
+    _bordersActive = false;
+    // Overlay katmanlarını da temizle (İl modu overlay'ı)
+    await _removeOverlayLayers();
+  }
+
+  /// İl modu overlay katmanlarını kaldır (seçili ilin ilçeleri + mavi sınır).
+  Future<void> _removeOverlayLayers() async {
+    final style = _style;
+    if (style == null) return;
+    try { await style.removeLayer(_overlayProvLineId); } catch (_) {}
+    try { await style.removeLayer(_overlayLineLayerId); } catch (_) {}
+    try { await style.removeLayer(_overlayFillLayerId); } catch (_) {}
+    try { await style.removeSource(_overlaySourceId); } catch (_) {}
+    try { await style.removeSource('srrp-overlay-prov'); } catch (_) {}
+    _overlayActive = false;
+  }
+
+  /// İl modunda seçili ilin ilçelerini overlay olarak göster + mavi sınır.
+  /// Ana _borders katmanları (tüm iller) korunur, üstüne eklenir.
+  Future<void> _showProvinceOverlay(String provinceName) async {
+    final style = _style;
+    if (style == null || !_styleLoaded) return;
+
+    await _removeOverlayLayers();
+
+    try {
+      final features = await _getDistrictFeatures();
+      final normTarget = _normalizeForMatch(provinceName);
+      final filtered = features.where((f) {
+        final props = f['properties'] as Map<String, dynamic>? ?? {};
+        final name1 = (props['NAME_1'] ?? '').toString();
+        return _normalizeForMatch(name1) == normTarget;
+      }).toList();
+
+      if (filtered.isEmpty) return;
+
+      // Deep copy + graph coloring for districts
+      final deepCopy = filtered.map((f) => jsonDecode(jsonEncode(f))).toList();
+      final colorizedJson = _colorizeFeatures(deepCopy);
+
+      await style.addSource(ml.GeoJsonSource(
+        id: _overlaySourceId,
+        data: colorizedJson,
+      ));
+
+      // İlçe dolguları
+      await style.addLayer(
+        ml.FillStyleLayer(
+          id: _overlayFillLayerId,
+          sourceId: _overlaySourceId,
+          paint: <String, Object>{
+            'fill-color': ['get', '_color'],
+            'fill-opacity': 1.0,
+          },
+        ),
+        belowLayerId: _pinsShadowLayerId,
+      );
+
+      // İlçe sınır çizgileri — mavi
+      await style.addLayer(
+        ml.LineStyleLayer(
+          id: _overlayLineLayerId,
+          sourceId: _overlaySourceId,
+          paint: <String, Object>{
+            'line-color': '#2196F3',
+            'line-width': 1.5,
+            'line-opacity': 0.7,
+          },
+        ),
+        belowLayerId: _pinsShadowLayerId,
+      );
+
+      // İl dış sınırı — kalın mavi
+      // Province GeoJSON'dan seçili ili çek
+      final provFeatures = await _getProvinceFeatures();
+      final provFiltered = provFeatures.where((f) {
+        final props = f['properties'] as Map<String, dynamic>? ?? {};
+        final name1 = (props['NAME_1'] ?? '').toString();
+        return _normalizeForMatch(name1) == normTarget;
+      }).toList();
+      if (provFiltered.isNotEmpty) {
+        // Province sınırını ayrı bir source olarak eklemek karmaşıklaştırır.
+        // Bunun yerine, mevcut _borders source'undaki il sınırını line-width ile vurgularız.
+        // Ama zaten ana _borders province layer aktif — sadece mavi sınır _bordersLineLayerId'nin
+        // paint'ini güncelleyebiliriz. Ancak bu tüm illere uygulanır.
+        // Alternatif: overlay source'a province feature da ekle, farklı _color ile.
+        final provDeepCopy = provFiltered.map((f) {
+          final copy = jsonDecode(jsonEncode(f)) as Map<String, dynamic>;
+          (copy['properties'] as Map<String, dynamic>)['_color'] = '#2196F3';
+          return copy;
+        }).toList();
+        // Overlay source'u güncelle — ilçe + il feature birleştir
+        // İl feature type: line olarak ayrı katmana eklenecek
+        final provGeojson = jsonEncode({
+          'type': 'FeatureCollection',
+          'features': provDeepCopy,
+        });
+        // Ayrı bir source yerine: mevcut borders source'undaki ilin line rengini değiştir
+        // En temiz yol: ayrı bir line layer ekle
+        try { await style.removeSource('srrp-overlay-prov'); } catch (_) {}
+        await style.addSource(ml.GeoJsonSource(
+          id: 'srrp-overlay-prov',
+          data: provGeojson,
+        ));
+        await style.addLayer(
+          ml.LineStyleLayer(
+            id: _overlayProvLineId,
+            sourceId: 'srrp-overlay-prov',
+            paint: <String, Object>{
+              'line-color': '#2196F3',
+              'line-width': 3.0,
+              'line-opacity': 0.9,
+            },
+          ),
+          belowLayerId: _pinsShadowLayerId,
+        );
+      }
+
+      _overlayActive = true;
+    } catch (e) {
+      debugPrint('[MapLibre-Native] Province overlay hatası: $e');
+    }
+  }
+
+  /// Sınır katmanlarının aktif olup olmadığı (debug / state tracking).
+  bool get hasBordersActive => _bordersActive;
+
+  /// Türkçe karakter normalizasyonu — il eşleştirmesi için.
+  static String _normalizeForMatch(String s) {
+    return s.toLowerCase()
+        .replaceAll('ı', 'i')
+        .replaceAll('ş', 's')
+        .replaceAll('ğ', 'g')
+        .replaceAll('ü', 'u')
+        .replaceAll('ö', 'o')
+        .replaceAll('ç', 'c')
+        .replaceAll('â', 'a')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  /// Long-press: il modu aktifken ek seçim, aktif değilken yok sayılır.
+  Future<void> _onMapLongPress(ml.Position point) async {
+    if (!mounted) return;
+    final vm = Provider.of<MapViewModel>(context, listen: false);
+    if (vm.isProvinceModeActive) {
+      await _selectGeoAtPoint(point);
+    }
   }
 
   // ─── Katman Kurulumu ──────────────────────────────────────────────
@@ -322,6 +1320,13 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       await style.addSource(ml.GeoJsonSource(id: _pinsSourceId, data: _pinsToGeoJson([])));
     } catch (e) {
       debugPrint('[MapLibre-Native] pin source eklenemedi: $e');
+    }
+
+    // Cluster source & layers
+    try {
+      await style.addSource(ml.GeoJsonSource(id: _clusterSourceId, data: '{"type":"FeatureCollection","features":[]}'));
+    } catch (e) {
+      debugPrint('[MapLibre-Native] cluster source eklenemedi: $e');
     }
 
     try {
@@ -372,17 +1377,30 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
   // ─── Pin Sync ─────────────────────────────────────────────────────
 
-  Future<void> _syncPins(List<Pin> pins, bool is3D) async {
+  Future<void> _syncPins(List<Pin> pins, bool is3D, bool cluster) async {
     final style = _style;
     if (style == null || !_styleLoaded) return;
 
-    if (!_pinsEqual(pins, _lastPins)) {
+    final pinsChanged = !_pinsEqual(pins, _lastPins);
+    final clusterChanged = cluster != _lastClustering;
+
+    if (pinsChanged) {
       _lastPins = List.from(pins);
-      try {
-        await style.updateGeoJsonSource(id: _pinsSourceId, data: _pinsToGeoJson(pins));
-      } catch (e) {
-        debugPrint('[MapLibre-Native] pin source güncelleme hatası: $e');
-        return;
+    }
+
+    if (pinsChanged || clusterChanged) {
+      _lastClustering = cluster;
+      if (cluster) {
+        await _updateClusterData(pins);
+        await _ensureClusterLayers();
+      } else {
+        await _removeClusterLayers();
+        try {
+          await style.updateGeoJsonSource(id: _pinsSourceId, data: _pinsToGeoJson(pins));
+        } catch (e) {
+          debugPrint('[MapLibre-Native] pin source güncelleme hatası: $e');
+          return;
+        }
       }
     }
 
@@ -444,6 +1462,99 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       if (a[i].id != b[i].id) return false;
     }
     return true;
+  }
+
+  // ─── Cluster Yardımcıları ─────────────────────────────────────────
+
+  Future<void> _updateClusterData(List<Pin> pins) async {
+    final style = _style;
+    if (style == null || !_styleLoaded) return;
+    final zoom = MapViewMapLibre._activeController?.camera?.zoom ?? 6.0;
+    final clusters = _clusterPins(pins, zoom);
+    try {
+      // Tekil pinleri ana source'a, cluster noktalarını cluster source'a yaz
+      await style.updateGeoJsonSource(
+        id: _pinsSourceId,
+        data: _unclusteredPinsToGeoJson(clusters),
+      );
+      await style.updateGeoJsonSource(
+        id: _clusterSourceId,
+        data: _clustersToGeoJson(clusters),
+      );
+    } catch (e) {
+      debugPrint('[MapLibre-Native] cluster güncelleme hatası: $e');
+    }
+  }
+
+  Future<void> _ensureClusterLayers() async {
+    if (_clusterLayersActive) return;
+    final style = _style;
+    if (style == null) return;
+    try {
+      await style.addLayer(
+        ml.CircleStyleLayer(
+          id: _clusterCircleId,
+          sourceId: _clusterSourceId,
+          paint: <String, Object>{
+            'circle-radius': [
+              'step', ['get', 'count'],
+              18,   // count < 10 → 18px
+              10, 24, // count < 50 → 24px
+              50, 32, // count >= 50 → 32px
+            ],
+            'circle-color': [
+              'step', ['get', 'count'],
+              '#51bbd6', // < 10: açık mavi
+              10, '#f1f075', // < 50: sarı
+              50, '#f28cb1', // >= 50: pembe
+            ],
+            'circle-opacity': 0.85,
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#FFFFFF',
+          },
+        ),
+        belowLayerId: _pinsLayerId,
+      );
+    } catch (e) {
+      debugPrint('[MapLibre-Native] cluster circle layer hatası: $e');
+    }
+    try {
+      await style.addLayer(
+        ml.SymbolStyleLayer(
+          id: _clusterCountId,
+          sourceId: _clusterSourceId,
+          layout: <String, Object>{
+            'text-field': ['get', 'label'],
+            'text-size': 13,
+            'text-allow-overlap': true,
+          },
+          paint: <String, Object>{
+            'text-color': '#000000',
+            'text-halo-color': '#FFFFFF',
+            'text-halo-width': 1,
+          },
+        ),
+      );
+    } catch (e) {
+      debugPrint('[MapLibre-Native] cluster count layer hatası: $e');
+    }
+    _clusterLayersActive = true;
+  }
+
+  Future<void> _removeClusterLayers() async {
+    if (!_clusterLayersActive) return;
+    final style = _style;
+    if (style == null) return;
+    try { await style.removeLayer(_clusterCountId); } catch (_) {}
+    try { await style.removeLayer(_clusterCircleId); } catch (_) {}
+    _clusterLayersActive = false;
+    // Tüm pinleri tekrar göster
+    try {
+      await style.updateGeoJsonSource(
+        id: _clusterSourceId,
+        data: '{"type":"FeatureCollection","features":[]}',
+      );
+    } catch (_) {}
   }
 
   // ─── Heatmap Sync ─────────────────────────────────────────────────
@@ -568,25 +1679,559 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     }
   }
 
+  // ─── Cloud Layer Sync (native: RasterSource tile overlay) ─────────
+
+  Future<void> _syncCloudLayer(bool show) async {
+    final style = _style;
+    if (style == null || !_styleLoaded || show == _lastCloud) return;
+    _lastCloud = show;
+
+    if (show && !_cloudActive) {
+      try {
+        // RainViewer ücretsiz bulut/radar tile'ları (API key gerekmez)
+        await style.addSource(ml.RasterSource(
+          id: _cloudSourceId,
+          tiles: ['https://tilecache.rainviewer.com/v2/satellite/nowcast/256/{z}/{x}/{y}/2/1_1.png'],
+          tileSize: 256,
+          maxZoom: 8,
+        ));
+      } catch (_) {}
+
+      try {
+        await style.addLayer(
+          ml.RasterStyleLayer(
+            id: _cloudLayerId,
+            sourceId: _cloudSourceId,
+            paint: <String, Object>{
+              'raster-opacity': 0.45,
+            },
+          ),
+          belowLayerId: _pinsShadowLayerId,
+        );
+        _cloudActive = true;
+      } catch (e) {
+        debugPrint('[MapLibre-Native] cloud layer eklenemedi: $e');
+      }
+    } else if (!show && _cloudActive) {
+      try { await style.removeLayer(_cloudLayerId); } catch (_) {}
+      try { await style.removeSource(_cloudSourceId); } catch (_) {}
+      _cloudActive = false;
+    }
+  }
+
+  // ─── İl/İlçe Sınırları Sync (ViewModel değişimine tepki) ──────
+
+  /// Border layer işlemleri için kilit — race condition önler (SIGSEGV fix).
+  bool _bordersSyncing = false;
+
+  Future<void> _syncBorders(MapViewModel vm) async {
+    if (_style == null || !_styleLoaded || _bordersSyncing) return;
+
+    final show = vm.isProvinceModeActive;
+    final level = vm.selectionLevel;
+    final province = vm.selectedProvinceName;
+    final region = vm.selectedRegionName;
+    final district = vm.selectedDistrictName;
+
+    // Hiç değişim yoksa çık
+    if (show == _lastProvincesMode &&
+        level == _lastSelectionLevel &&
+        province == _lastSelectedProvince &&
+        region == _lastSelectedRegion &&
+        district == _lastSelectedDistrict) {
+      return;
+    }
+
+    final regionChanged = region != _lastSelectedRegion;
+    final provinceChanged = province != _lastSelectedProvince;
+
+    _lastProvincesMode = show;
+    _lastSelectionLevel = level;
+    _lastSelectedProvince = province;
+    _lastSelectedRegion = region;
+    _lastSelectedDistrict = district;
+
+    if (!show) {
+      await _removeBorderLayers();
+      return;
+    }
+
+    // _selectGeoAtPoint zaten border yüklüyorsa tekrar yükleme
+    // (state güncellendi yukarıda, _selectGeoAtPoint bitince _syncBorders tekrar çağrılmaz)
+    if (_geoSelectBusy) {
+      return;
+    }
+
+    _bordersSyncing = true;
+    try {
+      final initial = vm.initialSelectionMode;
+
+      if (level == SelectionLevel.district && initial == SelectionLevel.province) {
+        // İL MODU → ilçe seviyesine geçildi: il sınırlarını koru, üstüne overlay ekle
+        if (!_bordersActive) {
+          await _loadProvinceBorders(); // Tüm iller (filtre yok)
+        }
+        // Sadece il değiştiğinde overlay'ı güncelle (aynı ilde ilçe seçiminde değiştirme)
+        if (province != null && (provinceChanged || !_overlayActive)) {
+          await _showProvinceOverlay(province);
+        }
+      } else if (level == SelectionLevel.district && initial == SelectionLevel.district) {
+        // İLÇE MODU: tüm ilçeler, seçim renkleri değişmez
+        await _removeOverlayLayers();
+        if (!_bordersActive) {
+          // İlk yüklemede tüm ilçeleri göster (province=null)
+          await _loadDistrictBorders(null);
+        }
+        // İlçe seçildiğinde borderleri yeniden çizme — sadece bilgi paneli güncellenir
+      } else if (level == SelectionLevel.district) {
+        // Bölge modu → ilçe seviyesi: overlay temizle, klasik ilçe sınırları yükle
+        await _removeOverlayLayers();
+        await _loadDistrictBorders(province, highlightDistrict: district);
+      } else if (level == SelectionLevel.region) {
+        await _removeOverlayLayers();
+        await _loadProvinceBorders(regionFilter: null);
+      } else {
+        // Province (İl) modu ve Region → Province geçişi
+        await _removeOverlayLayers();
+        await _loadProvinceBorders(regionFilter: region);
+        if (regionChanged && region != null) {
+          _flyToRegionBounds(region);
+        }
+      }
+    } finally {
+      _bordersSyncing = false;
+    }
+  }
+
+  /// İl adından bölge adını bulur (cache'lenmiş province GeoJSON'ından).
+  String? _findRegionForProvince(String provinceName) {
+    final features = _parsedProvinceFeatures;
+    if (features == null || features.isEmpty) return null;
+    final normTarget = _normalizeForMatch(provinceName);
+    for (final f in features) {
+      final props = f['properties'] as Map<String, dynamic>? ?? {};
+      final name1 = (props['NAME_1'] ?? '').toString();
+      if (_normalizeForMatch(name1) == normTarget) {
+        return (props['REGION'] ?? '').toString();
+      }
+    }
+    return null;
+  }
+
+  /// Bölge sınırlarına kamerayı uçurur (province GeoJSON'ından bbox hesaplar).
+  void _flyToRegionBounds(String regionName) {
+    final features = _parsedProvinceFeatures;
+    if (features == null || features.isEmpty) return;
+
+    final normRegion = _normalizeForMatch(regionName);
+    double minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+    bool found = false;
+
+    for (final f in features) {
+      final props = f['properties'] as Map<String, dynamic>? ?? {};
+      final region = (props['REGION'] ?? '').toString();
+      if (_normalizeForMatch(region) != normRegion) continue;
+      found = true;
+      _extractCoordsFromGeometry(f['geometry'], (lon, lat) {
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+      });
+    }
+
+    if (!found) return;
+
+    final centerLat = (minLat + maxLat) / 2;
+    final centerLon = (minLon + maxLon) / 2;
+    final span = math.max(maxLat - minLat, maxLon - minLon);
+    final zoom = (10.0 - (math.log(span.clamp(0.1, 20)) / math.ln2) * 1.2).clamp(5.0, 10.0);
+
+    MapViewMapLibre._activeController?.animateCamera(
+      center: ml.Position(centerLon, centerLat),
+      zoom: zoom,
+      nativeDuration: const Duration(milliseconds: 700),
+    );
+  }
+
+  // ─── Choropleth Sync (native: GeoJSON fill layer) ─────────────────
+
+  static const _choroplethSourceId = 'srrp-choropleth-src';
+  static const _choroplethLayerId  = 'srrp-choropleth-fill';
+
+  Future<void> _syncChoropleth(MapViewModel vm) async {
+    final style = _style;
+    if (style == null || !_styleLoaded) return;
+
+    final mode = vm.choroplethMode;
+    final data = vm.choroplethData;
+    final hasData = data != null && data.isNotEmpty;
+
+    // Mod aynı VE katman zaten aktifse (veya data yok) → atla
+    if (mode == _lastChoropleth && (_choroplethLayerActive || !hasData)) return;
+    _lastChoropleth = mode;
+
+    // Önceki katmanı kaldır
+    if (_choroplethLayerActive) {
+      try { await style.removeLayer(_choroplethLayerId); } catch (_) {}
+      _choroplethLayerActive = false;
+    }
+    if (_choroplethSourceAdded) {
+      try { await style.removeSource(_choroplethSourceId); } catch (_) {}
+      _choroplethSourceAdded = false;
+    }
+
+    if (mode == ChoroplethMode.none || data == null || data.isEmpty) return;
+
+    // District GeoJSON'ı cache'den al
+    try {
+      final raw = await _fetchDistrictsGeoJson();
+      if (raw == null) return;
+
+      // Ham GeoJSON'ı kopyala — orijinal cache'e dokunma
+      final geojson = jsonDecode(raw) as Map<String, dynamic>;
+      // Türkiye dışındaki feature'ları filtrele (Yunan adaları vb.)
+      final features = (geojson['features'] as List? ?? [])
+          .cast<Map<String, dynamic>>()
+          .where(_isFeatureInTurkey)
+          .toList();
+      geojson['features'] = features;
+      final dataKey = mode.dataKey;
+
+      // Her feature'a choropleth_value property ekle
+      for (final f in features) {
+        final props = f['properties'] as Map<String, dynamic>? ?? {};
+        final name1 = props['NAME_1'] ?? '';
+        final name2 = props['NAME_2'] ?? '';
+        final key = '$name1|$name2';
+        final entry = data[key];
+        if (entry is Map) {
+          props['choropleth_value'] = (entry[dataKey] as num?)?.toDouble() ?? 0.0;
+        } else {
+          props['choropleth_value'] = 0.0;
+        }
+      }
+
+      // Dinamik ölçeklendirme: gerçek değerlerden percentile hesapla
+      final vals = <double>[];
+      for (final f in features) {
+        final v = (f['properties'] as Map)['choropleth_value'] as double;
+        if (v != 0.0) vals.add(v);
+      }
+      if (vals.isEmpty) return;
+      vals.sort();
+
+      // ── Sabit fiziksel skala — gerçek değer → renk eşlemesi ──────────
+      // Sıcaklık, rüzgar, ışınım için fiziksel anlamlı eşik değerleri.
+      // Aynı değer HER ZAMAN aynı renk = tutarlı, okunabilir harita.
+      //
+      // Ramp: [[gerçek_değer, '#hex'], ...] — interpolate ile ara değerler hesaplanır.
+      List<List<dynamic>> physicalRamp;
+      if (dataKey == 'solar') {
+        // W/m² — 0=gece/karanlık, 800+=güçlü güneş
+        physicalRamp = [
+          [0,   '#1a1a2e'], // gece — koyu lacivert
+          [50,  '#FFFFCC'], // şafak — soluk sarı
+          [150, '#FFEDA0'],
+          [250, '#FED976'],
+          [350, '#FEB24C'],
+          [450, '#FD8D3C'],
+          [550, '#FC4E2A'],
+          [650, '#E31A1C'],
+          [750, '#BD0026'],
+          [800, '#4D0014'], // maksimum — koyu bordo
+        ];
+      } else if (dataKey == 'wind') {
+        // m/s (100m) — 0=durgun, 25+=fırtına
+        physicalRamp = [
+          [0,  '#F7FBFF'],  // durgun — beyazımsı
+          [2,  '#DEEBF7'],
+          [4,  '#C6DBEF'],
+          [6,  '#9ECAE1'],
+          [8,  '#6BAED6'],
+          [10, '#4292C6'],
+          [13, '#2171B5'],
+          [16, '#08519C'],
+          [20, '#083D7F'],
+          [25, '#08306B'],  // fırtına — koyu lacivert
+        ];
+      } else {
+        // °C — sabit meteorolojik skala
+        physicalRamp = [
+          [-15, '#08306B'], // çok soğuk — koyu lacivert
+          [-5,  '#2171B5'],
+          [0,   '#E0F3F8'], // donma — beyazımsı
+          [5,   '#C6DBEF'],
+          [10,  '#ABD9E9'],
+          [15,  '#74ADD1'],
+          [20,  '#66BD63'], // ılık — yeşil
+          [25,  '#A6D96A'],
+          [30,  '#FEE08B'], // sıcak — sarı
+          [33,  '#FDAE61'],
+          [36,  '#F46D43'], // çok sıcak — turuncu
+          [40,  '#D73027'], // aşırı — kırmızı
+          [45,  '#A50026'], // tehlikeli — koyu kırmızı
+        ];
+      }
+
+      // physicalRamp'tan normalize edilmiş 0..1 ramp oluştur
+      final physMin = (physicalRamp.first[0] as num).toDouble();
+      final physMax = (physicalRamp.last[0] as num).toDouble();
+      final physRange = physMax - physMin;
+
+      List<List<dynamic>> ramp = [];
+      for (final stop in physicalRamp) {
+        final val = (stop[0] as num).toDouble();
+        final t = (val - physMin) / physRange;
+        ramp.add([t, stop[1]]);
+      }
+      // ─── Rengi önceden hesapla (pre-compute) ─────────────────────────
+      // MapLibre Native düşük zoom'da polygon'ları basitleştirirken
+      // interpolate expression sorunlu olabiliyor. Rengi doğrudan
+      // feature property olarak string'e yazarak bu sorundan kaçınırız.
+      // Verisi olmayan feature'ları tamamen çıkar (siyah polygon sorununu önler).
+      features.removeWhere((f) {
+        final v = ((f['properties'] as Map)['choropleth_value'] as num?)?.toDouble() ?? 0.0;
+        return v == 0.0;
+      });
+      for (final f in features) {
+        final props = f['properties'] as Map<String, dynamic>? ?? {};
+        final v = (props['choropleth_value'] as num?)?.toDouble() ?? 0.0;
+        // Normalize: 0..1 aralığına çek
+        final t = ((v - physMin) / physRange).clamp(0.0, 1.0);
+        // Ramp'ta en yakın iki stop arasında interpolasyon
+        String color = ramp.last[1] as String;
+        for (int i = 0; i < ramp.length - 1; i++) {
+          final t0 = ramp[i][0] as double;
+          final t1 = ramp[i + 1][0] as double;
+          if (t >= t0 && t <= t1) {
+            // Basit: daha yakın olan stop'un rengini al
+            color = (t - t0 <= t1 - t) ? ramp[i][1] as String : ramp[i + 1][1] as String;
+            break;
+          }
+        }
+        props['_choro_color'] = color;
+      }
+
+      await style.addSource(ml.GeoJsonSource(
+        id: _choroplethSourceId,
+        data: jsonEncode(geojson),
+      ));
+      _choroplethSourceAdded = true;
+
+      await style.addLayer(ml.FillStyleLayer(
+        id: _choroplethLayerId,
+        sourceId: _choroplethSourceId,
+        paint: {
+          'fill-color': ['get', '_choro_color'],
+          'fill-opacity': 0.82,
+        },
+      ), belowLayerId: _pinsShadowLayerId);
+      _choroplethLayerActive = true;
+    } catch (e) {
+      debugPrint('[MapLibre-Native] Choropleth layer hatası: $e');
+    }
+  }
+
+  // ─── Animation Province Polygon Sync ──────────────────────────────
+
+  Future<void> _syncAnimationProvinces(MapViewModel vm) async {
+    final style = _style;
+    if (style == null || !_styleLoaded) return;
+
+    // Animasyon kapandıysa layer'ı temizle
+    if (!vm.isAnimationMode || vm.animProvinceValues == null || vm.animProvinceValues!.isEmpty) {
+      if (_animProvActive) {
+        try { await style.removeLayer(_animProvLineId); } catch (_) {}
+        try { await style.removeLayer(_animProvFillId); } catch (_) {}
+        try { await style.removeSource(_animProvSourceId); } catch (_) {}
+        _animProvActive = false;
+        _lastAnimFrame = -1;
+      }
+      return;
+    }
+
+    // Aynı frame tekrar render edilmesin
+    if (vm.animCurrentFrame == _lastAnimFrame && _animProvActive) return;
+    _lastAnimFrame = vm.animCurrentFrame;
+
+    final values = vm.animProvinceValues!;
+    final metricMin = vm.animMetricMin;
+    final metricMax = vm.animMetricMax;
+    final range = metricMax - metricMin;
+
+    // Renk rampası (metriğe göre) — choropleth ile aynı ColorBrewer paletler
+    final metric = vm.animMetric;
+    final List<List<dynamic>> ramp;
+    if (metric == 'radiation') {
+      ramp = [[0.0,'#FFFFCC'],[0.1,'#FFEDA0'],[0.2,'#FED976'],[0.3,'#FEB24C'],
+        [0.4,'#FD8D3C'],[0.5,'#FC4E2A'],[0.6,'#E31A1C'],[0.75,'#BD0026'],
+        [0.9,'#800026'],[1.0,'#4D0014']];
+    } else if (metric == 'wind') {
+      ramp = [[0.0,'#F7FBFF'],[0.1,'#DEEBF7'],[0.2,'#C6DBEF'],[0.3,'#9ECAE1'],
+        [0.4,'#6BAED6'],[0.5,'#4292C6'],[0.6,'#2171B5'],[0.75,'#08519C'],
+        [0.9,'#083D7F'],[1.0,'#08306B']];
+    } else {
+      ramp = [[0.0,'#313695'],[0.1,'#4575B4'],[0.2,'#74ADD1'],[0.3,'#ABD9E9'],
+        [0.4,'#E0F3F8'],[0.5,'#FEE090'],[0.6,'#FDAE61'],[0.75,'#F46D43'],
+        [0.9,'#D73027'],[1.0,'#A50026']];
+    }
+
+    // İl GeoJSON'ını al ve renkleri hesapla
+    final features = await _getProvinceFeatures();
+    if (features.isEmpty) return;
+
+    final deepCopy = features.map((f) => jsonDecode(jsonEncode(f))).toList();
+    for (final f in deepCopy) {
+      final props = f['properties'] as Map<String, dynamic>? ?? {};
+      final name1 = (props['NAME_1'] ?? '').toString();
+      // City name ile eşleştir (Türkçe normalize)
+      final normName = _normalizeForMatch(name1);
+      double? val;
+      for (final e in values.entries) {
+        if (_normalizeForMatch(e.key) == normName) {
+          val = e.value;
+          break;
+        }
+      }
+
+      if (val == null) {
+        props['_anim_color'] = '#000000';
+        props['_anim_opacity'] = 0.0;
+      } else {
+        final t = range > 0.01 ? ((val - metricMin) / range).clamp(0.0, 1.0) : 0.5;
+        String color = ramp.last[1] as String;
+        for (int i = 0; i < ramp.length - 1; i++) {
+          final t0 = ramp[i][0] as double;
+          final t1 = ramp[i + 1][0] as double;
+          if (t >= t0 && t <= t1) {
+            color = (t - t0 <= t1 - t) ? ramp[i][1] as String : ramp[i + 1][1] as String;
+            break;
+          }
+        }
+        props['_anim_color'] = color;
+        props['_anim_opacity'] = 0.75;
+      }
+    }
+
+    final geojsonStr = jsonEncode({'type': 'FeatureCollection', 'features': deepCopy});
+
+    if (_animProvActive) {
+      // Sadece veriyi güncelle (source/layer zaten var)
+      try {
+        await style.updateGeoJsonSource(id: _animProvSourceId, data: geojsonStr);
+      } catch (e) {
+        debugPrint('[MapLibre-Native] Animasyon source güncelleme hatası: $e');
+      }
+    } else {
+      // İlk kez: source + layer ekle
+      try { await style.removeLayer(_animProvLineId); } catch (_) {}
+      try { await style.removeLayer(_animProvFillId); } catch (_) {}
+      try { await style.removeSource(_animProvSourceId); } catch (_) {}
+
+      await style.addSource(ml.GeoJsonSource(
+        id: _animProvSourceId,
+        data: geojsonStr,
+      ));
+
+      // Pin shadow layer yoksa belowLayerId hata verir → try-catch
+      try {
+        await style.addLayer(
+          ml.FillStyleLayer(
+            id: _animProvFillId,
+            sourceId: _animProvSourceId,
+            paint: <String, Object>{
+              'fill-color': ['get', '_anim_color'],
+              'fill-opacity': ['get', '_anim_opacity'],
+            },
+          ),
+          belowLayerId: _pinsShadowLayerId,
+        );
+      } catch (_) {
+        await style.addLayer(
+          ml.FillStyleLayer(
+            id: _animProvFillId,
+            sourceId: _animProvSourceId,
+            paint: <String, Object>{
+              'fill-color': ['get', '_anim_color'],
+              'fill-opacity': ['get', '_anim_opacity'],
+            },
+          ),
+        );
+      }
+
+      try {
+        await style.addLayer(
+          ml.LineStyleLayer(
+            id: _animProvLineId,
+            sourceId: _animProvSourceId,
+            paint: <String, Object>{
+              'line-color': 'rgba(255,255,255,0.3)',
+              'line-width': 0.8,
+            },
+          ),
+          belowLayerId: _pinsShadowLayerId,
+        );
+      } catch (_) {
+        await style.addLayer(
+          ml.LineStyleLayer(
+            id: _animProvLineId,
+            sourceId: _animProvSourceId,
+            paint: <String, Object>{
+              'line-color': 'rgba(255,255,255,0.3)',
+              'line-width': 0.8,
+            },
+          ),
+        );
+      }
+
+      _animProvActive = true;
+    }
+  }
+
   // ─── Build ────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final vm       = Provider.of<MapViewModel>(context, listen: false);
+    final vm       = Provider.of<MapViewModel>(context);
     final styleUrl = vm.mlBaseStyle.styleUrl;
+    final isGlobe  = vm.showGlobe;
+
+    // Dikey/yatay yönelime göre sınır ve zoom ayarı
+    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+
+    // Globe modunda sınır yok + düşük zoom; normal modda Türkiye sınırları
+    // Portrait: enlem ekseninde daha geniş sınır + yüksek minZoom (dar ekranda kayma önlenir)
+    final ml.LngLatBounds? bounds = isGlobe
+        ? null
+        : ml.LngLatBounds(
+            longitudeWest: isPortrait ? 22.0 : MapConstants.turkeyMinLon,
+            longitudeEast: isPortrait ? 48.0 : MapConstants.turkeyMaxLon,
+            latitudeSouth: isPortrait ? 33.0 : MapConstants.turkeyMinLat,
+            latitudeNorth: isPortrait ? 45.0 : MapConstants.turkeyMaxLat,
+          );
+
+    final effectiveMinZoom = isGlobe ? 1.5
+        : isPortrait ? 4.5
+        : MapConstants.minZoom;
 
     return Stack(
       children: [
         KeyedSubtree(
-          key: ValueKey(styleUrl),
+          key: ValueKey('$styleUrl-$isGlobe-$isPortrait'),
           child: ml.MapLibreMap(
             options: ml.MapOptions(
               initStyle: styleUrl,
-              initZoom: MapConstants.initialZoom,
-              initCenter: ml.Position(
-                MapConstants.turkeyCenterLon,
-                MapConstants.turkeyCenterLat,
-              ),
+              initZoom: isGlobe ? 2.0 : MapConstants.initialZoom,
+              initPitch: isGlobe ? 45.0 : 0.0,
+              minZoom: effectiveMinZoom,
+              maxBounds: bounds,
+              initCenter: isGlobe
+                  ? ml.Position(35.5, 20.0)
+                  : ml.Position(
+                      MapConstants.turkeyCenterLon,
+                      MapConstants.turkeyCenterLat,
+                    ),
             ),
             onEvent: _onEvent,
             onMapCreated: (controller) {
@@ -595,24 +2240,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
           ),
         ),
 
-        // Etiket
-        Positioned(
-          top: 8, left: 8,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.deepPurple.withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.map_outlined, color: Colors.white, size: 13),
-              SizedBox(width: 4),
-              Text('MapLibre', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
-            ]),
-          ),
-        ),
-
-        // Yükleniyor
+        // Yükleniyor (style)
         if (!_styleLoaded)
           Container(
             color: Colors.black54,
@@ -622,6 +2250,40 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
                 SizedBox(height: 12),
                 Text('MapLibre yükleniyor...', style: TextStyle(color: Colors.white70)),
               ]),
+            ),
+          ),
+
+        // Geo sorgusu yükleniyor göstergesi
+        if (_geoLoading)
+          Positioned(
+            top: 80,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Konum sorgulanıyor...',
+                      style: TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
       ],

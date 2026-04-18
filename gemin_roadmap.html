@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SRRP - Master Geliştirme Ağacı</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-green: #10b981;
+      --accent-blue: #3b82f6;
+      --accent-purple: #8b5cf6;
+      --accent-red: #ef4444;
+      --accent-yellow: #f59e0b;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      margin: 0;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 50px;
+    }
+
+    header h1 {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+      background: linear-gradient(to right, var(--accent-green), var(--accent-blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .stats-banner {
+      display: flex;
+      justify-content: space-between;
+      background: var(--card-bg);
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 40px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: var(--accent-green);
+    }
+
+    /* Ağaç / Grid Yapısı */
+    .roadmap-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 25px;
+    }
+
+    .phase-card {
+      background-color: var(--card-bg);
+      border-radius: 15px;
+      padding: 25px;
+      border-top: 4px solid;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    }
+
+    .phase-1 {
+      border-color: var(--accent-yellow);
+    }
+
+    .phase-2 {
+      border-color: var(--accent-blue);
+    }
+
+    .phase-3 {
+      border-color: var(--accent-purple);
+    }
+
+    .phase-4 {
+      border-color: var(--accent-red);
+    }
+
+    .phase-card h2 {
+      font-size: 1.2rem;
+      margin-top: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .badge {
+      font-size: 0.75rem;
+      padding: 4px 8px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .task-list {
+      list-style: none;
+      padding: 0;
+      margin: 20px 0 0 0;
+    }
+
+    .task-list li {
+      position: relative;
+      padding-left: 30px;
+      margin-bottom: 15px;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .task-list li::before {
+      content: '→';
+      position: absolute;
+      left: 0;
+      color: var(--text-main);
+      font-weight: bold;
+    }
+
+    .tag-delete {
+      color: var(--accent-red);
+      font-weight: bold;
+    }
+
+    .tag-add {
+      color: var(--accent-green);
+      font-weight: bold;
+    }
+
+    .tag-edit {
+      color: var(--accent-yellow);
+      font-weight: bold;
+    }
+
+    /* AI Section Special Highlight */
+    .ai-highlight {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.1));
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      border-radius: 12px;
+      padding: 15px;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+    <header>
+      <h1>SRRP Geliştirme Komuta Merkezi</h1>
+      <p style="color: var(--text-muted);">Local Test -> MCDA Entegrasyonu -> AI -> Sunucu Taşıma Protokolü</p>
+    </header>
+
+    <div class="stats-banner">
+      <div class="stat-item">
+        <div class="stat-value">5.3 GB</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);">Taşınacak Toplam Yük</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value" style="color: var(--accent-red);">-785 MB</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);">DEM Optimizasyonu</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value" style="color: var(--accent-blue);">0$ / Ay</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);">Hedef Sunucu Bütçesi</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value" style="color: var(--accent-purple);">Local</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);">Mevcut Ortam</div>
+      </div>
+    </div>
+
+    <div class="roadmap-grid">
+
+      <div class="phase-card phase-1">
+        <h2>FAZ 1: Veri Temizliği & 3D <span class="badge" style="color: var(--accent-yellow);">Şu An</span></h2>
+        <ul class="task-list">
+          <li><span class="tag-delete">[SİL]</span> `backend/data` içindeki 785 MB DEM dosyaları çöpe atılacak.</li>
+          <li><span class="tag-add">[EKLE]</span> MapLibre <code>setTerrain</code> kodu frontend'e entegre edilecek (GPU
+            bazlı 3D Harita).</li>
+          <li><span class="tag-edit">[DÜZELT]</span> Antakya/Hatay gibi il/ilçe eşleştirme sorunları için DB'de SQL
+            Update sorgusu çalıştırılacak.</li>
+          <li><span class="tag-edit">[DÜZELT]</span> Open-Meteo Elevation API backend'e bağlanarak yükseklik/eğim verisi
+            dinamik hale getirilecek.</li>
+        </ul>
+      </div>
+
+      <div class="phase-card phase-2">
+        <h2>FAZ 2: Tercih Ağı (MCDA) <span class="badge">Sırada</span></h2>
+        <ul class="task-list">
+          <li><span class="tag-add">[KATMAN 1]</span> Kısıtlama Filtresi: Göller, otoyollar, sit alanları PostGIS'e
+            işlenecek (Yasak Bölgeler).</li>
+          <li><span class="tag-add">[KATMAN 2]</span> Fiziksel Skor: Rüzgar, Güneş ve Su verileri birleştirilip 0-100
+            arası fizibilite skoru hesaplanacak.</li>
+          <li><span class="tag-add">[KATMAN 3]</span> Finansal Matematik: CAPEX, OPEX ve YEKDEM gelirleri ile ROI
+            amortisman formülleri yazılacak.</li>
+          <li><span class="tag-add">[KATMAN 4]</span> Heatmap Çıktısı: Tüm Türkiye'nin Koyu Yeşil'den Kırmızıya "Tercih
+            Ağı" oluşturulacak.</li>
+        </ul>
+      </div>
+
+      <div class="phase-card phase-3">
+        <h2>FAZ 3: Yapay Zeka (AI) <span class="badge">İnovasyon</span></h2>
+        <ul class="task-list">
+          <li>Backend'e LLM (OpenAI/Gemini) API entegrasyonu yapılacak.</li>
+          <div class="ai-highlight">
+            <strong style="color: var(--accent-purple);">Uygulama Alanları:</strong><br><br>
+            <strong>1. İnsani Raporlama:</strong> Sayısal verileri (ROI, Eğim) yatırımcı diline çeviren dinamik paragraf
+            özetleri.<br><br>
+            <strong>2. Akıllı Kısıtlama İzahı:</strong> Pin reddedildiğinde "Buraya kurulamaz çünkü 200m ileride sulak
+            alan var, doğuya kaydırın" tavsiyesi.<br><br>
+            <strong>3. Harita Asistanı:</strong> Kullanıcının serbest metin ("İzmir'deki en iyi GES alanları")
+            sorgularını SQL'e çeviren chatbot.
+          </div>
+        </ul>
+      </div>
+
+      <div class="phase-card phase-4">
+        <h2>FAZ 4: Stres Testi & Sunucu <span class="badge">Final</span></h2>
+        <ul class="task-list">
+          <li><span class="tag-edit">[TEST]</span> Local'de saniyede 50 eşzamanlı pin/API isteği atılarak sistemin çökme
+            noktası (Bottleneck) bulunacak.</li>
+          <li><span class="tag-edit">[TEST]</span> Çoklu kullanıcı cache çakışmaları kontrol edilecek.</li>
+          <li><span class="tag-add">[MIGRATION]</span> DigitalOcean (GitHub Pack) 4GB makine ayağa kaldırılacak.</li>
+          <li><span class="tag-add">[MIGRATION]</span> 5.2 GB PostGIS DB ve Frontend dosyaları aktarılıp SSL
+            sertifikaları bağlanacak.</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+</body>
+
+</html>

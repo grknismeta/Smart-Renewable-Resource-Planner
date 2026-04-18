@@ -111,7 +111,7 @@ class _AppBar extends StatelessWidget {
                     if (Navigator.of(context).canPop()) {
                       Navigator.of(context).pop();
                     } else {
-                      Navigator.of(context).pushReplacementNamed('/map');
+                      Navigator.of(context).pushReplacementNamed('/');
                     }
                   },
                   tooltip: 'Haritaya Dön',

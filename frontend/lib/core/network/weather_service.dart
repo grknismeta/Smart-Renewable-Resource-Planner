@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:frontend/data/models/weather_model.dart';
 import 'package:frontend/core/network/api_client.dart';
@@ -90,23 +89,14 @@ class WeatherService extends BaseService {
     String cityName, {
     int hours = 168,
   }) async {
-    debugPrint(
-      '[WeatherService.fetchCityIrradiance] Çağrıldı: city=$cityName, hours=$hours',
-    );
     final uri = Uri.parse(
       '$baseUrl/weather/cities/$cityName/hourly',
     ).replace(queryParameters: {'hours': '$hours'});
 
     final response = await http.get(uri);
-    debugPrint(
-      '[WeatherService.fetchCityIrradiance] Response status: ${response.statusCode}',
-    );
 
     final data = processResponse(response);
     if (data is List) {
-      debugPrint(
-        '[WeatherService.fetchCityIrradiance] ${data.length} kayıt alındı',
-      );
       return data.map((e) => IrradianceData.fromJson(e)).toList();
     }
     throw Exception(
@@ -163,7 +153,6 @@ class WeatherService extends BaseService {
   Future<List<Map<String, dynamic>>> fetchBestSolarCities({
     int limit = 1000,
   }) async {
-    debugPrint('[WeatherService.fetchBestSolarCities] Çağrıldı: limit=$limit');
     final uri = Uri.parse(
       '$baseUrl/weather/best-solar',
     ).replace(queryParameters: {'limit': '$limit'});
@@ -172,9 +161,6 @@ class WeatherService extends BaseService {
     
     final data = processResponse(response);
      if (data is List) {
-      debugPrint(
-        '[WeatherService.fetchBestSolarCities] ${data.length} şehir alındı',
-      );
       return data.cast<Map<String, dynamic>>();
     }
      throw Exception(
@@ -282,8 +268,6 @@ class WeatherService extends BaseService {
   }
 
   Future<List<CitySolarSummary>> fetchSolarSummary({int hours = 168}) async {
-    debugPrint('[WeatherService.fetchSolarSummary] Çağrıldı: hours=$hours');
-
     final summaries = await fetchWeatherSummary(hours: hours);
 
     return summaries.map((weather) {
@@ -321,5 +305,26 @@ class WeatherService extends BaseService {
       return Map<String, dynamic>.from(processResponse(response));
     }
     return {'healthy': false, 'minutes_ago': null, 'records_48h': 0};
+  }
+
+  /// Choropleth harita verisi: tüm ilçeler için {wind, solar, temp} değerleri.
+  /// key: "İl|İlçe" formatında composite key.
+  /// Choropleth ilçe verisi.
+  /// [mode]: 'latest' = en güncel saatin verisi, 'average' = belirtilen saat ortalaması.
+  Future<Map<String, dynamic>> fetchDistrictChoropleth({
+    int hours = 720,
+    String mode = 'latest',
+  }) async {
+    final uri = Uri.parse('$baseUrl/weather/district-choropleth')
+        .replace(queryParameters: {'hours': '$hours', 'mode': mode});
+    // latest mod: 5 dk cache (veri sık güncellenir), average mod: 10 dk
+    final ttl = mode == 'latest'
+        ? const Duration(minutes: 5)
+        : const Duration(minutes: 10);
+    final response = await _cachedGet(uri, ttl: ttl);
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(processResponse(response));
+    }
+    return {};
   }
 }

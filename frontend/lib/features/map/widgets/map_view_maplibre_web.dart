@@ -8,12 +8,14 @@ import 'package:maplibre/maplibre.dart' as ml;
 import 'package:provider/provider.dart';
 
 import 'package:frontend/core/constants/map_constants.dart';
+import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/features/map/models/map_models.dart';
 import 'package:frontend/features/map/layers/map_layers_system.dart'
     show computeLayerPng;
 import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/data/models/weather_model.dart';
+import 'package:frontend/core/theme/app_theme.dart';
 
 // ─── JS interop (web/index.html shim fonksiyonları) ──────────────────────────
 // kIsWeb olmayan derlemelerde hiçbiri çağrılmaz.
@@ -63,6 +65,12 @@ external void _jsSetPinHoverFn(JSFunction fn);
 @JS('window.srrpSetupPinHover')
 external void _jsSetupPinHover();
 
+@JS('window.srrpSetPinClickFn')
+external void _jsSetPinClickFn(JSFunction fn);
+
+@JS('window.srrpSetupPinClick')
+external void _jsSetupPinClick();
+
 @JS('window.srrpLoadBorderLayers')
 external void _jsLoadBorderLayers(
   String provUrl,
@@ -85,6 +93,9 @@ external void _jsSetupDistrictMode(String? provinceName);
 @JS('window.srrpClearSelectionMode')
 external void _jsClearSelectionMode();
 
+@JS('window.srrpHighlightProvince')
+external void _jsHighlightProvince(String? provinceName);
+
 @JS('window.srrpSetProvinceClickFn')
 external void _jsSetProvinceClickFn(JSFunction fn);
 
@@ -94,11 +105,27 @@ external void _jsSetRegionClickFn(JSFunction fn);
 @JS('window.srrpSetDistrictClickFn')
 external void _jsSetDistrictClickFn(JSFunction fn);
 
+@JS('window.srrpQueryClick')
+external String _jsQueryClick(double lng, double lat);
+
 @JS('window.srrpSetMapInteractive')
 external void _jsSetMapInteractive(bool enable);
 
 @JS('window.srrpSetClickGuard')
 external void _jsSetClickGuard(bool active);
+
+@JS('window.srrpSetMaxBounds')
+external void _jsSetMaxBounds(
+    double swLng, double swLat, double neLng, double neLat);
+
+@JS('window.srrpClearMaxBounds')
+external void _jsClearMaxBounds();
+
+@JS('window.srrpSetShowcasePins')
+external void _jsSetShowcasePins(String geojsonStr);
+
+@JS('window.srrpSetChoropleth')
+external void _jsSetChoropleth(String mode, String? dataJson);
 
 // ─── Lazy Loader JS Interop ───────────────────────────────────────────────────
 
@@ -160,7 +187,11 @@ const _heatmapWindId = 'srrp-heatmap-wind';
 const _heatmapTempId = 'srrp-heatmap-temp';
 
 const _martinSourceId = 'srrp-martin';
-const _martinTileJsonUrl = 'http://localhost:3000/public.weather_tiles';
+// Martin tile URL - dinamik host kullanır (telefon/PC uyumlu)
+String get _martinTileJsonUrl {
+  final host = kIsWeb ? Uri.base.host : 'localhost';
+  return 'http://$host:3000/public.weather_tiles';
+}
 
 const _hillshadeSourceId = 'srrp-hillshade-dem';
 const _hillshadeLayerId = 'srrp-hillshade';
@@ -308,24 +339,28 @@ Map<String, Object> _buildHeatmapPaint(
 
 // ─── Renk / GeoJSON Yardımcıları ─────────────────────────────────────────────
 
-String _pinColorHex(String type) {
+// Pin renkleri:
+//   Güneş Paneli   → turuncu (#FFA726)
+//   Rüzgar Türbini → rüzgar mavisi (#42A5F5)
+//   HES            → Spotify yeşili (#1DB954)
+String _pinColorHex(String type, {bool isDark = true}) {
   switch (type.toLowerCase()) {
     case 'güneş paneli':
     case 'solar':
       return '#FFA726';
     case 'rüzgar türbini':
     case 'wind':
-      return '#29B6F6';
+      return '#42A5F5'; // Rüzgar mavisi
     case 'hidroelektrik':
     case 'hes':
     case 'hydro':
-      return '#42A5F5';
+      return '#1DB954'; // Spotify yeşili
     default:
       return '#66BB6A';
   }
 }
 
-String _pinsToGeoJson(List<Pin> pins) => jsonEncode({
+String _pinsToGeoJson(List<Pin> pins, {bool isDark = true}) => jsonEncode({
   'type': 'FeatureCollection',
   'features': pins
       .map(
@@ -339,7 +374,7 @@ String _pinsToGeoJson(List<Pin> pins) => jsonEncode({
             'id': p.id,
             'name': p.name,
             'type': p.type,
-            'color': _pinColorHex(p.type),
+            'color': _pinColorHex(p.type, isDark: isDark),
             'city': p.city ?? '',
             'district': p.district ?? '',
             'locationLabel': p.locationLabel,
@@ -461,6 +496,25 @@ class MapViewMapLibre extends StatefulWidget {
     if (kIsWeb) _jsSetMapInteractive(enable);
   }
 
+  /// Harita sınırlarını ayarla (Türkiye dışına çıkılamaz).
+  static void setMaxBounds(
+      double swLng, double swLat, double neLng, double neLat) {
+    if (kIsWeb) _jsSetMaxBounds(swLng, swLat, neLng, neLat);
+  }
+
+  /// Harita sınırlarını kaldır.
+  static void clearMaxBounds() {
+    if (kIsWeb) _jsClearMaxBounds();
+  }
+
+  /// Vitrin pinlerini GeoJSON olarak yükle (landing showcase).
+  static void setShowcasePins(String geojsonStr) {
+    if (kIsWeb) _jsSetShowcasePins(geojsonStr);
+  }
+
+  /// Web'de wind overlay kullanılmaz (JS canvas kullanılır), null döner.
+  static dynamic get activeControllerForOverlay => null;
+
   /// Dialog açıkken harita tıklamalarını bastırmak için kullanılır.
   /// `_onMapClick` bu bayrak aktifken hiçbir şey yapmaz.
   /// JS tarafındaki seçim katmanı tıklamaları da bastırılır.
@@ -558,13 +612,25 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   bool _lastParticles = false;
   int _lastParticleVectorsLen = 0;
 
+  // Choropleth (ilçe tematik harita)
+  ChoroplethMode _lastChoropleth = ChoroplethMode.none;
+  String? _lastChoroplethDataJson;
+
   // Kümeleme
   bool _lastClustering = false;
+
+  // Tema (pin renkleri tema-duyarlı)
+  bool _lastDarkMode = true;
 
   // ─── Pin hover (JS → Dart callback) ───────────────────────────────
   Pin? _hoveredPin;
   JSFunction? _pinHoverJsCallback;
   bool _hoverCallbackRegistered = false;
+
+  // ─── Pin click (JS → Dart callback) — bilgi kartı gösterimi ─────
+  Map<String, dynamic>? _selectedPinProps; // Tıklanan pin özellikleri (GeoJSON properties)
+  JSFunction? _pinClickJsCallback;
+  bool _clickCallbackRegistered = false;
 
   // ─── Selection callbacks (JS → Dart) ─────────────────────────────
   JSFunction? _provinceClickJsCallback;
@@ -596,7 +662,6 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
             // Safety timeout: 10sn içinde style load olmadıysa spinner'ı kaldır
             _styleLoadTimeout = Timer(const Duration(seconds: 10), () {
               if (mounted && !_styleLoaded) {
-                debugPrint('[MapLibre] Style load timeout — spinner zorla kaldırılıyor');
                 setState(() => _styleLoaded = true);
               }
             });
@@ -615,6 +680,12 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _pinHoverJsCallback = _handlePinHoverJs.toJS;
         _jsSetPinHoverFn(_pinHoverJsCallback!);
         _hoverCallbackRegistered = true;
+      }
+      // JS → Dart pin click callback'i bir kez kaydet
+      if (kIsWeb && !_clickCallbackRegistered) {
+        _pinClickJsCallback = _handlePinClickJs.toJS;
+        _jsSetPinClickFn(_pinClickJsCallback!);
+        _clickCallbackRegistered = true;
       }
       // JS → Dart seçim callback'leri (bölge / il / ilçe) bir kez kaydet
       if (kIsWeb && !_selectionCallbacksRegistered) {
@@ -656,59 +727,158 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   void dispose() {
     _styleLoadTimeout?.cancel();
     _vmRef?.removeListener(_onVmChanged);
-    if (kIsWeb && _hoverCallbackRegistered) {
-      _jsSetPinHoverFn((() {}).toJS);
+    // JS callback'lerini temizle — dispose sonrası çağrılmasını engelle
+    if (kIsWeb) {
+      final noop = (() {}).toJS;
+      if (_hoverCallbackRegistered) {
+        _jsSetPinHoverFn(noop);
+      }
+      if (_clickCallbackRegistered) {
+        _jsSetPinClickFn(noop);
+      }
+      if (_selectionCallbacksRegistered) {
+        _jsSetRegionClickFn(noop);
+        _jsSetProvinceClickFn(noop);
+        _jsSetDistrictClickFn(noop);
+        _jsClearSelectionMode();
+      }
+      if (_animBridgeRegistered) {
+        _jsSetAnimFrameCallback(noop);
+      }
     }
     super.dispose();
   }
 
   /// JS mousemove/mouseleave eventi → Dart pin hover state
   void _handlePinHoverJs(JSAny? idArg) {
-    if (!mounted || _vmRef == null) return;
+    if (!mounted) return;
     final idStr = idArg?.dartify()?.toString() ?? '';
     final id = int.tryParse(idStr);
-    final pin = id != null
-        ? _vmRef!.filteredPins.cast<Pin?>().firstWhere(
-            (p) => p?.id == id,
-            orElse: () => null,
-          )
-        : null;
+    Pin? pin;
+    if (id != null && _vmRef != null) {
+      pin = _vmRef!.filteredPins.cast<Pin?>().firstWhere(
+          (p) => p?.id == id,
+          orElse: () => null,
+        );
+    }
+    // VM'de bulunamadıysa showcase pin olabilir — hoveredPin'i null bırak
     if (_hoveredPin?.id != pin?.id) {
       setState(() => _hoveredPin = pin);
     }
   }
 
-  /// JS bölge tıklama → ViewModel.selectRegion
+  /// JS click eventi → Pin bilgi kartı göster
+  void _handlePinClickJs(JSAny? propsArg) {
+    if (!mounted) return;
+    final jsonStr = propsArg?.dartify()?.toString() ?? '';
+    if (jsonStr.isEmpty) return;
+
+    // queryRenderedFeatures yaklaşımı kullanıldığı için ek guard gerekmez
+
+    try {
+      final props = jsonDecode(jsonStr) as Map<String, dynamic>;
+      final pinId = (props['id'] is num) ? (props['id'] as num).toInt() : int.tryParse(props['id']?.toString() ?? '');
+
+      // Ana haritada gerçek Pin objesini bul (düzenleme, analiz vb. için)
+      if (pinId != null && _vmRef != null) {
+        final realPin = _vmRef!.filteredPins.cast<Pin?>().firstWhere(
+          (p) => p?.id == pinId,
+          orElse: () => null,
+        );
+        if (realPin != null) {
+          if (widget.onPinTap != null) {
+            widget.onPinTap!(realPin);
+            return;
+          }
+        }
+      }
+
+      // Showcase pin veya onPinTap yok — bilgi kartını göster
+      setState(() => _selectedPinProps = props);
+    } catch (e) {
+      debugPrint('[MapLibre] pin click parse hatası: $e');
+    }
+  }
+
+  /// Bilgi kartını kapat
+  void _dismissInfoCard() {
+    if (_selectedPinProps != null) {
+      setState(() => _selectedPinProps = null);
+    }
+  }
+
+  /// JS bölge tıklama → mod-farkındalıklı işleme
   void _handleRegionClickJs(JSAny? nameArg) {
     if (!mounted || _vmRef == null) return;
     final name = nameArg?.dartify()?.toString() ?? '';
-    if (name.isNotEmpty) _vmRef!.selectRegion(name);
+    if (name.isEmpty) return;
+    _vmRef!.selectRegion(name);
   }
 
-  /// JS il tıklama → ViewModel.selectProvince
+  /// JS il tıklama → mod-farkındalıklı işleme
   void _handleProvinceClickJs(JSAny? nameArg) {
     if (!mounted || _vmRef == null) return;
     final name = nameArg?.dartify()?.toString() ?? '';
-    if (name.isNotEmpty) _vmRef!.selectProvince(name);
+    if (name.isEmpty) return;
+    final vm = _vmRef!;
+    final initial = vm.initialSelectionMode;
+
+    if (initial == SelectionLevel.region) {
+      // Bölge modunda il tıklandığında → o ilin ilçelerine git
+      vm.selectProvince(name);
+    } else {
+      // İl modunda veya diğer → il seç, ilçeleri göster
+      vm.selectProvince(name);
+    }
   }
 
-  /// JS ilçe tıklama → ViewModel.selectDistrict
+  /// JS ilçe tıklama → mod-farkındalıklı işleme
   /// Gelen değer "province|district" formatındadır (composite hover'dan gelir).
   void _handleDistrictClickJs(JSAny? nameArg) {
     if (!mounted || _vmRef == null) return;
     final raw = nameArg?.dartify()?.toString() ?? '';
     if (raw.isEmpty) return;
+
+    final vm = _vmRef!;
+    final initial = vm.initialSelectionMode;
+
     // "İstanbul|Kadıköy" → province=İstanbul, district=Kadıköy
+    String province = '';
+    String district = '';
     final sep = raw.indexOf('|');
     if (sep > 0) {
-      final province = raw.substring(0, sep);
-      final district = raw.substring(sep + 1);
+      province = raw.substring(0, sep);
+      district = raw.substring(sep + 1);
+    } else {
+      district = raw;
+    }
+
+    if (initial == SelectionLevel.province) {
+      // İL MODU: başka ile tıklanırsa o ile geç, aynı ildeyse ilçe seç
+      if (province.isNotEmpty && province != vm.selectedProvinceName) {
+        // Farklı il → o ilin ilçelerine geç
+        vm.selectProvince(province);
+      } else if (district.isNotEmpty) {
+        // Aynı il → ilçe seç
+        vm.selectDistrict(district, province: province);
+      }
+    } else if (initial == SelectionLevel.region) {
+      // BÖLGE MODU: ilçe seviyesinde, aynı il veya başka ile geçiş
+      if (province.isNotEmpty && province != vm.selectedProvinceName) {
+        vm.selectProvince(province);
+      } else if (district.isNotEmpty) {
+        vm.selectDistrict(district, province: province);
+      }
+    } else if (initial == SelectionLevel.district) {
+      // İLÇE MODU: sadece bilgi göster, renk değiştirme
       if (district.isNotEmpty) {
-        _vmRef!.selectDistrict(district, province: province);
+        vm.selectDistrict(district, province: province);
       }
     } else {
-      // Fallback: province bağlamı yok (eski format)
-      _vmRef!.selectDistrict(raw);
+      // Fallback
+      if (district.isNotEmpty) {
+        vm.selectDistrict(district, province: province);
+      }
     }
   }
 
@@ -753,6 +923,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
     // 2. Bulut katmanı — senkron JS güncellemesi
     try { _syncCloud(vm.showCloudLayer, vm.cloudOpacity); } catch (_) {}
+
+    // 2b. Choropleth katmanı — senkron JS güncellemesi
+    try { _syncChoropleth(vm); } catch (_) {}
 
     // 3. Rüzgar parçacıkları — hızlı async (sadece GeoJSON string gönderir)
     _syncWindParticles(vm.showWindParticles, vm.windVectors);
@@ -802,6 +975,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   /// ViewModel selection level → uygun JS katmanı kur
   void _syncSelectionMode(MapViewModel vm) {
     if (!kIsWeb) return;
+    if (!_styleLoaded) return; // Stil henüz yüklenmemişse işlem yapma
     switch (vm.selectionLevel) {
       case SelectionLevel.none:
         _jsClearSelectionMode();
@@ -810,13 +984,33 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       case SelectionLevel.province:
         _jsSetupProvinceMode(vm.selectedRegionName);
       case SelectionLevel.district:
-        _jsSetupDistrictMode(vm.selectedProvinceName); // null = tüm ilçeler
+        // İl modunda: tüm ilçeleri göster (null filtre) — başka ile geçiş yapılabilir
+        // Bölge/İlçe modunda: sadece seçili ilin ilçeleri
+        final initial = vm.initialSelectionMode;
+        if (initial == SelectionLevel.province) {
+          _jsSetupDistrictMode(null); // Tüm Türkiye ilçeleri → başka ile tıklanabilir
+          // Seçili ili mavi sınırla vurgula
+          try { _jsHighlightProvince(vm.selectedProvinceName); } catch (_) {}
+        } else if (initial == SelectionLevel.district) {
+          _jsSetupDistrictMode(null); // İlçe modu: tüm ilçeler, filtre yok
+        } else {
+          // Bölge modu → ilçe: sadece seçili ilin ilçeleri
+          _jsSetupDistrictMode(vm.selectedProvinceName);
+        }
     }
   }
 
   Future<void> _syncAll(MapViewModel vm) async {
     if (_syncing) return;
     _syncing = true;
+
+    // Tema durumunu oku (pin renkleri tema-duyarlı)
+    if (mounted) {
+      try {
+        _lastDarkMode = Provider.of<ThemeViewModel>(context, listen: false).isDarkMode;
+      } catch (_) {}
+    }
+
     try {
       await _syncPins(vm.filteredPins, vm.show3DTurbines, vm.showPinClusters);
     } catch (e) {
@@ -920,9 +1114,14 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     _syncing = false;
 
     // _syncing devam ederken gelen değişiklik varsa bir kez daha çalıştır
-    if (_syncPending && mounted && _vmRef != null) {
+    if (_syncPending && mounted && _styleLoaded && _vmRef != null) {
       _syncPending = false;
-      _syncAll(_vmRef!);
+      // Micro-task'ta çalıştır — dispose sırasında çakışmayı önle
+      Future.microtask(() {
+        if (mounted && _vmRef != null) {
+          _syncAll(_vmRef!);
+        }
+      });
     }
   }
 
@@ -951,6 +1150,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _lastTerrain = false;
         _lastCloud = false;
         _lastCloudOpacity = 0.70;
+        _lastChoropleth = ChoroplethMode.none;
+        _lastChoroplethDataJson = null;
         _lastPins = [];
         _lastSummary = [];
 
@@ -985,69 +1186,132 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     }
   }
 
-  // ─── Pin Etkileşimi ───────────────────────────────────────────────
+  // ─── Pin / Seçim Etkileşimi ──────────────────────────────────────
   //
-  // queryLayers yerine konum tabanlı yakınlık tespiti kullanılıyor.
-  // Sebep: queryLayers'da base-map feature'larında e.layer null olabiliyor →
-  // exception yutulup onPinTap hiç çağrılmıyordu.
+  // Flutter Web'de MapLibre'nin layer-specific click handler'ları çalışmaz
+  // (platform view event routing sorunu). Bunun yerine Dart MapEventClick'ten
+  // koordinat alınır ve JS srrpQueryClick() ile queryRenderedFeatures yapılır.
+  // Bu tek mekanizma pin, il, ilçe ve cluster tıklamalarını handle eder.
+  // 3D/eğimli görünümde de doğru çalışır çünkü ekran koordinatı kullanır.
 
   Future<void> _onMapClick(ml.Position point) async {
     // Dialog açıkken harita tıklamalarını yoksay
     if (MapViewMapLibre._clickGuardActive) return;
 
-    final vm = Provider.of<MapViewModel>(context, listen: false);
-
-    // 1. Pin yakınlık kontrolü
-    if (widget.onPinTap != null && vm.filteredPins.isNotEmpty) {
-      final pin = _nearestPin(vm.filteredPins, point);
-      if (pin != null) {
-        widget.onPinTap!(pin);
-        return;
-      }
+    if (!kIsWeb) {
+      widget.onMapTap?.call(point);
+      return;
     }
 
-    // 2. Harita tıklaması
+    // JS queryRenderedFeatures ile hangi feature'a tıklandığını sorgula
+    try {
+      final resultJson = _jsQueryClick(point.lng.toDouble(), point.lat.toDouble());
+      final result = jsonDecode(resultJson) as Map<String, dynamic>;
+      final type = result['type'] as String? ?? 'none';
+
+      if (type == 'pin') {
+        // ── Pin tıklaması ──
+        final props = result['properties'] as Map<String, dynamic>? ?? {};
+        final pinId = (props['id'] is num)
+            ? (props['id'] as num).toInt()
+            : int.tryParse(props['id']?.toString() ?? '');
+
+        // Ana haritada gerçek Pin objesini bul
+        if (pinId != null && _vmRef != null && widget.onPinTap != null) {
+          final realPin = _vmRef!.filteredPins.cast<Pin?>().firstWhere(
+            (p) => p?.id == pinId,
+            orElse: () => null,
+          );
+          if (realPin != null) {
+            widget.onPinTap!(realPin);
+            return;
+          }
+        }
+        // Showcase veya bilinmeyen pin → bilgi kartı göster
+        _dismissInfoCard();
+        setState(() => _selectedPinProps = props);
+        return;
+      }
+
+      if (type == 'selection') {
+        // ── İl / İlçe / Bölge seçim tıklaması ──
+        final props = result['properties'] as Map<String, dynamic>? ?? {};
+        _dismissInfoCard();
+        _handleSelectionClick(props);
+        return;
+      }
+
+      if (type == 'cluster') {
+        // ── Cluster zoom — JS tarafında handle edildi ──
+        return;
+      }
+
+      if (type == 'choropleth') {
+        // ── Choropleth ilçe tıklaması → tooltip göster ──
+        final props = result['properties'] as Map<String, dynamic>? ?? {};
+        final name1 = props['NAME_1']?.toString() ?? '';
+        final name2 = props['NAME_2']?.toString() ?? '';
+        if (name1.isNotEmpty && name2.isNotEmpty && _vmRef != null) {
+          _vmRef!.setChoroplethTap(name1, name2);
+        }
+        _dismissInfoCard();
+        return;
+      }
+    } catch (e) {
+      debugPrint('[MapLibre] queryClick hatası: $e');
+    }
+
+    // ── Boş alan tıklaması ──
+    _dismissInfoCard();
+    _vmRef?.clearChoroplethTap();
     widget.onMapTap?.call(point);
   }
 
-  /// Tıklanan konuma en yakın pin — zoom'a göre ölçeklenen eşik kullanır.
-  Pin? _nearestPin(List<Pin> pins, ml.Position point) {
-    if (pins.isEmpty) return null;
+  /// Seçim katmanı tıklaması — il/ilçe/bölge
+  void _handleSelectionClick(Map<String, dynamic> props) {
+    if (_vmRef == null) return;
+    final vm = _vmRef!;
 
-    // Zoom ne kadar yüksekse, eşik o kadar sıkı olmalı.
-    // Yaklaşık formül: threshold = 0.5 / 2^(zoom - 5)
-    // Zoom 6'da ≈ 0.25°, Zoom 10'da ≈ 0.016°, Zoom 14'de ≈ 0.001°
-    // Controller erişilemezse eskiden 0.08° (≈8km) sabitti. İlçe tıklamalarını bozduğu için 0.015° seviyesine düşürüldü.
-    const double fixedThreshold = 0.015;
+    // Composite ilçe modu: NAME_1 (il) + NAME_2 (ilçe)
+    final name1 = props['NAME_1']?.toString() ?? '';
+    final name2 = props['NAME_2']?.toString() ?? '';
+    final region = props['REGION']?.toString() ?? '';
 
-    Pin? nearest;
-    double minDist = double.infinity;
-    for (final p in pins) {
-      final dLat = p.latitude - point.lat.toDouble();
-      final dLon = p.longitude - point.lng.toDouble();
-      final dist = dLat * dLat + dLon * dLon;
-      if (dist < minDist) {
-        minDist = dist;
-        nearest = p;
-      }
+    switch (vm.selectionLevel) {
+      case SelectionLevel.region:
+        if (region.isNotEmpty) vm.selectRegion(region);
+      case SelectionLevel.province:
+        // Bölge seçilmemişse → önce bölge seç (harita bazlı bölge seçimi)
+        if (vm.selectedRegionName == null && region.isNotEmpty) {
+          vm.selectRegion(region);
+        } else if (name1.isNotEmpty) {
+          vm.selectProvince(name1);
+        }
+      case SelectionLevel.district:
+        if (name2.isNotEmpty && name1.isNotEmpty) {
+          vm.selectDistrict(name2, province: name1);
+        } else if (name1.isNotEmpty) {
+          vm.selectProvince(name1);
+        }
+      case SelectionLevel.none:
+        break;
     }
-    return minDist < (fixedThreshold * fixedThreshold) ? nearest : null;
   }
 
   // ─── Pin Hover Tooltip ────────────────────────────────────────────
 
-  static Color _pinColor(String type) {
+  static Color _pinColor(String type, {bool isDark = true}) {
     switch (type.toLowerCase()) {
       case 'güneş paneli':
       case 'solar':
         return const Color(0xFFFFA726);
       case 'rüzgar türbini':
       case 'wind':
-        return const Color(0xFF29B6F6);
+        return const Color(0xFF42A5F5); // Rüzgar mavisi
       case 'hidroelektrik':
       case 'hes':
       case 'hydro':
-        return const Color(0xFF42A5F5);
+        return const Color(0xFF1DB954); // Spotify yeşili
       default:
         return const Color(0xFF66BB6A);
     }
@@ -1070,8 +1334,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     }
   }
 
-  Widget _buildPinHoverCard(Pin pin) {
-    final color = _pinColor(pin.type);
+  Widget _buildPinHoverCard(Pin pin, {bool isDark = true}) {
+    final color = _pinColor(pin.type, isDark: isDark);
     final icon = _pinIcon(pin.type);
     final city = pin.city?.isNotEmpty == true ? pin.city! : null;
     final dist = pin.district?.isNotEmpty == true ? pin.district! : null;
@@ -1170,6 +1434,237 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     );
   }
 
+  // ─── Pin Bilgi Kartı (Showcase + Ana Harita) ─────────────────────
+
+  Widget _buildPinInfoCard(Map<String, dynamic> props, {bool isDark = true}) {
+    final type = props['type']?.toString() ?? '';
+    final name = props['name']?.toString() ?? 'Bilinmeyen';
+    final city = props['city']?.toString() ?? '';
+    final district = props['district']?.toString() ?? '';
+    final location = props['locationLabel']?.toString() ??
+        [if (district.isNotEmpty) district, if (city.isNotEmpty) city].join(' / ');
+    final color = _pinColor(type, isDark: isDark);
+    final icon = _pinIcon(type);
+
+    // Kapasite: GeoJSON'dan "capacityMw" veya showcase'dan "mw"
+    double? mw;
+    if (props['capacityMw'] != null) {
+      mw = (props['capacityMw'] is num) ? (props['capacityMw'] as num).toDouble() : double.tryParse(props['capacityMw'].toString());
+    }
+
+    final cardBg = isDark ? const Color(0xFF12122A) : const Color(0xFFF8F9FA);
+    final textPrimary = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final textSecondary = isDark ? Colors.white60 : const Color(0xFF666666);
+
+    String typeLabel;
+    switch (type.toLowerCase()) {
+      case 'güneş paneli':
+      case 'solar':
+        typeLabel = 'Güneş Enerjisi Santrali';
+      case 'rüzgar türbini':
+      case 'wind':
+        typeLabel = 'Rüzgar Enerjisi Santrali';
+      case 'hes':
+      case 'hidroelektrik':
+      case 'hydro':
+        typeLabel = 'Hidroelektrik Santrali';
+      default:
+        typeLabel = 'Enerji Santrali';
+    }
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 12 * (1 - value)),
+            child: child,
+          ),
+        );
+      },
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 380),
+        decoration: BoxDecoration(
+          color: cardBg.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: 0.5), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.2),
+              blurRadius: 20,
+              spreadRadius: 2,
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Üst renkli şerit
+            Container(
+              height: 4,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 14),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Başlık satırı: ikon + isim + kapat butonu
+                  Row(
+                    children: [
+                      // Tip ikonu
+                      Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(icon, color: color, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      // İsim ve tip
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: TextStyle(
+                                color: textPrimary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                height: 1.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              typeLabel,
+                              style: TextStyle(
+                                color: color.withValues(alpha: 0.9),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Kapat butonu
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(20),
+                          onTap: _dismissInfoCard,
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Icon(Icons.close, size: 18, color: textSecondary),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Bilgi satırları
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      children: [
+                        // Konum
+                        if (location.isNotEmpty)
+                          _infoRow(Icons.location_on_outlined, 'Konum', location, color, textPrimary, textSecondary),
+                        // Kapasite
+                        if (mw != null && mw > 0) ...[
+                          const SizedBox(height: 8),
+                          _infoRow(Icons.bolt, 'Kapasite', '${mw.toStringAsFixed(1)} MW', color, textPrimary, textSecondary),
+                        ],
+                        // Koordinat
+                        if (props['lat'] != null && props['lon'] != null) ...[
+                          const SizedBox(height: 8),
+                          _infoRow(
+                            Icons.my_location_outlined, 'Koordinat',
+                            '${(props['lat'] as num).toStringAsFixed(4)}, ${(props['lon'] as num).toStringAsFixed(4)}',
+                            color, textPrimary, textSecondary,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  // Ana haritada: "Detaylar" butonu
+                  if (widget.onPinTap != null) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        style: TextButton.styleFrom(
+                          backgroundColor: color.withValues(alpha: 0.12),
+                          foregroundColor: color,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                        label: const Text('Detayları Görüntüle', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        onPressed: () {
+                          final pinId = (props['id'] is num) ? (props['id'] as num).toInt() : int.tryParse(props['id']?.toString() ?? '');
+                          if (pinId != null && _vmRef != null) {
+                            final pin = _vmRef!.filteredPins.cast<Pin?>().firstWhere(
+                              (p) => p?.id == pinId, orElse: () => null,
+                            );
+                            if (pin != null) {
+                              _dismissInfoCard();
+                              widget.onPinTap!(pin);
+                            }
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value, Color accent, Color textPrimary, Color textSecondary) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: accent.withValues(alpha: 0.7)),
+        const SizedBox(width: 8),
+        Text(
+          '$label: ',
+          style: TextStyle(color: textSecondary, fontSize: 11, fontWeight: FontWeight.w500),
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: TextStyle(color: textPrimary, fontSize: 12, fontWeight: FontWeight.w600),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
   // ─── Katman Kurulumu ──────────────────────────────────────────────
 
   Future<void> _initLayers() async {
@@ -1179,6 +1674,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     // Her stil yenilemesinde haritanın interaktif olduğundan emin ol.
     // srrpSetMapInteractive(false) bir önceki oturumdan kalıyorsa sıfırlar.
     if (kIsWeb) _jsSetMapInteractive(true);
+
+    // Türkiye sınırları — harita dışına kaydırılamaz.
+    if (kIsWeb) _jsSetMaxBounds(24.0, 34.0, 46.0, 44.0);
 
     // 1. Heatmap source
     try {
@@ -1310,12 +1808,16 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       debugPrint('[MapLibre] city labels layer eklenemedi: $e');
     }
 
-    // Pin hover (mousemove) JS handler'ını kur
-    if (kIsWeb) _jsSetupPinHover();
+    // Pin hover (mousemove) ve click JS handler'larını kur
+    if (kIsWeb) {
+      _jsSetupPinHover();
+      _jsSetupPinClick();
+    }
 
     // GADM il/ilçe/bölge sınır katmanları
+    // Dinamik URL: telefon veya PC fark etmez, doğru host'a bağlanır
     if (kIsWeb) {
-      const base = 'http://127.0.0.1:8000';
+      final base = BaseService.webApiBase;
       _jsLoadBorderLayers(
         '$base/geo/borders/provinces',
         '$base/geo/borders/districts',
@@ -1352,7 +1854,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
     if (cluster && kIsWeb) {
       // Kümeleme aktif: JS cluster source'u güncelle
-      _jsUpdateClusterPins(_pinsToGeoJson(pins));
+      _jsUpdateClusterPins(_pinsToGeoJson(pins, isDark: _lastDarkMode));
       return; // Flutter pin source güncelleme atla
     }
 
@@ -1366,7 +1868,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       try {
         await style.updateGeoJsonSource(
           id: _pinsSourceId,
-          data: _pinsToGeoJson(pins),
+          data: _pinsToGeoJson(pins, isDark: _lastDarkMode),
         );
       } catch (e) {
         debugPrint('[MapLibre] pin source güncelleme hatası: $e');
@@ -1434,8 +1936,11 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       debugPrint('[MapLibre] pins layer güncelleme hatası: $e');
     }
 
-    // Circle layer yeniden oluşturuldu — hover handler'ı yeniden bağla
-    if (kIsWeb) _jsSetupPinHover();
+    // Circle layer yeniden oluşturuldu — hover ve click handler'larını yeniden bağla
+    if (kIsWeb) {
+      _jsSetupPinHover();
+      _jsSetupPinClick();
+    }
   }
 
   bool _pinsEqual(List<Pin> a, List<Pin> b) {
@@ -1627,10 +2132,17 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
   Future<void> _syncGlobe(bool show) async {
     if (!_styleLoaded || show == _lastGlobe) return;
+    final wasGlobe = _lastGlobe;
     _lastGlobe = show;
     // Flutter maplibre ^0.2.2'de style.setProjection() MapLibre GL JS 4.x ile
     // uyumsuz — JS shim üzerinden çağrılıyor.
     if (kIsWeb) _jsSetGlobe(show);
+
+    // Globe kapatılınca Türkiye merkezine uç
+    if (wasGlobe && !show && kIsWeb) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      _jsFlyTo(39.0, 35.5, 6.0); // Türkiye merkezi
+    }
   }
 
   void _syncCloud(bool show, double opacity) {
@@ -1647,6 +2159,36 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       _lastCloudOpacity = opacity;
       _jsSetCloudOpacity(opacity);
     }
+  }
+
+  // ─── Choropleth Sync ──────────────────────────────────────────────
+
+  void _syncChoropleth(MapViewModel vm) {
+    if (!_styleLoaded || !kIsWeb) return;
+    final mode = vm.choroplethMode;
+    final data = vm.choroplethData;
+
+    // Mod değişmediyse ve veri aynıysa atla
+    if (mode == _lastChoropleth && data == null) return;
+
+    if (mode == ChoroplethMode.none) {
+      if (_lastChoropleth != ChoroplethMode.none) {
+        _jsSetChoropleth('none', null);
+        _lastChoropleth = ChoroplethMode.none;
+        _lastChoroplethDataJson = null;
+      }
+      return;
+    }
+
+    if (data == null || data.isEmpty) return;
+
+    // Veriyi JSON'a çevir ve cache'le
+    final dataJson = jsonEncode(data);
+    if (mode == _lastChoropleth && dataJson == _lastChoroplethDataJson) return;
+
+    _jsSetChoropleth(mode.dataKey, dataJson);
+    _lastChoropleth = mode;
+    _lastChoroplethDataJson = dataJson;
   }
 
   // ─── Terrain Sync ─────────────────────────────────────────────────
@@ -1910,9 +2452,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   Widget build(BuildContext context) {
     // MapLibre GL JS henüz yüklenmediyse yükleniyor ekranı göster
     if (!_mapLibreScriptReady) {
-      return const ColoredBox(
-        color: Color(0xFF0D0D0D),
-        child: Center(
+      return ColoredBox(
+        color: const Color(0xFF0D0D0D).withValues(alpha: 0.6),
+        child: const Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1951,55 +2493,40 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
           ),
         ),
 
-        // Beta bandı
-        Positioned(
-          top: 8,
-          left: 8,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.deepPurple.withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.view_in_ar_rounded, color: Colors.white, size: 13),
-                SizedBox(width: 4),
-                Text(
-                  'MapLibre 3D',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+        // Beta bandı kaldırıldı
 
-        // Pin hover tooltip (sağ alt köşe)
-        if (_hoveredPin != null)
+        // Pin hover tooltip (sol alt köşe)
+        if (_hoveredPin != null && _selectedPinProps == null)
           Positioned(
             bottom: 80,
             left: 20,
-            child: _buildPinHoverCard(_hoveredPin!),
+            child: _buildPinHoverCard(_hoveredPin!, isDark: _lastDarkMode),
           ),
 
-        // Yükleniyor
+        // Pin bilgi kartı (tıklanan pin — showcase veya gerçek)
+        if (_selectedPinProps != null)
+          Positioned(
+            bottom: 24,
+            left: 20,
+            right: 20,
+            child: Center(
+              child: _buildPinInfoCard(_selectedPinProps!, isDark: _lastDarkMode),
+            ),
+          ),
+
+        // Style yükleniyor overlay
         if (!_styleLoaded)
           Container(
-            color: Colors.black54,
+            color: Colors.black.withValues(alpha: 0.35),
             child: const Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(color: Colors.white),
+                  CircularProgressIndicator(color: Colors.white70, strokeWidth: 2),
                   SizedBox(height: 12),
                   Text(
-                    'MapLibre GL yükleniyor...',
-                    style: TextStyle(color: Colors.white70),
+                    'Harita yükleniyor...',
+                    style: TextStyle(color: Colors.white60, fontSize: 13),
                   ),
                 ],
               ),

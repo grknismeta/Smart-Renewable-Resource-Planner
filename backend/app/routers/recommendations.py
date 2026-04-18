@@ -9,11 +9,11 @@ Weibull parametreleri:
   k (şekil)  : rüzgar hızı değişkenliğini gösterir (yüksek k = tutarlı rüzgar)
   λ (ölçek)  : ortalama rüzgar hızıyla ilişkilidir
 
-Kategoriler:
-  Güçlü         : v̄ > 7 m/s
-  Stabil        : k > 2.5 (tutarlı, düşük varyans)
-  Yüksek Sirkülasyon : σ > 3 (değişken ama yoğun)
-  Güçsüz        : 3 ≤ v̄ ≤ 5 m/s
+Kategoriler (göreceli sıralama — sabit eşik yerine en iyi/en kötü N şehir):
+  Güçlü         : en yüksek v̄ olan şehirler
+  Stabil        : en yüksek k olan şehirler (tutarlı rüzgar)
+  Yüksek Sirkülasyon : en yüksek σ olan şehirler (değişken ama yoğun)
+  Güçsüz        : en düşük v̄ olan şehirler
   Nadir         : v̄ < 3 m/s
 """
 
@@ -67,11 +67,11 @@ class RecommendedCity(BaseModel):
 
 
 class RecommendationsResponse(BaseModel):
-    wind_strong: List[RecommendedCity]        # v̄ > 7 m/s
-    wind_stable: List[RecommendedCity]        # Yüksek k (tutarlı rüzgar)
-    wind_circulation: List[RecommendedCity]   # Yüksek σ (değişken ama yoğun)
-    wind_weak: List[RecommendedCity]          # Güçsüz rüzgar
-    solar_top: List[RecommendedCity]          # En yüksek ışınım
+    wind_strong: List[RecommendedCity]        # En yüksek v̄ (göreceli sıralama)
+    wind_stable: List[RecommendedCity]        # En yüksek k (tutarlı rüzgar)
+    wind_circulation: List[RecommendedCity]   # En yüksek σ (değişken ama yoğun)
+    wind_weak: List[RecommendedCity]          # En düşük v̄ (verimsiz bölgeler)
+    solar_top: List[RecommendedCity]          # En yüksek ort. ışınım
     solar_irradiance_top: List[RecommendedCity]   # En yüksek anlık ışınım (W/m²)
     wind_annual_efficiency: List[RecommendedCity]  # Yıllık rüzgar verimliliği (k × v̄)
     solar_annual_efficiency: List[RecommendedCity] # Yıllık ışınım verimliliği (toplam kWh/m²)
@@ -228,19 +228,18 @@ async def get_recommendations(
     cities: List[RecommendedCity] = []
 
     for row in stats:
-        # Open-Meteo varsayılan birimi km/h — m/s'ye çevir (÷ 3.6)
-        # Tüm eşik değerleri (> 7, >= 5 vb.) ve Weibull hesapları m/s bekler.
-        avg_wind = float(row["avg_wind"] or 0) / 3.6
-        max_wind = float(row["max_wind"] or 0) / 3.6
-        std_wind = float(row["std_wind"] or 0) / 3.6   # std sapma doğrusal ölçeklenir
+        # Collector artık wind_speed_unit="ms" ile veri topluyor — dönüşüm gerekmez.
+        avg_wind = float(row["avg_wind"] or 0)
+        max_wind = float(row["max_wind"] or 0)
+        std_wind = float(row["std_wind"] or 0)
         avg_rad  = float(row["avg_radiation"] or 0)
         total_rad_kwh = float(row["total_radiation_kwh"] or 0)
         count    = int(row["record_count"] or 0)
 
-        # Hız ve yön dizilerini Python listesine çevir (km/h → m/s)
+        # Hız ve yön dizilerini Python listesine çevir
         raw_speeds = row.get("speeds_arr") or []
         raw_dirs   = row.get("dirs_arr") or []
-        speeds = [float(s) / 3.6 for s in raw_speeds if s is not None]
+        speeds = [float(s) for s in raw_speeds if s is not None]
         dirs   = [float(d) for d in raw_dirs   if d is not None]
 
         k = _weibull_k(speeds) if speeds else 1.0
@@ -278,42 +277,48 @@ async def get_recommendations(
             score=score,
         ))
 
-    # Kategorilere ayır
-    wind_strong      = sorted(
-        [c for c in cities if c.avg_wind_speed and c.avg_wind_speed > 7],
-        key=lambda c: c.score, reverse=True,
-    )[:top_n]
+    # ── Kategorilere ayır (göreceli sıralama — her zaman sonuç döner) ──
 
-    wind_stable      = sorted(
-        [c for c in cities if c.weibull_k and c.weibull_k > 2.5 and c.avg_wind_speed and c.avg_wind_speed >= 5.0],
-        key=lambda c: (c.weibull_k or 0), reverse=True,
-    )[:top_n]
-
-    wind_circulation = sorted(
-        [c for c in cities if c.wind_std and c.wind_std > 3.0 and c.avg_wind_speed and c.avg_wind_speed >= 5.0],
-        key=lambda c: (c.wind_std or 0), reverse=True,
-    )[:top_n]
-
-    wind_weak        = sorted(
-        [c for c in cities if c.avg_wind_speed and 2.0 <= c.avg_wind_speed <= 5.5],
+    # En İyi Rüzgar — en yüksek ortalama hıza sahip şehirler
+    wind_strong = sorted(
+        [c for c in cities if c.avg_wind_speed and c.avg_wind_speed > 0],
         key=lambda c: c.avg_wind_speed or 0, reverse=True,
     )[:top_n]
 
-    solar_top        = sorted(
+    # Stabil Rüzgar — en yüksek Weibull k (tutarlılık) değerine sahip şehirler
+    wind_stable = sorted(
+        [c for c in cities if c.weibull_k and c.weibull_k > 1.5],
+        key=lambda c: (c.weibull_k or 0), reverse=True,
+    )[:top_n]
+
+    # Yüksek Sirkülasyon — en yüksek standart sapma (değişken ama yoğun rüzgar)
+    wind_circulation = sorted(
+        [c for c in cities if c.wind_std and c.wind_std > 0.5],
+        key=lambda c: (c.wind_std or 0), reverse=True,
+    )[:top_n]
+
+    # Zayıf Rüzgar — en düşük ortalama hıza sahip şehirler (verimsiz bölgeler)
+    wind_weak = sorted(
+        [c for c in cities if c.avg_wind_speed and c.avg_wind_speed > 0],
+        key=lambda c: c.avg_wind_speed or 0, reverse=False,
+    )[:top_n]
+
+    # En İyi Güneş — en yüksek ortalama ışınım
+    solar_top = sorted(
         [c for c in cities if c.avg_radiation and c.avg_radiation > 0],
         key=lambda c: c.avg_radiation or 0, reverse=True,
     )[:top_n]
 
-    # En yüksek anlık ışınım — peak W/m² değerine göre sıralı
+    # En Yüksek Işınım — peak W/m² değerine göre sıralı
     solar_irradiance_top = sorted(
-        [c for c in cities if c.avg_radiation and c.avg_radiation > 200],
+        [c for c in cities if c.avg_radiation and c.avg_radiation > 0],
         key=lambda c: c.avg_radiation or 0, reverse=True,
     )[:top_n]
 
     # Yıllık rüzgar verimliliği — hem güçlü hem tutarlı rüzgar (k × avg_wind)
     wind_annual_efficiency = sorted(
-        [c for c in cities if c.avg_wind_speed and c.avg_wind_speed >= 3.0
-         and c.weibull_k and c.weibull_k >= 1.5],
+        [c for c in cities if c.avg_wind_speed and c.avg_wind_speed > 0
+         and c.weibull_k and c.weibull_k > 1.0],
         key=lambda c: (c.weibull_k or 1.0) * (c.avg_wind_speed or 0), reverse=True,
     )[:top_n]
 

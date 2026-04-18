@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 // Servisler
@@ -19,13 +18,11 @@ import 'package:frontend/features/reports/viewmodels/report_viewmodel.dart';
 import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 
 // Ekranlar
-import 'package:frontend/features/auth/splash_screen.dart';
-import 'package:frontend/features/auth/auth_screen.dart';
+import 'package:frontend/features/landing/screens/landing_screen.dart';
 import 'package:frontend/features/map/screens/map_screen.dart';
 import 'package:frontend/features/reports/report_screen.dart';
 import 'package:frontend/features/scenarios/scenario_screen.dart';
 import 'package:frontend/features/scenarios/scenario_compare_screen.dart';
-import 'package:frontend/features/onboarding/onboarding_screen.dart';
 
 // Shared
 import 'package:frontend/shared/widgets/offline_banner.dart';
@@ -42,22 +39,16 @@ Future<void> main() async {
   };
 
   // NetworkVectorTileProvider'dan gelebilecek iptal istisnalarını yakala ve bastır.
-  // NOT: flutter_map_cancellable_tile_provider (Dio tabanlı) kaldırıldı;
-  //      artık flutter_map yerleşik NetworkTileProvider() kullanılıyor.
-  // ÖNEMLI: Windows masaüstünde return false → process crash.
-  //         Bu yüzden her durumda return true; hatalar ayrıca loglanıyor.
   PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
     final msg = error.toString().toLowerCase();
-    // Beklenen iptal hataları — vector tile provider cancel
     final isCancelError = msg.contains('cancelled') ||
         msg.contains('canceled') ||
         msg.contains('request cancel');
     if (!isCancelError) {
-      // Gerçek hatayı logla — çökme değil, sadece kayıt
       debugPrint('[Unhandled Exception] $error');
       if (kDebugMode) debugPrint(stack.toString());
     }
-    return true; // Her zaman true — uygulama çalışmaya devam eder
+    return true;
   };
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -76,10 +67,10 @@ class MyApp extends StatelessWidget {
       providers: [
         Provider<ApiService>.value(value: apiService),
         ChangeNotifierProvider(create: (_) => ThemeViewModel()),
-        // İnternet bağlantısı izleyici — tüm ağaçtan erişilebilir
         ChangeNotifierProvider(create: (_) => ConnectivityService()),
         ChangeNotifierProvider(
-          create: (context) => AuthViewModel(apiService, secureStorageService),
+          create: (context) =>
+              AuthViewModel(apiService, secureStorageService),
         ),
         ChangeNotifierProvider(create: (_) => ReportViewModel(apiService)),
         ChangeNotifierProvider(create: (_) => ScenarioViewModel(apiService)),
@@ -103,16 +94,54 @@ class MyApp extends StatelessWidget {
                   ? Brightness.dark
                   : Brightness.light,
             ),
-            // Tüm ekranları OfflineBanner ile sar
             builder: (context, child) => OfflineBanner(child: child!),
-            home: const _HomeRouter(),
-            routes: {
-              '/auth':    (context) => const AuthScreen(),
-              '/map':     (context) => const MapScreen(),
-              '/reports': (context) => const ReportScreen(),
-              '/scenarios': (context) => const ScenarioScreen(),
-              '/scenarios/compare': (context) => const ScenarioCompareScreen(),
-              '/onboarding': (context) => const OnboardingScreen(),
+            home: const _AuthGate(),
+            onGenerateRoute: (settings) {
+              // Sayfa widget'ını belirle
+              Widget page;
+              switch (settings.name) {
+                case '/landing':
+                  page = const LandingScreen();
+                  break;
+                case '/map':
+                  page = const MapScreen();
+                  break;
+                case '/reports':
+                  page = const ReportScreen();
+                  break;
+                case '/scenarios':
+                  page = const ScenarioScreen();
+                  break;
+                case '/scenarios/compare':
+                  page = const ScenarioCompareScreen();
+                  break;
+                default:
+                  page = const LandingScreen();
+              }
+
+              // /map ve /landing geçişlerinde fade animasyonu
+              if (settings.name == '/map' ||
+                  settings.name == '/landing') {
+                return PageRouteBuilder(
+                  settings: settings,
+                  pageBuilder: (_, __, ___) => page,
+                  transitionDuration: const Duration(milliseconds: 600),
+                  reverseTransitionDuration:
+                      const Duration(milliseconds: 400),
+                  transitionsBuilder: (_, animation, __, child) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: child,
+                    );
+                  },
+                );
+              }
+
+              // Diğer sayfalar: standart geçiş
+              return MaterialPageRoute(
+                settings: settings,
+                builder: (_) => page,
+              );
             },
           );
         },
@@ -121,57 +150,47 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Başlangıç yönlendirici: önce onboarding durumunu kontrol eder,
-/// sonra auth durumuna göre uygun ekranı gösterir.
-class _HomeRouter extends StatefulWidget {
-  const _HomeRouter();
+/// Auth durumunu kontrol eder ve uygun sayfaya yönlendirir.
+/// Başlangıçta splash gösterir, auth kontrol tamamlanınca
+/// /landing veya /map sayfasına yönlendirir.
+class _AuthGate extends StatefulWidget {
+  const _AuthGate();
 
   @override
-  State<_HomeRouter> createState() => _HomeRouterState();
+  State<_AuthGate> createState() => _AuthGateState();
 }
 
-class _HomeRouterState extends State<_HomeRouter> {
-  /// null = henüz kontrol edilmedi
-  bool? _onboardingDone;
+class _AuthGateState extends State<_AuthGate> {
+  bool _navigated = false;
 
   @override
-  void initState() {
-    super.initState();
-    _checkOnboarding();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tryNavigate();
   }
 
-  Future<void> _checkOnboarding() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      _onboardingDone = prefs.getBool('onboarding_done') ?? false;
+  void _tryNavigate() {
+    if (_navigated) return;
+    final auth = Provider.of<AuthViewModel>(context);
+    if (auth.isLoggedIn == null) return; // Henüz kontrol edilmedi
+
+    _navigated = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (auth.isLoggedIn == true) {
+        Navigator.of(context).pushReplacementNamed('/map');
+      } else {
+        Navigator.of(context).pushReplacementNamed('/landing');
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Henüz SharedPreferences okuma tamamlanmadı
-    if (_onboardingDone == null) {
-      return const SplashScreen();
-    }
-
-    // İlk açılış → onboarding ekranını göster
-    if (!_onboardingDone!) {
-      return const OnboardingScreen();
-    }
-
-    // Normal akış: auth durumuna göre yönlendir
-    return Consumer<AuthViewModel>(
-      builder: (ctx, authViewModel, _) {
-        if (authViewModel.isLoggedIn == null) {
-          return const SplashScreen();
-        }
-        if (authViewModel.isLoggedIn == true) {
-          return const MapScreen();
-        } else {
-          return const AuthScreen();
-        }
-      },
+    final theme = Provider.of<ThemeViewModel>(context);
+    return Scaffold(
+      backgroundColor: theme.backgroundColor,
+      body: const Center(child: CircularProgressIndicator()),
     );
   }
 }

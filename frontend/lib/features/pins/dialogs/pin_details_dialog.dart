@@ -39,6 +39,7 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
   // Edit Mode State
   PinDialogViewModel? _editViewModel;
   late TextEditingController _nameController;
+  TextEditingController? _panelAreaController;
 
   @override
   void initState() {
@@ -50,23 +51,40 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
   @override
   void dispose() {
     _nameController.dispose();
+    _panelAreaController?.dispose();
     _editViewModel?.dispose();
     super.dispose();
   }
 
   void _enterEditMode() {
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
+    // Backend 'Hidroelektrik' döner ama ViewModel 'HES' bekler
+    final displayType = PinDialogViewModel.toDisplayType(_currentPin.type);
     _editViewModel = PinDialogViewModel(
       mapViewModel,
-      _currentPin.type,
+      displayType,
       initialEquipmentId: _currentPin.equipmentId,
     );
-    
+
     // Set initial values
     if (_currentPin.panelArea != null) {
       _editViewModel!.setPanelArea(_currentPin.panelArea.toString());
     }
-    
+    if (_currentPin.flowRate != null) {
+      _editViewModel!.setFlowRate(_currentPin.flowRate.toString());
+    }
+    if (_currentPin.headHeight != null) {
+      _editViewModel!.setHeadHeight(_currentPin.headHeight.toString());
+    }
+    if (_currentPin.basinAreaKm2 != null) {
+      _editViewModel!.setBasinArea(_currentPin.basinAreaKm2.toString());
+    }
+
+    _panelAreaController?.dispose();
+    _panelAreaController = TextEditingController(
+      text: _currentPin.panelArea?.toString() ?? '10.0',
+    );
+
     _editViewModel!.loadInitialData();
     setState(() {
       _isEditing = true;
@@ -76,6 +94,8 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
   void _cancelEdit() {
     _editViewModel?.dispose();
     _editViewModel = null;
+    _panelAreaController?.dispose();
+    _panelAreaController = null;
     _nameController.text = _currentPin.name;
     setState(() {
       _isEditing = false;
@@ -100,10 +120,13 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
         _currentPin.id,
         LatLng(_currentPin.latitude, _currentPin.longitude),
         _nameController.text,
-        _editViewModel!.selectedType,
+        _editViewModel!.backendType,
         capacityMw,
         _editViewModel!.selectedEquipmentId,
         _editViewModel!.panelArea,
+        flowRate: _editViewModel!.flowRate > 0 ? _editViewModel!.flowRate : null,
+        headHeight: _editViewModel!.headHeight > 0 ? _editViewModel!.headHeight : null,
+        basinAreaKm2: _editViewModel!.basinAreaKm2 > 0 ? _editViewModel!.basinAreaKm2 : null,
       );
       
       setState(() {
@@ -223,8 +246,10 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
           EnergyOutputWidget(result: _currentPin.analysis!, theme: theme),
           const SizedBox(height: 20),
           // Actions Row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
             children: [
                // Güncelle Butonu
                ElevatedButton.icon(
@@ -235,12 +260,11 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                     elevation: 0,
                     side: BorderSide(color: theme.secondaryTextColor.withValues(alpha: 0.2)),
                   ),
-                  icon: _isAnalyzing 
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
+                  icon: _isAnalyzing
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.refresh, size: 18),
                   label: Text(_isAnalyzing ? "..." : "Güncelle"),
                ),
-               const SizedBox(width: 8),
                // Düzenle Butonu (Daha kompakt)
                ElevatedButton.icon(
                   onPressed: _enterEditMode,
@@ -253,12 +277,11 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                   icon: const Icon(Icons.edit, size: 18),
                   label: const Text("Düzenle"),
                ),
-               const SizedBox(width: 8),
                // Sil Butonu (Kırmızı) - Kapat yerine
                ElevatedButton.icon(
                   onPressed: () => _handleDelete(),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.withValues(alpha: 0.2), 
+                    backgroundColor: Colors.red.withValues(alpha: 0.2),
                     foregroundColor: Colors.redAccent,
                     elevation: 0,
                     side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.3)),
@@ -325,36 +348,33 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
          const SizedBox(height: 24),
 
           // Actions
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
             children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _isAnalyzing ? null : _handleAnalyze,
-                  icon: _isAnalyzing 
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
-                      : const Icon(Icons.refresh),
-                  label: Text(_isAnalyzing ? "Hesaplanıyor..." : "Analizi Başlat"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
+              ElevatedButton.icon(
+                onPressed: _isAnalyzing ? null : _handleAnalyze,
+                icon: _isAnalyzing
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh),
+                label: Text(_isAnalyzing ? "Hesaplanıyor..." : "Analizi Başlat"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _enterEditMode,
-                  icon: const Icon(Icons.edit),
-                  label: const Text("Düzenle"),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.textColor,
-                    side: BorderSide(color: theme.secondaryTextColor),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
+              OutlinedButton.icon(
+                onPressed: _enterEditMode,
+                icon: const Icon(Icons.edit),
+                label: const Text("Düzenle"),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.textColor,
+                  side: BorderSide(color: theme.secondaryTextColor),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 ),
               ),
-              const SizedBox(width: 8),
               // Delete Button for No Analysis view
               IconButton(
                 onPressed: _handleDelete,
@@ -402,7 +422,7 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                     children: [
                       _buildTypeOption(theme, "Güneş Paneli", Icons.wb_sunny, vm.selectedType == "Güneş Paneli", () => vm.changeType("Güneş Paneli")),
                       _buildTypeOption(theme, "Rüzgar Türbini", Icons.wind_power, vm.selectedType == "Rüzgar Türbini", () => vm.changeType("Rüzgar Türbini")),
-                      _buildTypeOption(theme, "Hidroelektrik", Icons.water_drop, vm.selectedType == "Hidroelektrik", () => vm.changeType("Hidroelektrik")),
+                      _buildTypeOption(theme, "HES", Icons.water_drop, vm.selectedType == "HES", () => vm.changeType("HES")),
                     ],
                   ),
                 ),
@@ -422,10 +442,7 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                       label: 'Panel Alanı (m²)',
                       isNumber: true,
                       onChanged: (val) => vm.setPanelArea(val),
-                      controller: TextEditingController(text: vm.panelArea.toString())
-                          ..selection = TextSelection.fromPosition(
-                             TextPosition(offset: vm.panelArea.toString().length),
-                          ),
+                      controller: _panelAreaController!,
                       theme: theme,
                    ),
                 ],
@@ -470,7 +487,7 @@ class _PinDetailsDialogState extends State<PinDetailsDialog> {
                borderRadius: BorderRadius.circular(12),
                boxShadow: isSelected ? [BoxShadow(color: Colors.black12, blurRadius: 4)] : null,
              ),
-             child: Icon(icon, color: isSelected ? (label.contains("Güneş") ? Colors.orange : label.contains("Hidro") ? Colors.teal : Colors.blue) : theme.secondaryTextColor),
+             child: Icon(icon, color: isSelected ? (label.contains("Güneş") ? Colors.orange : label == "HES" ? Colors.teal : Colors.blue) : theme.secondaryTextColor),
           ),
         ),
       );

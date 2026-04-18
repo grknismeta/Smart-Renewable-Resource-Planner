@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:maplibre/maplibre.dart' as ml;
 
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
+import 'package:frontend/features/map/models/map_models.dart' show ChoroplethModeExt;
 import 'package:frontend/core/theme/theme_view_model.dart';
 import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 
@@ -19,8 +20,10 @@ import 'package:frontend/features/scenarios/widgets/scenario_side_panel.dart';
 import 'package:frontend/features/reports/report_screen.dart';
 import 'package:frontend/features/scenarios/widgets/scenario_mini_report_panel.dart';
 import 'package:frontend/features/map/widgets/panels/time_slider_panel.dart';
-import 'package:frontend/core/network/api_service.dart';
+import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:frontend/features/map/widgets/wind_particle_overlay.dart';
 
 
 class MapScreen extends StatefulWidget {
@@ -55,6 +58,8 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Provider.of<ThemeViewModel>(context);
+    final authVM = Provider.of<AuthViewModel>(context);
+    final isAuthenticated = authVM.isLoggedIn == true;
     return Consumer2<MapViewModel, ScenarioViewModel>(
       builder: (context, mapViewModel, scenarioVM, child) {
         // Tema değişiminde harita stilini otomatik senkronize et
@@ -62,6 +67,7 @@ class _MapScreenState extends State<MapScreen> {
           if (mounted) mapViewModel.syncBaseStyleWithTheme(theme.isDarkMode);
         });
         return Scaffold(
+          backgroundColor: Colors.transparent,
           body: Stack(
             children: [
               // 1. MapLibre harita motoru
@@ -73,81 +79,139 @@ class _MapScreenState extends State<MapScreen> {
                 onPinTap: (Pin pin) => _showPinDialog(pin),
               ),
 
-              // 2. Overlay'ler (Dashboard, Açıklama, Lejandlar)
-              MapOverlays(
-                theme: theme,
-                mapViewModel: mapViewModel,
-                layersPanel: _showLayersPanel
-                    ? LayersPanel(
-                        theme: theme,
-                        mapViewModel: mapViewModel,
-                      )
-                    : null,
-              ),
-
-              // 3. Kayan Kontroller (Butonlar)
-              MapControls(
-                theme: theme,
-                onAddPin: () {
-                  mapViewModel.startPlacingMarker('Güneş Paneli');
-                  _pinModeActivatedAt = DateTime.now();
-                },
-                onSelectRegion: () {
-                  if (mapViewModel.isSelectingRegion) {
-                    mapViewModel.clearRegionSelection();
-                  } else {
-                    mapViewModel.startSelectingRegion();
-                  }
-                },
-                onToggleLayers: () =>
-                    setState(() => _showLayersPanel = !_showLayersPanel),
-                onZoomIn: MapViewMapLibre.zoomIn,
-                onZoomOut: MapViewMapLibre.zoomOut,
-                isSelectingRegion: mapViewModel.isSelectingRegion,
-                isLayersPanelVisible: _showLayersPanel,
-                onToggleRecommendations: () =>
-                    mapViewModel.toggleRecommendationsPanel(),
-                isRecommendationsPanelOpen:
-                    mapViewModel.isRecommendationsPanelOpen,
-                // İl Modu — tüm 81 ili doğrudan göster
-                onOpenProvincesMode: () {
-                  mapViewModel.openProvincesMode();
-                  if (!mapViewModel.isProvinceModeActive) {
-                    MapViewMapLibre.clearSelectionMode();
-                  }
-                },
-                isProvincesModeActive: mapViewModel.isProvincesModeActive,
-                // İlçe Modu — tüm Türkiye ilçelerini doğrudan göster
-                onOpenDistrictsMode: () {
-                  mapViewModel.openDistrictsMode();
-                  if (!mapViewModel.isProvinceModeActive) {
-                    MapViewMapLibre.clearSelectionMode();
-                  }
-                },
-                isDistrictsModeActive: mapViewModel.isDistrictsModeActive,
-                onToggleAnimation: () => mapViewModel.toggleAnimationMode(),
-                isAnimationMode: mapViewModel.isAnimationMode,
-                isGlobeMode: mapViewModel.showGlobe,
-              ),
-
-              // 3b. Bölge Filtre Şeridi — İl modu aktifken üstte kayar chip'ler
-              if (mapViewModel.isProvincesModeActive)
-                Positioned(
-                  top: 72,
-                  left: 0,
-                  right: mapViewModel.isRecommendationsPanelOpen ? 380 : 0,
-                  child: PointerInterceptor(
-                    child: _RegionFilterChips(
-                      mapViewModel: mapViewModel,
-                      theme: theme,
-                    ),
+              // Rüzgar parçacık animasyonu — sadece native'de (web JS canvas kullanır)
+              if (!kIsWeb && mapViewModel.showWindParticles)
+                Positioned.fill(
+                  child: WindParticleOverlay(
+                    vectors: mapViewModel.windVectors,
+                    active: mapViewModel.showWindParticles,
                   ),
                 ),
 
-              // 4. Alt Sheet
-              MapBottomSheet(
-                onScenariosTap: () =>
-                    setState(() => _showScenariosPanel = !_showScenariosPanel),
+              // Aşağıdaki tüm kontroller sadece giriş yapıldığında gösterilir
+              if (isAuthenticated) ...[
+
+              // 2. Overlay'ler (Dashboard, Açıklama, Lejandlar)
+              // Dashboard — sol üst köşe
+              Builder(builder: (ctx) {
+                final isMobile = MediaQuery.of(ctx).size.width < 600;
+                final pad = isMobile ? 10.0 : 20.0;
+                final scale = isMobile ? 0.85 : 1.0;
+                final dashboardBottom = isMobile ? 88.0 : 120.0; // tooltip top
+
+                return Stack(
+                  children: [
+                    if (!mapViewModel.showGlobe)
+                      Positioned(
+                        top: pad,
+                        left: pad,
+                        child: PointerInterceptor(
+                          child: Transform.scale(
+                            scale: scale,
+                            alignment: Alignment.topLeft,
+                            child: MapDashboard(theme: theme),
+                          ),
+                        ),
+                      ),
+                    if (mapViewModel.showGlobe)
+                      Positioned(
+                        top: pad,
+                        left: pad,
+                        child: PointerInterceptor(
+                          child: Transform.scale(
+                            scale: scale,
+                            alignment: Alignment.topLeft,
+                            child: GlobeInfoCard(theme: theme),
+                          ),
+                        ),
+                      ),
+                    // Choropleth ilçe tooltip — dashboard'un altında
+                    if (mapViewModel.choroplethTapDistrict != null)
+                      Positioned(
+                        top: dashboardBottom,
+                        left: pad,
+                        child: PointerInterceptor(
+                          child: Transform.scale(
+                            scale: scale,
+                            alignment: Alignment.topLeft,
+                            child: _ChoroplethTooltip(
+                              districtLabel: mapViewModel.choroplethTapDistrict!,
+                              data: mapViewModel.choroplethTapData,
+                              mode: mapViewModel.choroplethMode,
+                              matchColor: mapViewModel.choroplethTapColor,
+                              theme: theme,
+                              onClose: () => mapViewModel.clearChoroplethTap(),
+                              dataTimestamp: mapViewModel.choroplethDataTimestamp,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              }),
+              // Layers Panel — sağ üst (butonların altında)
+              if (_showLayersPanel)
+                Positioned(
+                  top: 90,
+                  right: 20,
+                  child: PointerInterceptor(
+                    child: LayersPanel(
+                      theme: theme,
+                      mapViewModel: mapViewModel,
+                      onClearMapSelection: () =>
+                          MapViewMapLibre.clearSelectionMode(),
+                    ),
+                  ),
+                ),
+              // Choropleth & Heatmap legends
+              ..._buildLegends(mapViewModel, theme),
+
+              // 3. Kayan Kontroller (Butonlar)
+              // Add Pin — sağ üst
+              Positioned(
+                top: 20,
+                right: 20,
+                child: PointerInterceptor(
+                  child: Column(
+                    children: [
+                      MapControlButton(
+                        icon: Icons.add_location_alt_outlined,
+                        tooltip: "Kaynak Ekle",
+                        onTap: () {
+                          mapViewModel.startPlacingMarker('Güneş Paneli');
+                          _pinModeActivatedAt = DateTime.now();
+                        },
+                        color: Colors.blueAccent,
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 16),
+                      MapControlButton(
+                        icon: Icons.layers_outlined,
+                        tooltip: "Katmanlar",
+                        onTap: () =>
+                            setState(() => _showLayersPanel = !_showLayersPanel),
+                        color: _showLayersPanel ? Colors.greenAccent : theme.textColor,
+                        theme: theme,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Zoom butonları — sol alt
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                bottom: mapViewModel.choroplethMode != ChoroplethMode.none ? 155 : 40,
+                left: 20,
+                child: PointerInterceptor(
+                  child: Column(
+                    children: [
+                      _buildZoomButton(Icons.add, MapViewMapLibre.zoomIn, theme),
+                      const SizedBox(height: 8),
+                      _buildZoomButton(Icons.remove, MapViewMapLibre.zoomOut, theme),
+                    ],
+                  ),
+                ),
               ),
 
               // 5. Eylem Göstergeleri (pin yerleştirme, bölge seçimi)
@@ -220,12 +284,14 @@ class _MapScreenState extends State<MapScreen> {
                       mapViewModel.selectedProvinceName != null ||
                       mapViewModel.selectedDistrictName != null))
                 Positioned(
-                  bottom: 100,
+                  // Zaman simülasyonu açıksa panel (~220px) üstüne çıkar
+                  bottom: mapViewModel.isAnimationMode ? 260 : 100,
                   left: 20,
                   child: PointerInterceptor(child: ProvinceInfoCard(
                     provinceName: mapViewModel.selectedProvinceName ?? '',
                     summary: mapViewModel.selectedProvinceSummary,
                     districtSummary: mapViewModel.selectedDistrictSummary,
+                    isLoadingDistrictSummaries: mapViewModel.isLoadingDistrictSummaries,
                     allPins: mapViewModel.pins,
                     theme: theme,
                     selectionLevel: mapViewModel.selectionLevel,
@@ -290,12 +356,13 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
 
-              // 9. Collector Sağlık Rozeti — sol alt köşe
-              Positioned(
-                bottom: 12,
-                left: 12,
-                child: PointerInterceptor(child: const _CollectorStatusBadge()),
+              // 9. Alt Sheet — en sonda: diğer tüm widget'ların üstünde
+              MapBottomSheet(
+                onScenariosTap: () =>
+                    setState(() => _showScenariosPanel = !_showScenariosPanel),
               ),
+
+              ], // if (isAuthenticated) sonu
             ],
           ),
         );
@@ -321,14 +388,99 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Pin dialog'unu açar — açılmadan önce click guard aktifleştirilir,
   /// dialog kapanınca devre dışı bırakılır.
-  Future<void> _showPinDialog(Pin pin) async {
+  void _showPinDialog(Pin pin) {
     MapViewMapLibre.setClickGuard(true);
-    try {
-      await MapDialogs.showPinActionsDialog(context, pin);
-    } finally {
+    MapDialogs.showPinActionsDialog(context, pin);
+    // Click guard dialog kapanınca sıfırlanmalı — dialog kendi yaşam döngüsünde yönetir
+    Future.delayed(const Duration(milliseconds: 300), () {
       MapViewMapLibre.setClickGuard(false);
-    }
+    });
   }
+
+  Widget _buildZoomButton(IconData icon, VoidCallback onTap, ThemeViewModel theme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+        border: Border.all(color: theme.secondaryTextColor.withValues(alpha: 0.1)),
+      ),
+      child: IconButton(
+        icon: Icon(icon, color: theme.textColor),
+        onPressed: onTap,
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      ),
+    );
+  }
+
+  List<Widget> _buildLegends(MapViewModel vm, ThemeViewModel theme) {
+    final legends = <Widget>[];
+    // Zaman simülasyonu açıksa legend'lar panelin üstüne çıksın
+    final legendBottom = vm.isAnimationMode ? 240.0 : 40.0;
+
+    // Heatmap legends (sağ alt)
+    Widget? heatLegend;
+    if (vm.currentLayer == MapLayerType.irradiance) {
+      heatLegend = LegendWidget(
+        theme: theme, title: 'Işınım Yoğunluğu', titleFontSize: 11,
+        unit: 'kWh/m²/yıl',
+        gradientColors: [Colors.black.withValues(alpha: 0.5), Colors.deepOrangeAccent, Colors.redAccent.shade700, Colors.orangeAccent, Colors.white],
+        minLabel: '0', maxLabel: '2200',
+        tickLabels: const ['0', '550', '1100', '1650', '2200'],
+      );
+    } else if (vm.currentLayer == MapLayerType.wind) {
+      heatLegend = LegendWidget(
+        theme: theme, title: 'Rüzgar Hızı', unit: 'm/s',
+        gradientColors: [Colors.black.withValues(alpha: 0.5), Colors.blueAccent.shade700, Colors.cyanAccent, Colors.white],
+        minLabel: '0', maxLabel: '15+',
+        tickLabels: const ['0', '3', '6', '9', '12', '15+'],
+      );
+    } else if (vm.currentLayer == MapLayerType.temp) {
+      heatLegend = LegendWidget(
+        theme: theme, title: 'Sıcaklık', unit: '°C',
+        gradientColors: [Colors.indigo, Colors.cyan, Colors.yellow, Colors.red.shade900],
+        minLabel: '-10', maxLabel: '40+',
+        tickLabels: const ['-10', '5', '20', '35', '40+'],
+      );
+    }
+    if (heatLegend != null) {
+      legends.add(Positioned(bottom: legendBottom, right: 20, child: PointerInterceptor(child: heatLegend)));
+    }
+
+    // Choropleth legends (sol alt)
+    Widget? choroLegend;
+    if (vm.choroplethMode == ChoroplethMode.solar) {
+      choroLegend = LegendWidget(
+        theme: theme, title: 'Güneş Işınımı (İlçe)', titleFontSize: 10, unit: 'W/m²', width: 190,
+        gradientColors: const [Color(0xFFFFFFCC), Color(0xFFFFEDA0), Color(0xFFFED976), Color(0xFFFEB24C), Color(0xFFFD8D3C), Color(0xFFFC4E2A), Color(0xFFE31A1C), Color(0xFFBD0026), Color(0xFF800026), Color(0xFF4D0014)],
+        minLabel: '0', maxLabel: '400',
+        tickLabels: const ['0', '80', '160', '240', '320', '400'],
+      );
+    } else if (vm.choroplethMode == ChoroplethMode.wind) {
+      choroLegend = LegendWidget(
+        theme: theme, title: 'Rüzgar Hızı (İlçe)', titleFontSize: 10, unit: 'm/s', width: 190,
+        gradientColors: const [Color(0xFFF7FBFF), Color(0xFFDEEBF7), Color(0xFFC6DBEF), Color(0xFF9ECAE1), Color(0xFF6BAED6), Color(0xFF4292C6), Color(0xFF2171B5), Color(0xFF08519C), Color(0xFF083D7F), Color(0xFF08306B)],
+        minLabel: '0', maxLabel: '12',
+        tickLabels: const ['0', '2', '4', '6', '8', '10', '12'],
+      );
+    } else if (vm.choroplethMode == ChoroplethMode.temperature) {
+      choroLegend = LegendWidget(
+        theme: theme, title: 'Sıcaklık (İlçe)', titleFontSize: 10, unit: '°C', width: 210,
+        gradientColors: const [Color(0xFF08306B), Color(0xFF2171B5), Color(0xFF6BAED6), Color(0xFFC6DBEF), Color(0xFFD9F0A3), Color(0xFF78C679), Color(0xFF31A354), Color(0xFF006837), Color(0xFF31A354), Color(0xFFFED976), Color(0xFFFEB24C), Color(0xFFFD8D3C), Color(0xFFE31A1C), Color(0xFFBD0026), Color(0xFF800026)],
+        minLabel: '-15', maxLabel: '45',
+        tickLabels: const ['-15', '0', '10', '20', '30', '40', '45'],
+      );
+    }
+    if (choroLegend != null) {
+      legends.add(Positioned(bottom: legendBottom, left: 12, child: PointerInterceptor(child: choroLegend)));
+    }
+
+    return legends;
+  }
+
+  /// Türkiye sınırları içinde mi? (lat 35-43, lon 25-46)
+  static bool _isInTurkey(LatLng p) =>
+      p.latitude >= 35 && p.latitude <= 43 && p.longitude >= 25 && p.longitude <= 46;
 
   Future<void> _checkGeoSuitability(
       MapViewModel viewModel, LatLng point) async {
@@ -339,6 +491,26 @@ class _MapScreenState extends State<MapScreen> {
     MapViewMapLibre.setClickGuard(true);
 
     final theme = Provider.of<ThemeViewModel>(context, listen: false);
+    final isGlobe = viewModel.showGlobe;
+    final outsideTurkey = !_isInTurkey(point);
+
+    // Globe modunda ve Türkiye dışındaysa → geo check atla, direkt dialog aç
+    if (isGlobe && outsideTurkey) {
+      try {
+        await showDialog(
+          context: context,
+          builder: (ctx) => AddPinDialog(
+            point: point,
+            initialPinType: viewModel.placingPinType ?? 'Güneş Paneli',
+          ),
+        );
+        viewModel.stopPlacingMarker();
+      } finally {
+        _isProcessingGeoCheck = false;
+        MapViewMapLibre.setClickGuard(false);
+      }
+      return;
+    }
 
     showDialog(
       context: context,
@@ -390,206 +562,175 @@ class _MapScreenState extends State<MapScreen> {
 }
 
 
-// ── Bölge Filtre Şeridi ───────────────────────────────────────────────────────
 
-class _RegionFilterChips extends StatelessWidget {
-  static const _regions = [
-    'Marmara', 'Ege', 'Akdeniz', 'İç Anadolu',
-    'Karadeniz', 'Doğu Anadolu', 'Güneydoğu Anadolu',
-  ];
+// ─── Choropleth İlçe Tooltip ──────────────────────────────────────────────
 
-  final MapViewModel mapViewModel;
+class _ChoroplethTooltip extends StatelessWidget {
+  final String districtLabel;       // "İstanbul / Kadıköy"
+  final Map<String, dynamic>? data; // {wind, solar, temp}
+  final ChoroplethMode mode;
+  final Color? matchColor;          // Haritadaki dolgu rengiyle eşleşen renk
   final ThemeViewModel theme;
+  final VoidCallback onClose;
+  final String? dataTimestamp;      // Verinin toplandığı zaman (ISO 8601)
 
-  const _RegionFilterChips({
-    required this.mapViewModel,
+  const _ChoroplethTooltip({
+    required this.districtLabel,
+    required this.data,
+    required this.mode,
+    this.matchColor,
     required this.theme,
+    required this.onClose,
+    this.dataTimestamp,
   });
 
   @override
   Widget build(BuildContext context) {
-    final selectedRegion = mapViewModel.selectedRegionName;
+    final d = data;
+    final dataKey = mode.dataKey;
+    final value = d != null ? (d[dataKey] as num?)?.toDouble() : null;
+    final unit = switch (mode) {
+      ChoroplethMode.solar => 'W/m²',
+      ChoroplethMode.wind => 'm/s',
+      ChoroplethMode.temperature => '°C',
+      ChoroplethMode.none => '',
+    };
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 76, vertical: 6),
-      child: Row(
+    final accent = matchColor ?? mode.color;
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 220),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.cardColor.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.8),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (selectedRegion != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: _chip(
-                label: 'Tümü',
-                icon: Icons.close_rounded,
-                selected: false,
-                onTap: () => mapViewModel.clearRegionFilter(),
-                isReset: true,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(mode.icon, size: 14, color: mode.color),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  districtLabel,
+                  style: TextStyle(
+                    color: theme.textColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: onClose,
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 14,
+                  color: theme.secondaryTextColor,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (value != null)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 10, height: 10,
+                  decoration: BoxDecoration(
+                    color: accent,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 0.8),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    '${mode.displayName}: ${value.toStringAsFixed(1)} $unit',
+                    style: TextStyle(
+                      color: theme.textColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else
+            Text(
+              'Veri yok',
+              style: TextStyle(
+                color: theme.secondaryTextColor,
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
               ),
             ),
-          ..._regions.map((region) {
-            final isSelected = selectedRegion == region;
-            return Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: _chip(
-                label: region,
-                selected: isSelected,
-                onTap: () => isSelected
-                    ? mapViewModel.clearRegionFilter()
-                    : mapViewModel.selectRegion(region),
+          if (d != null) ...[
+            const SizedBox(height: 4),
+            _secondaryMetrics(d, dataKey),
+          ],
+          if (dataTimestamp != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              _formatTimestamp(dataTimestamp!),
+              style: TextStyle(
+                color: theme.secondaryTextColor.withValues(alpha: 0.7),
+                fontSize: 9,
+                fontStyle: FontStyle.italic,
               ),
-            );
-          }),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _chip({
-    required String label,
-    IconData? icon,
-    required bool selected,
-    required VoidCallback onTap,
-    bool isReset = false,
-  }) {
-    final bg = isReset
-        ? Colors.tealAccent.withValues(alpha: 0.15)
-        : selected
-            ? Colors.tealAccent.withValues(alpha: 0.2)
-            : theme.cardColor.withValues(alpha: 0.92);
-    final border = isReset || selected
-        ? Colors.tealAccent.withValues(alpha: 0.55)
-        : theme.secondaryTextColor.withValues(alpha: 0.25);
-    final labelColor =
-        isReset || selected ? Colors.tealAccent : theme.textColor;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: border, width: 1),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 4,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 12, color: labelColor),
-              const SizedBox(width: 4),
-            ] else if (selected) ...[
-              Icon(Icons.check_rounded, size: 12, color: labelColor),
-              const SizedBox(width: 4),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                color: labelColor,
-                fontSize: 11,
-                fontWeight:
-                    selected || isReset ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
-// ── Collector Sağlık Rozeti ───────────────────────────────────────────────────
-
-class _CollectorStatusBadge extends StatefulWidget {
-  const _CollectorStatusBadge();
-
-  @override
-  State<_CollectorStatusBadge> createState() => _CollectorStatusBadgeState();
-}
-
-class _CollectorStatusBadgeState extends State<_CollectorStatusBadge> {
-  Map<String, dynamic>? _status;
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetch();
-    _timer = Timer.periodic(const Duration(minutes: 5), (_) => _fetch());
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _fetch() async {
+  String _formatTimestamp(String isoTimestamp) {
     try {
-      final api = Provider.of<ApiService>(context, listen: false);
-      final result = await api.weather.fetchCollectorStatus();
-      if (mounted) setState(() => _status = result);
+      final dt = DateTime.parse(isoTimestamp);
+      final now = DateTime.now();
+      final diff = now.difference(dt);
+      if (diff.inMinutes < 60) {
+        return '${diff.inMinutes} dk once guncellendi';
+      } else if (diff.inHours < 24) {
+        return '${diff.inHours} saat once guncellendi';
+      }
+      return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} verisi';
     } catch (_) {
-      if (mounted) setState(() => _status = {'healthy': false});
+      return isoTimestamp;
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final s = _status;
-    if (s == null) return const SizedBox.shrink();
-
-    final healthy = s['healthy'] == true;
-    final minutesAgo = s['minutes_ago'] as int?;
-    final records = s['records_48h'] as int? ?? 0;
-
-    final color = healthy ? Colors.greenAccent : Colors.orangeAccent;
-    final label = minutesAgo == null
-        ? 'Veri yok'
-        : minutesAgo < 60
-            ? '$minutesAgo dk önce'
-            : '${(minutesAgo / 60).round()} sa önce';
-
-    return GestureDetector(
-      onTap: _fetch,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 5),
-            Text(
-              'Veri: $label  •  ${records}k',
-              style: TextStyle(
-                color: color,
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+  Widget _secondaryMetrics(Map<String, dynamic> d, String dataKey) {
+    final parts = <String>[];
+    if (dataKey != 'solar') {
+      final v = (d['solar'] as num?)?.toDouble();
+      if (v != null) parts.add('${v.toStringAsFixed(0)} W/m²');
+    }
+    if (dataKey != 'wind') {
+      final v = (d['wind'] as num?)?.toDouble();
+      if (v != null) parts.add('${v.toStringAsFixed(1)} m/s');
+    }
+    if (dataKey != 'temp') {
+      final v = (d['temp'] as num?)?.toDouble();
+      if (v != null) parts.add('${v.toStringAsFixed(1)}°C');
+    }
+    if (parts.isEmpty) return const SizedBox.shrink();
+    return Text(
+      parts.join('  ·  '),
+      style: TextStyle(
+        color: theme.secondaryTextColor,
+        fontSize: 10,
       ),
     );
   }

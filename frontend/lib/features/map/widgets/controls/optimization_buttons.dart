@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:frontend/features/map/viewmodels/map_view_model.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
 
-import 'package:frontend/features/map/widgets/dialogs/optimization_dialog.dart';
+import 'package:frontend/features/map/dialogs/optimization_dialog.dart';
 
 /// Optimizasyon butonları (Bölge Seç / Hesapla)
 class OptimizationButtons extends StatelessWidget {

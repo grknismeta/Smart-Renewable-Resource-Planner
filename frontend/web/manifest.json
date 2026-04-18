@@ -1,11 +1,11 @@
 {
-    "name": "frontend",
-    "short_name": "frontend",
+    "name": "SRRP - Akıllı Yenilenebilir Kaynak Planlayıcısı",
+    "short_name": "SRRP",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0F1117",
+    "theme_color": "#22C55E",
+    "description": "Türkiye'nin yenilenebilir enerji potansiyelini harita üzerinde analiz edin.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

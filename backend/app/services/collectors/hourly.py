@@ -67,8 +67,11 @@ def process_response(response, city: dict) -> List[HourlyWeatherData]:
 
         # İlçe kayıtları için city_name = province adı kullan
         # → district-summary sorgusu city_name == province ile çalışır
-        _district = city.get("district")
-        _city_name = city.get("province", city["name"]) if _district else city["name"]
+        # district=None → "Merkez" olarak kaydet: choropleth endpoint
+        # district_name IS NOT NULL filtresi kullanıyor + _MERKEZ_SPLIT dağıtımı
+        # için "Merkez" kaydı gerekli.
+        _district = city.get("district") or "Merkez"
+        _city_name = city.get("province", city["name"])
         record = HourlyWeatherData(
             city_name=_city_name,
             district_name=_district,
@@ -100,17 +103,20 @@ def _is_rate_limit(e: Exception) -> bool:
 
 
 def _save_responses(db, responses, batch):
-    """Batch API yanıtlarını DB'ye kaydeder (ON CONFLICT DO NOTHING)."""
+    """Batch API yanıtlarını DB'ye kaydeder (ON CONFLICT DO UPDATE — güncel veriyi üstüne yazar)."""
     total = 0
     cols = [c.name for c in HourlyWeatherData.__table__.columns if c.name != 'id']
+    # Conflict'te güncellenecek alanlar (timestamp/lat/lon hariç)
+    update_cols = [c for c in cols if c not in ('latitude', 'longitude', 'timestamp')]
     for response, city in zip(responses, batch):
         records = process_response(response, city)
         if not records:
             continue
         record_dicts = [{col: getattr(r, col) for col in cols} for r in records]
         stmt = pg_insert(HourlyWeatherData).values(record_dicts)
-        stmt = stmt.on_conflict_do_nothing(
-            index_elements=['latitude', 'longitude', 'timestamp']
+        stmt = stmt.on_conflict_do_update(
+            index_elements=['latitude', 'longitude', 'timestamp'],
+            set_={c: stmt.excluded[c] for c in update_cols},
         )
         db.execute(stmt)
         db.commit()
@@ -131,6 +137,7 @@ def _fetch_batch_with_retry(client, db, batch: list, api_url: str, params_extra:
         "longitude": lons,
         "hourly": HOURLY_PARAMS,
         "timezone": "Europe/Istanbul",
+        "wind_speed_unit": "ms",          # Varsayılan km/h → m/s olarak al
         **params_extra,
     }
 

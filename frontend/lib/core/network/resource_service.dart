@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:frontend/data/models/pin_model.dart';
@@ -9,22 +8,12 @@ class ResourceService extends BaseService {
   ResourceService(super.storageService);
 
   Future<List<Pin>> fetchPins() async {
-    debugPrint(
-      '[ResourceService.fetchPins] API çağrısı yapılıyor: $baseUrl/pins/',
-    );
     final response = await http.get(
       Uri.parse('$baseUrl/pins/'),
       headers: await getHeaders(),
     );
-    debugPrint(
-      '[ResourceService.fetchPins] Response status: ${response.statusCode}',
-    );
-    
     final data = processResponse(response);
     if (data is List) {
-      debugPrint(
-        '[ResourceService.fetchPins] ${data.length} pin JSON den parse edildi',
-      );
       return data.map((json) => Pin.fromJson(json)).toList();
     }
      throw Exception('Kaynaklar yüklenemedi: $data');
@@ -202,5 +191,18 @@ class ResourceService extends BaseService {
       return processResponse(response) as Map<String, dynamic>;
     }
     throw Exception('Rakım analizi başarısız (Status code: ${response.statusCode})');
+  }
+
+  /// Tüm pinleri güncel saatlik verilerle toplu yeniden analiz eder
+  Future<Map<String, dynamic>> batchReanalyze() async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/pins/batch/reanalyze'),
+      headers: await getHeaders(),
+    );
+
+    if (response.statusCode == 200) {
+      return processResponse(response) as Map<String, dynamic>;
+    }
+    throw Exception('Toplu analiz başarısız (Status code: ${response.statusCode})');
   }
 }

@@ -20,9 +20,9 @@ mixin MapLayerMixin on BaseViewModel {
     _notifyScheduled = true;
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _notifyScheduled = false;
-      try {
-        notifyListeners();
-      } catch (_) {}
+      // BaseViewModel._disposed kontrolü notifyListeners() içinde yapılır,
+      // ama callback schedule edildikten sonra dispose olmuş olabilir.
+      notifyListeners();
     });
     SchedulerBinding.instance.scheduleFrame();
   }
@@ -168,8 +168,7 @@ mixin MapLayerMixin on BaseViewModel {
       debugPrint('Heatmap loading error: $e');
     } finally {
       _isHeatmapLoading = false;
-      // await sonrası pointer event bağlamından çıkıldı, doğrudan bildirim güvenli
-      notifyListeners();
+      safeNotify();
     }
   }
 
@@ -223,17 +222,175 @@ mixin MapLayerMixin on BaseViewModel {
       final data = await apiService.windVector.fetchWindVectors();
       _windVectors = data.map((d) => WindVector.fromJson(d)).toList();
       _windDataEmpty = _windVectors.isEmpty;
-      if (_windDataEmpty) {
-        debugPrint('[Wind] Backend boş veri döndü — veritabanında rüzgar verisi yok.');
-      } else {
-        debugPrint('[Wind] ${_windVectors.length} rüzgar vektörü yüklendi.');
-      }
     } catch (e) {
       debugPrint('Wind vectors fetch error: $e');
       _windDataEmpty = true;
     } finally {
       _isWindLoading = false;
       notifyListeners();
+    }
+  }
+
+  // ─── Choropleth (İlçe Tematik Harita) Katmanı ────────────────────────────
+
+  ChoroplethMode _choroplethMode = ChoroplethMode.none;
+  Map<String, dynamic>? _choroplethData; // {"il|ilçe": {wind, solar, temp}}
+  DateTime? _choroplethCacheTime;
+  bool _isChoroplethLoading = false;
+  static const Duration _choroplethCacheTtl = Duration(minutes: 10);
+
+  ChoroplethMode get choroplethMode => _choroplethMode;
+  bool get isChoroplethLoading => _isChoroplethLoading;
+  Map<String, dynamic>? get choroplethData => _choroplethData;
+
+  /// Choropleth verisinin hangi zamana ait olduğu (backend'den gelen _meta bilgisi).
+  String? get choroplethDataTimestamp {
+    final meta = _choroplethData?['_meta'];
+    if (meta is Map) {
+      return meta['data_timestamp'] as String?;
+    }
+    return null;
+  }
+
+  // ─── Choropleth Tooltip (tıklanan ilçe verisi) ──────────────────────────
+  String? _choroplethTapDistrict;   // "İstanbul / Kadıköy"
+  Map<String, dynamic>? _choroplethTapData; // {wind, solar, temp}
+  Color? _choroplethTapColor;       // Haritadaki dolgu rengi
+
+  String? get choroplethTapDistrict => _choroplethTapDistrict;
+  Map<String, dynamic>? get choroplethTapData => _choroplethTapData;
+  Color? get choroplethTapColor => _choroplethTapColor;
+
+  /// Haritada bir ilçeye tıklandığında choropleth verisini tooltip olarak gösterir.
+  void setChoroplethTap(String province, String district) {
+    if (_choroplethMode == ChoroplethMode.none || _choroplethData == null) return;
+    final key = '$province|$district';
+    final entry = _choroplethData![key];
+    if (entry is Map<String, dynamic>) {
+      _choroplethTapDistrict = '$province / $district';
+      _choroplethTapData = entry;
+      _choroplethTapColor = _computeChoroplethColor(
+        _choroplethMode, entry, _choroplethData!,
+      );
+    } else {
+      _choroplethTapDistrict = '$province / $district';
+      _choroplethTapData = null;
+      _choroplethTapColor = null;
+    }
+    safeNotify();
+  }
+
+  /// Tooltip'i kapat.
+  void clearChoroplethTap() {
+    if (_choroplethTapDistrict == null) return;
+    _choroplethTapDistrict = null;
+    _choroplethTapData = null;
+    _choroplethTapColor = null;
+    safeNotify();
+  }
+
+  /// Choropleth verisi ve mod bazında hex rengi hesaplar (haritadaki dolgu ile aynı).
+  static Color? _computeChoroplethColor(
+    ChoroplethMode mode,
+    Map<String, dynamic> entry,
+    Map<String, dynamic> allData,
+  ) {
+    final dataKey = mode.dataKey;
+    final value = (entry[dataKey] as num?)?.toDouble();
+    if (value == null || value == 0.0) return null;
+
+    // ── Sabit fiziksel skala — haritayla birebir aynı ──────────
+    List<List<dynamic>> physicalRamp;
+    if (dataKey == 'solar') {
+      physicalRamp = [
+        [0,0x1a1a2e],[50,0xFFFFCC],[150,0xFFEDA0],[250,0xFED976],
+        [350,0xFEB24C],[450,0xFD8D3C],[550,0xFC4E2A],[650,0xE31A1C],
+        [750,0xBD0026],[800,0x4D0014]];
+    } else if (dataKey == 'wind') {
+      physicalRamp = [
+        [0,0xF7FBFF],[2,0xDEEBF7],[4,0xC6DBEF],[6,0x9ECAE1],
+        [8,0x6BAED6],[10,0x4292C6],[13,0x2171B5],[16,0x08519C],
+        [20,0x083D7F],[25,0x08306B]];
+    } else {
+      physicalRamp = [
+        [-15,0x08306B],[-5,0x2171B5],[0,0xE0F3F8],[5,0xC6DBEF],
+        [10,0xABD9E9],[15,0x74ADD1],[20,0x66BD63],[25,0xA6D96A],
+        [30,0xFEE08B],[33,0xFDAE61],[36,0xF46D43],[40,0xD73027],
+        [45,0xA50026]];
+    }
+
+    final physMin = (physicalRamp.first[0] as num).toDouble();
+    final physMax = (physicalRamp.last[0] as num).toDouble();
+    final physRange = physMax - physMin;
+
+    final List<List<dynamic>> ramp = [];
+    for (final stop in physicalRamp) {
+      final v = (stop[0] as num).toDouble();
+      ramp.add([(v - physMin) / physRange, stop[1]]);
+    }
+    final t = ((value - physMin) / physRange).clamp(0.0, 1.0);
+
+    // En yakın stop bul
+    int colorHex = ramp.last[1] as int;
+    for (int i = 0; i < ramp.length - 1; i++) {
+      final t0 = ramp[i][0] as double;
+      final t1 = ramp[i + 1][0] as double;
+      if (t >= t0 && t <= t1) {
+        colorHex = (t - t0 <= t1 - t) ? ramp[i][1] as int : ramp[i + 1][1] as int;
+        break;
+      }
+    }
+
+    return Color(0xFF000000 | colorHex);
+  }
+
+  /// Mevcut choropleth modunu cache'i sıfırlayarak yeniden yükler.
+  Future<void> forceRefreshChoropleth() async {
+    if (_choroplethMode == ChoroplethMode.none) return;
+    _choroplethCacheTime = null;
+    final prev = _choroplethMode;
+    _choroplethMode = ChoroplethMode.none;
+    await setChoroplethMode(prev);
+  }
+
+  Future<void> setChoroplethMode(ChoroplethMode mode) async {
+    if (_choroplethMode == mode) return;
+    _choroplethMode = mode;
+    // Mod değiştiğinde tooltip'i temizle
+    _choroplethTapDistrict = null;
+    _choroplethTapData = null;
+    safeNotify();
+
+    if (mode == ChoroplethMode.none) return;
+
+    // Veri yüklenmemişse veya cache süresi dolmuşsa fetch et
+    final cacheValid = _choroplethData != null &&
+        _choroplethCacheTime != null &&
+        DateTime.now().difference(_choroplethCacheTime!) < _choroplethCacheTtl;
+
+    if (!cacheValid) {
+      await _fetchChoroplethData();
+    }
+  }
+
+  Future<void> _fetchChoroplethData() async {
+    _isChoroplethLoading = true;
+    safeNotify();
+    try {
+      // En güncel saatin verilerini al — anlık sıcaklık/rüzgar doğruluğu.
+      // Solar gece=0 sorunu backend daylight fallback ile çözülüyor.
+      final data = await apiService.weather.fetchDistrictChoropleth(
+        mode: 'latest',
+      );
+      if (data.isNotEmpty) {
+        _choroplethData = data;
+        _choroplethCacheTime = DateTime.now();
+      }
+    } catch (e) {
+      debugPrint('[Choropleth] Veri yüklenemedi: $e');
+    } finally {
+      _isChoroplethLoading = false;
+      safeNotify();
     }
   }
 }

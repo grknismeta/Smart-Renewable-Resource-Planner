@@ -8,6 +8,7 @@ import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 import 'package:frontend/features/pins/viewmodels/pin_dialog_viewmodel.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 
+import 'package:frontend/data/models/scenario_model.dart';
 import 'package:frontend/shared/widgets/themed_inputs.dart';
 import 'package:frontend/features/pins/widgets/equipment_selector.dart';
 import 'package:frontend/shared/widgets/dialog_base.dart';
@@ -38,6 +39,10 @@ class AddPinDialog extends StatefulWidget {
 class _AddPinDialogState extends State<AddPinDialog> {
   late PinDialogViewModel _viewModel;
   late TextEditingController _nameController;
+  late TextEditingController _panelAreaController;
+  final TextEditingController _flowRateController = TextEditingController();
+  final TextEditingController _headHeightController = TextEditingController();
+  final TextEditingController _basinAreaController = TextEditingController();
   int? _selectedScenarioId;
 
   bool _isCheckingSuitability = true;
@@ -49,6 +54,7 @@ class _AddPinDialogState extends State<AddPinDialog> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: 'Yeni Kaynak');
+    _panelAreaController = TextEditingController(text: '10.0');
     
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
     _viewModel = PinDialogViewModel(
@@ -110,8 +116,65 @@ class _AddPinDialogState extends State<AddPinDialog> {
   @override
   void dispose() {
     _nameController.dispose();
+    _panelAreaController.dispose();
+    _flowRateController.dispose();
+    _headHeightController.dispose();
+    _basinAreaController.dispose();
     _viewModel.dispose();
     super.dispose();
+  }
+
+  Future<void> _showQuickScenarioCreate(ScenarioViewModel scenarioVM, ThemeViewModel theme) async {
+    final nameCtrl = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.cardColor,
+        title: Text('Yeni Senaryo', style: TextStyle(color: theme.textColor)),
+        content: TextField(
+          controller: nameCtrl,
+          autofocus: true,
+          style: TextStyle(color: theme.textColor),
+          decoration: InputDecoration(
+            hintText: 'Senaryo adı',
+            hintStyle: TextStyle(color: theme.secondaryTextColor),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: theme.secondaryTextColor.withValues(alpha: 0.3)),
+            ),
+            focusedBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.blue),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('İptal', style: TextStyle(color: theme.secondaryTextColor)),
+          ),
+          TextButton(
+            onPressed: () {
+              if (nameCtrl.text.trim().isNotEmpty) {
+                Navigator.pop(ctx, nameCtrl.text.trim());
+              }
+            },
+            child: const Text('Oluştur', style: TextStyle(color: Colors.lightBlueAccent)),
+          ),
+        ],
+      ),
+    );
+    nameCtrl.dispose();
+
+    if (result != null && mounted) {
+      try {
+        await scenarioVM.createScenario(ScenarioCreate(name: result));
+        if (mounted) {
+          final newId = scenarioVM.scenarios.first.id;
+          setState(() => _selectedScenarioId = newId);
+        }
+      } catch (_) {
+        // createScenario already sets error in viewmodel
+      }
+    }
   }
 
   @override
@@ -143,10 +206,14 @@ class _AddPinDialogState extends State<AddPinDialog> {
                       title: 'Yeni Kaynak Ekle',
                       icon: viewModel.selectedType == 'Güneş Paneli'
                           ? Icons.wb_sunny
-                          : Icons.wind_power,
+                          : viewModel.selectedType == 'HES'
+                              ? Icons.water
+                              : Icons.wind_power,
                       color: viewModel.selectedType == 'Güneş Paneli'
                           ? Colors.orange
-                          : Colors.blue,
+                          : viewModel.selectedType == 'HES'
+                              ? const Color(0xFF1DB954)
+                              : Colors.blue,
                       onClose: () => Navigator.of(context).pop(),
                       theme: theme,
                     ),
@@ -252,10 +319,7 @@ class _AddPinDialogState extends State<AddPinDialog> {
                         label: 'Panel Alanı (m²) - Örn: 10',
                         isNumber: true,
                         onChanged: (val) => viewModel.setPanelArea(val),
-                        controller: TextEditingController(text: viewModel.panelArea.toString())
-                          ..selection = TextSelection.fromPosition(
-                             TextPosition(offset: viewModel.panelArea.toString().length),
-                          ),
+                        controller: _panelAreaController,
                         theme: theme,
                       ),
                     ],
@@ -284,9 +348,26 @@ class _AddPinDialogState extends State<AddPinDialog> {
                             ),
                           ),
                         ),
+                        DropdownMenuItem<int?>(
+                          value: -1,
+                          child: Row(
+                            children: [
+                              Icon(Icons.add, size: 18, color: Colors.lightBlueAccent),
+                              const SizedBox(width: 6),
+                              Text(
+                                "Yeni Senaryo Oluştur",
+                                style: TextStyle(color: Colors.lightBlueAccent),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                       onChanged: (val) {
-                        setState(() => _selectedScenarioId = val);
+                        if (val == -1) {
+                          _showQuickScenarioCreate(scenarioVM, theme);
+                        } else {
+                          setState(() => _selectedScenarioId = val);
+                        }
                       },
                     ),
                     const SizedBox(height: 20),
@@ -295,11 +376,41 @@ class _AddPinDialogState extends State<AddPinDialog> {
                     _buildTypeSelector(theme, viewModel),
                     const SizedBox(height: 20),
 
+                    // HES-specific fields
+                    if (viewModel.selectedType == 'HES') ...[
+                      ThemedTextField(
+                        controller: _flowRateController,
+                        label: 'Debi (m³/s) - Opsiyonel',
+                        isNumber: true,
+                        onChanged: (val) => viewModel.setFlowRate(val),
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 12),
+                      ThemedTextField(
+                        controller: _headHeightController,
+                        label: 'Düşü Yüksekliği (m) - Opsiyonel',
+                        isNumber: true,
+                        onChanged: (val) => viewModel.setHeadHeight(val),
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 12),
+                      ThemedTextField(
+                        controller: _basinAreaController,
+                        label: 'Havza Alanı (km²) - Opsiyonel',
+                        isNumber: true,
+                        onChanged: (val) => viewModel.setBasinArea(val),
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+
                     // Equipment Selector
                     Text(
                       viewModel.selectedType == 'Güneş Paneli'
                           ? 'Panel Modeli'
-                          : 'Türbin Modeli',
+                          : viewModel.selectedType == 'HES'
+                              ? 'Türbin Tipi (Opsiyonel)'
+                              : 'Türbin Modeli',
                       style: TextStyle(
                         color: theme.secondaryTextColor,
                         fontSize: 12,
@@ -363,6 +474,14 @@ class _AddPinDialogState extends State<AddPinDialog> {
             onTap: () => viewModel.changeType('Rüzgar Türbini'),
             activeColor: Colors.blue,
           ),
+          _buildSegmentButton(
+            theme: theme,
+            label: 'HES',
+            icon: Icons.water_outlined,
+            isSelected: viewModel.selectedType == 'HES',
+            onTap: () => viewModel.changeType('HES'),
+            activeColor: const Color(0xFF1DB954), // Spotify yeşili
+          ),
         ],
       ),
     );
@@ -403,13 +522,17 @@ class _AddPinDialogState extends State<AddPinDialog> {
                 size: 18,
                 color: isSelected ? activeColor : theme.secondaryTextColor,
               ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: isSelected ? theme.textColor : theme.secondaryTextColor,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  fontSize: 13,
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: isSelected ? theme.textColor : theme.secondaryTextColor,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ),
             ],
@@ -436,14 +559,17 @@ class _AddPinDialogState extends State<AddPinDialog> {
     if (capacityMw == null) return;
 
     try {
-      // 1. Pini ekle
+      // 1. Pini ekle (backend'e 'Hidroelektrik' gönder, 'HES' değil)
       final newPin = await mapViewModel.addPin(
         widget.point,
         _nameController.text,
-        viewModel.selectedType,
+        viewModel.backendType,
         capacityMw,
         viewModel.selectedEquipmentId,
         viewModel.panelArea,
+        flowRate: viewModel.flowRate > 0 ? viewModel.flowRate : null,
+        headHeight: viewModel.headHeight > 0 ? viewModel.headHeight : null,
+        basinAreaKm2: viewModel.basinAreaKm2 > 0 ? viewModel.basinAreaKm2 : null,
       );
 
       // 2. Senaryo seçiliyse ona da ekle

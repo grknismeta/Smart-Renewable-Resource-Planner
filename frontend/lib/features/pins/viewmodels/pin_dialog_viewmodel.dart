@@ -41,23 +41,38 @@ class PinDialogViewModel extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   bool get hasError => _errorMessage != null;
 
-  List<Equipment> get availableEquipments {
-    String type;
-    if (_selectedType == 'Güneş Paneli') {
-      type = 'Solar';
-    } else if (_selectedType == 'Rüzgar Türbini') {
-      type = 'Wind';
-    } else {
-      type = 'Hydro'; // Hidroelektrik
+  /// Frontend tip adını backend equipment type'a çevir
+  String get _backendEquipmentType {
+    switch (_selectedType) {
+      case 'Güneş Paneli': return 'Solar';
+      case 'Rüzgar Türbini': return 'Wind';
+      case 'HES': return 'Hydro';
+      default: return 'Solar';
     }
-    return _mapViewModel.equipments.where((e) => e.type == type).toList();
+  }
+
+  /// Frontend tip adını backend pin type'a çevir
+  /// Backend 'Hidroelektrik' bekler, frontend 'HES' gösterir
+  String get backendType {
+    if (_selectedType == 'HES') return 'Hidroelektrik';
+    return _selectedType; // 'Güneş Paneli' ve 'Rüzgar Türbini' aynı kalır
+  }
+
+  /// Backend'den gelen tipi frontend display tipine çevir
+  static String toDisplayType(String backendType) {
+    if (backendType == 'Hidroelektrik') return 'HES';
+    return backendType;
+  }
+
+  List<Equipment> get availableEquipments {
+    return _mapViewModel.equipments.where((e) => e.type == _backendEquipmentType).toList();
   }
 
   bool get isLoadingEquipments => _mapViewModel.equipmentsLoading;
   bool get hasEquipments => availableEquipments.isNotEmpty;
   // HES için ekipman seçimi opsiyonel (debi/havza alanı yeterli)
   bool get canSubmit {
-    if (_selectedType == 'Hidroelektrik') {
+    if (_selectedType == 'HES') {
       return !_isSubmitting; // HES için ekipman zorunlu değil
     }
     return _selectedEquipmentId != null && !_isSubmitting;
@@ -130,34 +145,20 @@ class PinDialogViewModel extends ChangeNotifier {
 
   // Business Logic
   Future<void> loadInitialData() async {
-    String type;
-    if (_selectedType == 'Güneş Paneli') {
-      type = 'Solar';
-    } else if (_selectedType == 'Rüzgar Türbini') {
-      type = 'Wind';
-    } else {
-      type = 'Hydro';
-    }
-    await _mapViewModel.loadEquipments(type: type, forceRefresh: true);
+    // Load all equipment once; availableEquipments getter filters by type client-side
+    await _mapViewModel.loadEquipments(forceRefresh: false);
     if (!_isDisposed) notifyListeners();
   }
 
   Future<void> _loadEquipments() async {
-    String type;
-    if (_selectedType == 'Güneş Paneli') {
-      type = 'Solar';
-    } else if (_selectedType == 'Rüzgar Türbini') {
-      type = 'Wind';
-    } else {
-      type = 'Hydro';
-    }
-    await _mapViewModel.loadEquipments(type: type, forceRefresh: true);
+    // No type filter or forceRefresh — use cached equipment, filter client-side
+    await _mapViewModel.loadEquipments(forceRefresh: false);
     if (!_isDisposed) notifyListeners();
   }
 
   /// Validation - Returns error message or null if valid
   String? validate() {
-    if (_selectedType == 'Hidroelektrik') {
+    if (_selectedType == 'HES') {
       // HES için ekipman seçimi zorunlu değil; debi veya havza alanı yeterli
       return null;
     }
@@ -171,7 +172,13 @@ class PinDialogViewModel extends ChangeNotifier {
   }
 
   /// Calculate capacity from selected equipment
+  /// HES için ekipman seçilmemişse varsayılan 1.0 MW döner
   double? getSelectedCapacityMw() {
+    if (_selectedType == 'HES') {
+      if (_selectedEquipmentId == null) {
+        return 1.0; // HES varsayılan kapasite (debi/düşü ile hesaplanacak)
+      }
+    }
     if (_selectedEquipmentId == null) return null;
 
     try {

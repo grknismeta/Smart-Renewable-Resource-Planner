@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, JSON, Boolean, Text, Date
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, JSON, Boolean, Text, Date, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import UserBase, SystemBase
@@ -140,7 +140,11 @@ class WeatherData(SystemBase):
 class HourlyWeatherData(SystemBase):
     """81 il ve ilçeler için saatlik hava durumu verisi"""
     __tablename__ = "hourly_weather_data"
-    
+    __table_args__ = (
+        Index('ix_hourly_lat_lon_ts', 'latitude', 'longitude', 'timestamp'),
+        {'extend_existing': True},
+    )
+
     id = Column(Integer, primary_key=True, index=True)
     city_name = Column(String, index=True)  # Şehir adı (İl)
     district_name = Column(String, index=True, nullable=True)  # İlçe adı

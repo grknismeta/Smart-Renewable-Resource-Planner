@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:frontend/core/network/api_client.dart';
 
@@ -6,11 +7,20 @@ class AuthService extends BaseService {
   AuthService(super.storageService);
 
   Future<String> login(String email, String password) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/users/token'),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: {'username': email, 'password': password},
-    );
+    final uri = Uri.parse('$baseUrl/users/token');
+
+    late final http.Response response;
+    try {
+      response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {'username': email, 'password': password},
+      );
+    } catch (e) {
+      debugPrint('[Auth] Network hatası: $e');
+      throw Exception(
+          'Sunucuya bağlanılamadı. Backend çalıştığından emin olun.');
+    }
 
     if (response.statusCode == 200) {
       final jsonResponse = json.decode(response.body);
@@ -18,7 +28,15 @@ class AuthService extends BaseService {
       await storageService.saveToken(token);
       return token;
     } else {
-      throw Exception('Giriş başarısız. Hatalı e-posta veya parola.');
+      // Backend'in döndürdüğü hata mesajını kullan
+      String detail = 'Giriş başarısız. Hatalı e-posta veya parola.';
+      try {
+        final body = json.decode(response.body);
+        if (body is Map && body['detail'] != null) {
+          detail = body['detail'].toString();
+        }
+      } catch (_) {}
+      throw Exception(detail);
     }
   }
 

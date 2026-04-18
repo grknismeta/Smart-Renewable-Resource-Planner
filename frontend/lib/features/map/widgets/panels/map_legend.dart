@@ -14,6 +14,10 @@ class LegendWidget extends StatelessWidget {
   final double width;
   final double titleFontSize;
 
+  /// Sayısal tick değerleri — gradient bar altında eşit aralıklı gösterilir.
+  /// Örn: ['0', '50', '100', '150', '200'] veya ['-15', '0', '20', '30', '45']
+  final List<String>? tickLabels;
+
   const LegendWidget({
     super.key,
     required this.theme,
@@ -22,13 +26,16 @@ class LegendWidget extends StatelessWidget {
     required this.gradientColors,
     required this.minLabel,
     required this.maxLabel,
-    this.sourceLabel = 'Veri Kaynağı : Open-Meteo',
+    this.sourceLabel = 'Kaynak : Open-Meteo',
     this.width = 200,
     this.titleFontSize = 12,
+    this.tickLabels,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasTicks = tickLabels != null && tickLabels!.length >= 2;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: BackdropFilter(
@@ -47,6 +54,7 @@ class LegendWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Başlık + birim
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -73,8 +81,10 @@ class LegendWidget extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
+
+              // Gradient bar
               Container(
-                height: 20,
+                height: 16,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(4),
                   gradient: LinearGradient(
@@ -84,46 +94,45 @@ class LegendWidget extends StatelessWidget {
                   ),
                 ),
               ),
+              const SizedBox(height: 4),
+
+              // Tick labels veya min/max labels
+              if (hasTicks)
+                _buildTickRow()
+              else
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(minLabel, style: _tickStyle),
+                    Text(maxLabel, style: _tickStyle),
+                  ],
+                ),
+
               const SizedBox(height: 6),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    minLabel,
-                    style: TextStyle(
-                      color: theme.secondaryTextColor,
-                      fontSize: 10,
-                    ),
-                  ),
-                  Text(
-                    maxLabel,
-                    style: TextStyle(
-                      color: theme.secondaryTextColor,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
+              Divider(
+                color: theme.secondaryTextColor.withValues(alpha: 0.2),
+                height: 1,
               ),
               const SizedBox(height: 6),
-              Divider(color: theme.secondaryTextColor.withValues(alpha: 0.2)),
-              const SizedBox(height: 6),
+
+              // Kaynak
               Row(
                 children: [
                   Container(
-                    width: 6,
-                    height: 6,
+                    width: 5,
+                    height: 5,
                     decoration: BoxDecoration(
                       color: theme.secondaryTextColor,
                       shape: BoxShape.circle,
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 5),
                   Expanded(
                     child: Text(
                       sourceLabel,
                       style: TextStyle(
                         color: theme.secondaryTextColor,
-                        fontSize: 9,
+                        fontSize: 8,
                       ),
                     ),
                   ),
@@ -133,6 +142,22 @@ class LegendWidget extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  TextStyle get _tickStyle => TextStyle(
+        color: theme.secondaryTextColor,
+        fontSize: 9,
+        fontWeight: FontWeight.w500,
+      );
+
+  Widget _buildTickRow() {
+    final ticks = tickLabels!;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: ticks
+          .map((t) => Text(t, style: _tickStyle))
+          .toList(),
     );
   }
 }

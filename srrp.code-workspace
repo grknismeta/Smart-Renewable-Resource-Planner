@@ -1,0 +1,84 @@
+{
+  "folders": [
+    {
+      "name": "Backend (app)",
+      "path": "backend/app"
+    },
+    {
+      "name": "Frontend (lib)",
+      "path": "frontend/lib"
+    },
+    {
+      "name": "Frontend (web)",
+      "path": "frontend/web"
+    },
+    {
+      "name": "Frontend (assets)",
+      "path": "frontend/assets"
+    },
+    {
+      "name": "Config",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "cmake.sourceDirectory": "C:/Projelerim/smart_renewable_resource_planner/frontend/linux",
+
+    "java.import.gradle.enabled": false,
+    "java.import.maven.enabled": false,
+    "java.autobuild.enabled": false,
+    "java.configuration.detectJdksAtStart": false,
+    "java.server.launchMode": "LightWeight",
+
+    "files.exclude": {
+      "backend/**": true,
+      "frontend/**": true,
+      ".claude/**": true,
+      ".git/**": true,
+      "**/*.db": true,
+      "**/*.sqlite": true,
+      "**/*.tif": true,
+      "**/*.shp": true,
+      "**/*.dbf": true,
+      "**/*.shx": true,
+      "**/*.geojson": true,
+      "**/*.xlsx": true,
+      "**/*.dill": true,
+      "**/*.apk": true,
+      "**/*.bin": true,
+      "**/*.so": true,
+      "**/*.pyc": true,
+      "**/*.sql": true,
+      "**/*.log": true,
+      "flutter_run_log.txt": true,
+      "git_files.txt": true,
+      "tree_structure.txt": true
+    },
+
+    "search.exclude": {
+      "backend/**": true,
+      "frontend/**": true,
+      ".claude/**": true,
+      ".git/**": true,
+      "**/*.db": true,
+      "**/*.sqlite": true,
+      "**/*.tif": true,
+      "**/*.geojson": true,
+      "**/*.dill": true,
+      "**/*.apk": true,
+      "**/*.bin": true,
+      "**/*.so": true
+    },
+
+    "files.watcherExclude": {
+      "backend/**": true,
+      "frontend/**": true,
+      ".claude/**": true,
+      ".git/**": true,
+      "**/*.db": true,
+      "**/*.sqlite": true,
+      "**/*.geojson": true,
+      "**/*.dill": true
+    }
+  }
+}

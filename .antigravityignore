@@ -1,0 +1,61 @@
+# ═══════════════════════════════════════════════════════════════
+# Antigravity AI - Indexlenecek KAYNAK KOD haricindeki her seyi yoksay
+# Proje: SRRP (Smart Renewable Resource Planner)
+# ═══════════════════════════════════════════════════════════════
+
+# ── Buyuk veri dizinleri (7GB+) ──────────────────────────────
+backend/data/
+backend/tamdb/
+
+# ── Python sanal ortam (17K+ dosya) ─────────────────────────
+backend/venv/
+.venv/
+**/__pycache__/
+**/*.pyc
+
+# ── Flutter build artifacts (1.3GB+) ────────────────────────
+frontend/build/
+frontend/.dart_tool/
+frontend/android/.gradle/
+frontend/android/app/build/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+
+# ── Binary dosyalar ─────────────────────────────────────────
+*.dill
+*.dill.track.dill
+*.cache.dill.track.dill
+*.apk
+*.aar
+*.so
+*.bin
+*.exe
+
+# ── Veritabani ve GIS ───────────────────────────────────────
+*.sqlite
+*.db
+*.tif
+*.shp
+*.shx
+*.dbf
+*.geojson
+*.sql
+
+# ── Office / veri ───────────────────────────────────────────
+*.xlsx
+*.csv
+
+# ── Log ve gecici dosyalar ──────────────────────────────────
+*.log
+flutter_run_log.txt
+git_files.txt
+tree_structure.txt
+
+# ── Claude Code worktrees ───────────────────────────────────
+.claude/
+
+# ── Git ─────────────────────────────────────────────────────
+.git/
+
+# ── Node (varsa) ────────────────────────────────────────────
+node_modules/

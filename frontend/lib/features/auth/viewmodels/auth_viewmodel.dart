@@ -36,7 +36,6 @@ class AuthViewModel extends BaseViewModel {
         if (valid) {
           _isLoggedIn = true;
         } else {
-          debugPrint('[Auth] Token geçersiz/süresi dolmuş, siliniyor.');
           await _storageService.deleteToken();
           _isLoggedIn = false;
         }
@@ -85,9 +84,8 @@ class AuthViewModel extends BaseViewModel {
 
   // ── Çıkış ──────────────────────────────────────────────────────────────────
   Future<void> logout() async {
-    setBusy(true);
     await _storageService.deleteToken();
     _isLoggedIn = false;
-    setBusy(false);
+    notifyListeners();
   }
 }

@@ -164,7 +164,8 @@ def optimize_wind_farm_placement(
         # Hız negatif olamaz
         speed = max(0.0, speed)
         
-        cf = min(0.50, max(0.20, (speed - 3.0) / 10.0))
+        # CF: cut-in 3 m/s, rated ~13 m/s arası lineer, min %5 max %50
+        cf = min(0.50, max(0.05, (speed - 3.0) / 10.0))
         prod = rated_power * cf * 8760
         
         total_prod += prod

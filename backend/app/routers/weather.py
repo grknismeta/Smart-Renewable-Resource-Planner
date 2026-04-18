@@ -8,7 +8,7 @@
 import unicodedata
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, or_
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone, date as date_type
 from collections import defaultdict
@@ -203,8 +203,8 @@ def get_all_cities_summary(
                 lon=round(r.lon, 4) if r.lon else 0.0,
                 last_update=r.last_update,
                 record_count=int(r.record_count),
-                avg_wind_speed_10m=round(r.avg_wind_10 / 3.6, 2) if r.avg_wind_10 else None,
-                avg_wind_speed_100m=round(r.avg_wind_100 / 3.6, 2) if r.avg_wind_100 else None,
+                avg_wind_speed_10m=round(r.avg_wind_10, 2) if r.avg_wind_10 else None,
+                avg_wind_speed_100m=round(r.avg_wind_100, 2) if r.avg_wind_100 else None,
                 avg_temperature=round(r.avg_temp, 2) if r.avg_temp else None,
                 total_radiation=round(r.total_rad, 2) if r.total_rad else None,
             )
@@ -245,9 +245,8 @@ def get_best_wind_cities(
                 "city": r.city_name,
                 "lat": r.latitude,
                 "lon": r.longitude,
-                # Open-Meteo km/h → m/s (÷ 3.6)
-                "avg_wind_speed_100m": round(r.avg_wind / 3.6, 2) if r.avg_wind else None,
-                "max_wind_speed_100m": round(r.max_wind / 3.6, 2) if r.max_wind else None,
+                "avg_wind_speed_100m": round(r.avg_wind, 2) if r.avg_wind else None,
+                "max_wind_speed_100m": round(r.max_wind, 2) if r.max_wind else None,
             }
             for r in results
         ]
@@ -316,7 +315,7 @@ def get_weather_at_time(
         # Adım 1: En yakın tek timestamp'ı bul (il merkezleri arasından)
         closest_row = db.query(HourlyWeatherData.timestamp).filter(
             HourlyWeatherData.timestamp.between(t_min, t_max),
-            HourlyWeatherData.district_name.is_(None),
+            or_(HourlyWeatherData.district_name.is_(None), HourlyWeatherData.district_name == "Merkez"),
         ).order_by(
             func.abs(func.extract('epoch', HourlyWeatherData.timestamp - target_time))
         ).first()
@@ -329,7 +328,7 @@ def get_weather_at_time(
         # Adım 2: O timestamp için tüm il merkezlerini tek sorguda al
         rows = db.query(HourlyWeatherData).filter(
             HourlyWeatherData.timestamp == closest_ts,
-            HourlyWeatherData.district_name.is_(None),
+            or_(HourlyWeatherData.district_name.is_(None), HourlyWeatherData.district_name == "Merkez"),
         ).all()
 
         return [
@@ -380,7 +379,7 @@ def get_province_summary(
         ).filter(
             HourlyWeatherData.timestamp >= cutoff,
             HourlyWeatherData.city_name.isnot(None),
-            HourlyWeatherData.district_name.is_(None),  # Sadece il merkezi kayıtları
+            or_(HourlyWeatherData.district_name.is_(None), HourlyWeatherData.district_name == "Merkez"),  # Sadece il merkezi kayıtları
         ).group_by(
             HourlyWeatherData.city_name
         ).all()
@@ -388,7 +387,7 @@ def get_province_summary(
         result = [
             ProvinceSummary(
                 province_name=r.city_name,
-                avg_wind_speed=round(r.avg_wind / 3.6, 2) if r.avg_wind else None,  # km/h → m/s
+                avg_wind_speed=round(r.avg_wind, 2) if r.avg_wind else None,
                 avg_radiation=round(r.avg_radiation, 1) if r.avg_radiation else None,
                 avg_temperature=round(r.avg_temp, 2) if r.avg_temp else None,
                 record_count=int(r.record_count),
@@ -473,21 +472,29 @@ def get_district_summary(
             HourlyWeatherData.location_code,
         ).all()
 
-        result = [
-            DistrictSummary(
+        # İlçe merkezlerinin sabit koordinatlarını kullan (DB ortalaması yerine)
+        # LOCATION_CODE_MAP: location_code → TURKEY_CITIES girişi (lat, lon, name, ...)
+        from app.core.constants import LOCATION_CODE_MAP
+
+        result = []
+        for r in results:
+            # Sabit koordinat: TURKEY_CITIES'den al, yoksa DB ortalaması kullan
+            fixed = LOCATION_CODE_MAP.get(r.location_code)
+            use_lat = round(fixed["lat"], 4) if fixed else (round(float(r.lat), 4) if r.lat else None)
+            use_lon = round(fixed["lon"], 4) if fixed else (round(float(r.lon), 4) if r.lon else None)
+
+            result.append(DistrictSummary(
                 # district_name = NULL ise bu il merkezidir → "Merkez" olarak göster
                 district_name=r.district_name if r.district_name else "Merkez",
                 province_name=r.city_name,
-                lat=round(float(r.lat), 4) if r.lat else None,
-                lon=round(float(r.lon), 4) if r.lon else None,
-                avg_wind_speed=round(r.avg_wind / 3.6, 2) if r.avg_wind else None,
+                lat=use_lat,
+                lon=use_lon,
+                avg_wind_speed=round(r.avg_wind, 2) if r.avg_wind else None,
                 avg_radiation=round(r.avg_radiation, 1) if r.avg_radiation else None,
                 avg_temperature=round(r.avg_temp, 2) if r.avg_temp else None,
                 record_count=int(r.record_count),
                 location_code=r.location_code,
-            )
-            for r in results
-        ]
+            ))
         cache_set(cache_key, [r.model_dump() for r in result], ttl_seconds=900)
         return result
     finally:
@@ -525,7 +532,7 @@ def get_region_summary(
         ).filter(
             HourlyWeatherData.timestamp >= cutoff,
             HourlyWeatherData.city_name.isnot(None),
-            HourlyWeatherData.district_name.is_(None),
+            or_(HourlyWeatherData.district_name.is_(None), HourlyWeatherData.district_name == "Merkez"),
         ).group_by(
             HourlyWeatherData.city_name
         ).all()
@@ -541,7 +548,7 @@ def get_region_summary(
             b = region_buckets[region]
             b["provinces"].add(r.city_name)
             if r.avg_wind is not None:
-                b["winds"].append(float(r.avg_wind) / 3.6)  # km/h → m/s
+                b["winds"].append(float(r.avg_wind))
             if r.avg_radiation is not None:
                 b["rads"].append(float(r.avg_radiation))
             if r.avg_temp is not None:
@@ -667,6 +674,7 @@ def get_animation_frames(
                 WeatherData.latitude,
                 WeatherData.longitude,
                 WeatherData.date,
+                WeatherData.city_name,
                 metric_col.label("val"),
             ).filter(
                 WeatherData.date >= start_date,
@@ -674,7 +682,7 @@ def get_animation_frames(
                 metric_col.isnot(None),
             ).order_by(WeatherData.date).all()
 
-            # Tarih → [(lat, lon, val)] gruplama
+            # Tarih → [(lat, lon, val, city)] gruplama
             frames_dict = defaultdict(list)
             all_vals = []
             for row in rows:
@@ -683,6 +691,7 @@ def get_animation_frames(
                     round(row.latitude, 4),
                     round(row.longitude, 4),
                     v,
+                    row.city_name or "",
                 ])
                 all_vals.append(v)
 
@@ -710,15 +719,16 @@ def get_animation_frames(
                 HourlyWeatherData.latitude,
                 HourlyWeatherData.longitude,
                 HourlyWeatherData.timestamp,
+                HourlyWeatherData.city_name,
                 metric_col.label("val"),
             ).filter(
                 HourlyWeatherData.timestamp >= start_ts,
                 HourlyWeatherData.timestamp <= end_ts,
                 metric_col.isnot(None),
-                HourlyWeatherData.district_name.is_(None),  # Sadece il merkezi
+                or_(HourlyWeatherData.district_name.is_(None), HourlyWeatherData.district_name == "Merkez"),  # Sadece il merkezi
             ).order_by(HourlyWeatherData.timestamp).all()
 
-            # Timestamp → [(lat, lon, val)] gruplama (saatlik hassasiyet)
+            # Timestamp → [(lat, lon, val, city)] gruplama (saatlik hassasiyet)
             frames_dict = defaultdict(list)
             all_vals = []
             for row in rows:
@@ -729,6 +739,7 @@ def get_animation_frames(
                     round(row.latitude, 4),
                     round(row.longitude, 4),
                     v,
+                    row.city_name or "",
                 ])
                 all_vals.append(v)
 
@@ -854,7 +865,7 @@ def get_monthly_trend(
             ).filter(
                 city_filter,
                 func.extract("year", HourlyWeatherData.timestamp) == year,
-                HourlyWeatherData.district_name.is_(None),
+                or_(HourlyWeatherData.district_name.is_(None), HourlyWeatherData.district_name == "Merkez"),
                 metric_col.isnot(None),
             ).group_by(
                 func.extract("month", HourlyWeatherData.timestamp)
@@ -869,7 +880,7 @@ def get_monthly_trend(
                 if metric == "solar":
                     val = round(val / 1000 * 24, 2)   # W/m² → kWh/m²/gün
                 elif metric == "wind":
-                    val = round(val / 3.6, 2)          # km/h → m/s
+                    val = round(val, 2)
                 else:
                     val = round(val, 2)
                 result.append(TrendPoint(label=TR_MONTHS[m_idx], value=val))
@@ -883,7 +894,7 @@ def get_monthly_trend(
                 city_filter,
                 func.extract("year", HourlyWeatherData.timestamp) == year,
                 func.extract("month", HourlyWeatherData.timestamp) == month,
-                HourlyWeatherData.district_name.is_(None),
+                or_(HourlyWeatherData.district_name.is_(None), HourlyWeatherData.district_name == "Merkez"),
                 metric_col.isnot(None),
             ).group_by(
                 func.extract("day", HourlyWeatherData.timestamp)
@@ -897,7 +908,7 @@ def get_monthly_trend(
                 if metric == "solar":
                     val = round(val / 1000 * 24, 2)
                 elif metric == "wind":
-                    val = round(val / 3.6, 2)   # km/h → m/s
+                    val = round(val, 2)
                 else:
                     val = round(val, 2)
                 result.append(TrendPoint(label=str(int(r.d)), value=val))
@@ -945,7 +956,7 @@ def get_province_summary_range(
             HourlyWeatherData.timestamp >= start_dt,
             HourlyWeatherData.timestamp <= end_dt,
             HourlyWeatherData.city_name.isnot(None),
-            HourlyWeatherData.district_name.is_(None),
+            or_(HourlyWeatherData.district_name.is_(None), HourlyWeatherData.district_name == "Merkez"),
         ).group_by(
             HourlyWeatherData.city_name
         ).all()
@@ -953,7 +964,7 @@ def get_province_summary_range(
         result = [
             ProvinceSummary(
                 province_name=r.city_name,
-                avg_wind_speed=round(r.avg_wind / 3.6, 2) if r.avg_wind else None,  # km/h → m/s
+                avg_wind_speed=round(r.avg_wind, 2) if r.avg_wind else None,
                 avg_radiation=round(r.avg_radiation, 1) if r.avg_radiation else None,
                 avg_temperature=round(r.avg_temp, 2) if r.avg_temp else None,
                 record_count=int(r.record_count),
@@ -1002,7 +1013,7 @@ def get_collector_status():
             last_ts = last_ts.replace(tzinfo=timezone.utc)
 
         now = datetime.now(timezone.utc)
-        minutes_ago = int((now - last_ts).total_seconds() / 60)
+        minutes_ago = max(0, int((now - last_ts).total_seconds() / 60))
 
         return CollectorStatus(
             healthy=minutes_ago < 120,
@@ -1013,5 +1024,272 @@ def get_collector_status():
     except Exception as e:
         logger.warning("collector-status sorgusu başarısız: {}", e)
         return CollectorStatus(healthy=False, records_48h=0)
+    finally:
+        db.close()
+
+
+# ─── İlçe Choropleth Verisi ──────────────────────────────────────────────────
+
+# ── Türkçe karakter normalize (choropleth eşleştirme) ────────────────────────
+_TR_CHAR_MAP = str.maketrans("ıİşŞğĞçÇöÖüÜâÂîÎûÛ", "iIssgGcCooUUaAiIuU")
+
+def _tr_ascii(name: str) -> str:
+    """ı→i, İ→I, ş→s … dönüşümü + NFKD + ASCII lower.
+    Standart _ascii_normalize 'ı' harfini yutuyordu."""
+    s = name.strip().translate(_TR_CHAR_MAP)
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").lower()
+
+# DB'deki kısa il adları → GeoJSON'daki tam il adları (tr_ascii normalized)
+_PROVINCE_ALIAS = {
+    "afyon": "afyonkarahisar",
+    "k. maras": "kahramanmaras",
+}
+
+# DB ilçe adı → GeoJSON ilçe adı farklılıkları (tr_ascii normalized)
+# "db_prov|db_dist" → "geo_prov|geo_dist"
+_DISTRICT_ALIAS = {
+    "afyonkarahisar|sincanli": "afyonkarahisar|sinanpasa",
+    "agri|dogubeyazit": "agri|dogubayazit",
+    "agri|patnos": "agri|panos",
+    "ankara|kazan": "ankara|kahramankazan",
+    "ankara|sultan kochisar": "ankara|sereflikochisar",
+    "antalya|kale": "antalya|demre",
+    "bursa|mustafa kemalpasa": "bursa|mustafakemalpasa",
+    "denizli|akkoy": "denizli|merkezefendi",
+    "edirne|suleoglu": "edirne|suloglu",
+    "erzurum|ilica": "erzurum|palandoken",
+    "giresun|sultan karahisar": "giresun|sebinkarahisar",
+    "istanbul|eyup": "istanbul|eyupsultan",
+    "kirikkale|baliseyh": "kirikkale|balisih",
+    "malatya|arapkir": "malatya|arapgir",
+    "manisa|yunusemre": "manisa|yunus emre",
+    "malatya|poturge": "malatya|puturge",
+    "samsun|asarcik": "samsun|asarcik",
+    "samsun|ondokuz mayis": "samsun|19 mayis",
+    "siirt|aydinlar": "siirt|tillo",
+    "tunceli|nazimiye": "tunceli|nazmiye",
+    "yozgat|sarikaya": "yozgat|sarikaya deresi",
+}
+
+# 2012 sonrası bölünmüş "Merkez" ilçeler → birden fazla yeni ilçeye dağıtılır.
+# Choropleth'te aynı "Merkez" verisi tüm parçalara kopyalanır.
+# Tek hedefli olan alias tablosundan ayrı tutulur.
+_MERKEZ_SPLIT: dict[str, list[str]] = {
+    "antalya":    ["muratpasa", "kepez", "konyaalti", "dosemealti", "aksu"],
+    "aydin":      ["efeler"],
+    "balikesir":  ["karesi", "altieylul"],
+    "denizli":    ["merkezefendi", "pamukkale"],
+    "diyarbakir": ["sur", "baglar", "kayapinar", "yenisehir"],
+    "erzurum":    ["yakutiye", "aziziye", "palandoken"],
+    "eskisehir":  ["odunpazari", "tepebasi"],
+    "hatay":      ["antakya", "defne"],
+    "kocaeli":    ["izmit", "basiskele", "kartepe"],
+    "malatya":    ["battalgazi", "yesilyurt"],
+    "manisa":     ["sehzadeler", "yunus emre"],
+    "mardin":     ["artuklu", "kiziltepe"],
+    "mersin":     ["akdeniz", "mezitli", "toroslar", "yenisehir"],
+    "mugla":      ["mentese"],
+    "ordu":       ["altinordu", "catalpinar"],
+    "sakarya":    ["adapazari", "serdivan", "erenler", "arifiye"],
+    "samsun":     ["ilkadim", "atakum", "canik", "tekkekoy"],
+    "sanliurfa":  ["haliliye", "eyyubiye", "karakopru"],
+    "tekirdag":   ["suleymanpasa", "kapaklı", "ergene"],
+    "trabzon":    ["ortahisar"],
+    "van":        ["ipekyolu", "tusba", "edremit"],
+}
+
+
+@router.get("/district-choropleth")
+def get_district_choropleth(
+    hours: int = Query(
+        default=720,
+        ge=1,
+        le=8760,
+        description="Analiz penceresi (saat, varsayılan 30 gün = 720)",
+    ),
+    mode: str = Query(
+        default="average",
+        regex="^(average|latest)$",
+        description="average: zaman aralığı ortalaması, latest: en güncel saatin verisi",
+    ),
+):
+    """
+    Tüm ilçeler için choropleth harita verisi döner.
+    ASCII normalize ile DB ↔ GeoJSON isim farklarını otomatik eşleştirir.
+    Key formatı: "GeoJSON_NAME_1|GeoJSON_NAME_2" (frontend ile birebir uyumlu).
+
+    mode=latest: her ilçe için veritabanındaki en güncel tek saatin değerlerini döner.
+    mode=average: belirtilen saat penceresi içindeki ortalamaları döner (varsayılan).
+    """
+    cache_key = f"weather:district-choropleth:{hours}:{mode}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    db = SystemSessionLocal()
+    try:
+        if mode == "latest":
+            # Tüm ilçeler için TEK global en son timestamp'i bul
+            # Bu sayede doğu-batı tutarsızlığı olmaz (aynı saat, aynı veri).
+            from sqlalchemy import and_
+
+            global_max_ts = db.query(
+                func.max(HourlyWeatherData.timestamp),
+            ).filter(
+                HourlyWeatherData.district_name.isnot(None),
+            ).scalar()
+
+            if not global_max_ts:
+                cache_set(cache_key, {}, ttl_seconds=60)
+                return {}
+
+            # Global timestamp'e ait tüm satırları çek
+            rows = db.query(
+                HourlyWeatherData.city_name,
+                HourlyWeatherData.district_name,
+                HourlyWeatherData.wind_speed_100m.label("avg_wind"),
+                HourlyWeatherData.shortwave_radiation.label("avg_radiation"),
+                HourlyWeatherData.temperature_2m.label("avg_temp"),
+            ).filter(
+                HourlyWeatherData.district_name.isnot(None),
+                HourlyWeatherData.timestamp == global_max_ts,
+            ).all()
+
+            # Solar için: gündüz saatlerindeki en son global timestamp
+            # Gece ise tüm Türkiye'de 0 olacak → tek global daylight timestamp
+            global_solar_ts = db.query(
+                func.max(HourlyWeatherData.timestamp),
+            ).filter(
+                HourlyWeatherData.district_name.isnot(None),
+                HourlyWeatherData.shortwave_radiation > 0,
+            ).scalar()
+
+            _solar_lookup: dict[str, float] = {}
+            if global_solar_ts:
+                solar_rows = db.query(
+                    HourlyWeatherData.city_name,
+                    HourlyWeatherData.district_name,
+                    HourlyWeatherData.shortwave_radiation.label("radiation"),
+                ).filter(
+                    HourlyWeatherData.district_name.isnot(None),
+                    HourlyWeatherData.timestamp == global_solar_ts,
+                ).all()
+                for sr in solar_rows:
+                    if sr.city_name and sr.district_name and sr.radiation:
+                        _solar_lookup[f"{sr.city_name}|{sr.district_name}"] = float(sr.radiation)
+        else:
+            cutoff = datetime.now() - timedelta(hours=hours)
+
+            rows = db.query(
+                HourlyWeatherData.city_name,
+                HourlyWeatherData.district_name,
+                func.avg(HourlyWeatherData.wind_speed_100m).label("avg_wind"),
+                func.avg(HourlyWeatherData.shortwave_radiation).label("avg_radiation"),
+                func.avg(HourlyWeatherData.temperature_2m).label("avg_temp"),
+            ).filter(
+                HourlyWeatherData.timestamp >= cutoff,
+                HourlyWeatherData.district_name.isnot(None),
+            ).group_by(
+                HourlyWeatherData.city_name,
+                HourlyWeatherData.district_name,
+            ).all()
+            _solar_lookup: dict[str, float] = {}  # average mod: ayrı solar lookup yok
+
+        # ── GeoJSON ilçe listesini yükle → _tr_ascii normalize lookup ──
+        # "tr_ascii(NAME_1)|tr_ascii(NAME_2)" → "NAME_1|NAME_2" (orijinal Turkish)
+        import json, os
+        _geo_lookup: dict[str, str] = {}
+        _geo_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "data", "vector", "turkey_districts_osm.geojson",
+        )
+        try:
+            with open(_geo_path, "r", encoding="utf-8") as f:
+                _geo = json.load(f)
+            for feat in _geo.get("features", []):
+                props = feat.get("properties", {})
+                n1 = props.get("NAME_1", "")
+                n2 = props.get("NAME_2", "")
+                if n1 and n2:
+                    ascii_key = f"{_tr_ascii(n1)}|{_tr_ascii(n2)}"
+                    geo_key = f"{n1}|{n2}"
+                    _geo_lookup[ascii_key] = geo_key
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Choropleth GeoJSON yüklenemedi: %s — fallback kullanılacak", e
+            )
+
+        result = {}
+        matched = 0
+        for r in rows:
+            if not r.city_name or not r.district_name:
+                continue
+
+            # Solar: gece ise 0/null olur → gündüz lookup'tan al (mode=latest)
+            solar_key = f"{r.city_name}|{r.district_name}"
+            solar_val = _solar_lookup.get(solar_key) if mode == "latest" else None
+            # Gündüz verisi varsa onu kullan, yoksa mevcut satırın değerini
+            raw_solar = solar_val if solar_val is not None else (
+                float(r.avg_radiation) if r.avg_radiation else None
+            )
+
+            val = {
+                "wind": round(float(r.avg_wind), 2) if r.avg_wind else None,
+                "solar": round(raw_solar, 2) if raw_solar else None,
+                "temp": round(float(r.avg_temp), 2) if r.avg_temp else None,
+            }
+
+            # Türkçe-aware normalize ile GeoJSON key'i bul
+            prov_norm = _tr_ascii(r.city_name)
+            dist_norm = _tr_ascii(r.district_name)
+
+            # Kısa il adı alias kontrolü (Afyon→Afyonkarahisar vb.)
+            prov_norm = _PROVINCE_ALIAS.get(prov_norm, prov_norm)
+
+            db_ascii = f"{prov_norm}|{dist_norm}"
+
+            # İlçe alias kontrolü (Eyüp→Eyüpsultan, Kazan→Kahramankazan vb.)
+            db_ascii = _DISTRICT_ALIAS.get(db_ascii, db_ascii)
+
+            geo_key = _geo_lookup.get(db_ascii)
+
+            # "Merkez" fallback: alias tablosunda yoksa "{il} merkez" veya "{il}" dene
+            if not geo_key and dist_norm == "merkez":
+                geo_key = _geo_lookup.get(f"{prov_norm}|{prov_norm} merkez")
+                if not geo_key:
+                    geo_key = _geo_lookup.get(f"{prov_norm}|{prov_norm}")
+
+            if geo_key:
+                result[geo_key] = val
+                matched += 1
+
+            # Bölünmüş Merkez: aynı veriyi tüm parça ilçelere de kopyala
+            if dist_norm == "merkez" and prov_norm in _MERKEZ_SPLIT:
+                for sub in _MERKEZ_SPLIT[prov_norm]:
+                    sub_key = _geo_lookup.get(f"{prov_norm}|{sub}")
+                    if sub_key and sub_key not in result:
+                        result[sub_key] = val
+                        matched += 1
+
+        import logging
+        logging.getLogger(__name__).info(
+            "Choropleth: %d/%d ilçe GeoJSON ile eşleşti", matched, len(result)
+        )
+
+        # Meta bilgi: verinin hangi zamana ait olduğu
+        meta: dict = {}
+        if mode == "latest" and global_max_ts:
+            meta["data_timestamp"] = global_max_ts.isoformat()
+            if global_solar_ts:
+                meta["solar_timestamp"] = global_solar_ts.isoformat()
+        else:
+            cutoff_ts = datetime.now() - timedelta(hours=hours)
+            meta["data_from"] = cutoff_ts.isoformat()
+            meta["data_to"] = datetime.now().isoformat()
+
+        result["_meta"] = meta
+        cache_set(cache_key, result, ttl_seconds=900)
+        return result
     finally:
         db.close()

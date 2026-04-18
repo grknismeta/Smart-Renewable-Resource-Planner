@@ -27,14 +27,17 @@ def get_city_for_coords(lat: float, lon: float):
     Örnek: GET /geo/city?lat=39.92&lon=32.85
     """
     if analyzer is None:
-        return {"province": "", "district": ""}
+        logger.error("GeoAnalyzer None — shapefile yüklenememiş! Backend'i yeniden başlatın.")
+        return {"province": "", "district": "", "error": "geo_service_not_initialized"}
     try:
         from shapely.geometry import Point
         point = Point(lon, lat)
         info = analyzer._get_location_info(point, lat, lon)
+        if not info.get("province"):
+            logger.debug("Reverse geocoding: boş sonuç ({}, {}) — nokta Türkiye dışında olabilir", lat, lon)
         return info
     except Exception as e:
-        logger.debug("Reverse geocoding hatası ({}, {}): {}", lat, lon, e)
+        logger.error("Reverse geocoding hatası ({}, {}): {}", lat, lon, e)
         return {"province": "", "district": ""}
 
 

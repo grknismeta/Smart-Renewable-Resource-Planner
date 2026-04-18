@@ -80,6 +80,49 @@ class HeatmapPoint {
 
 enum ResourceType { solar, wind, temp }
 
+// ─── Choropleth (İlçe Tematik Harita) Modu ───────────────────────────────────
+
+enum ChoroplethMode { none, solar, wind, temperature }
+
+extension ChoroplethModeExt on ChoroplethMode {
+  String get displayName {
+    switch (this) {
+      case ChoroplethMode.none: return 'Kapalı';
+      case ChoroplethMode.solar: return 'Güneş Işınımı';
+      case ChoroplethMode.wind: return 'Rüzgar Hızı';
+      case ChoroplethMode.temperature: return 'Sıcaklık';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case ChoroplethMode.none: return Icons.layers_clear_outlined;
+      case ChoroplethMode.solar: return Icons.wb_sunny_outlined;
+      case ChoroplethMode.wind: return Icons.air;
+      case ChoroplethMode.temperature: return Icons.thermostat_outlined;
+    }
+  }
+
+  Color get color {
+    switch (this) {
+      case ChoroplethMode.none: return Colors.grey;
+      case ChoroplethMode.solar: return Colors.orangeAccent;
+      case ChoroplethMode.wind: return Colors.cyanAccent;
+      case ChoroplethMode.temperature: return Colors.deepOrangeAccent;
+    }
+  }
+
+  /// JS tarafında kullanılan property adı
+  String get dataKey {
+    switch (this) {
+      case ChoroplethMode.none: return '';
+      case ChoroplethMode.solar: return 'solar';
+      case ChoroplethMode.wind: return 'wind';
+      case ChoroplethMode.temperature: return 'temp';
+    }
+  }
+}
+
 // ─── Rüzgar Parçacık Sistemi ────────────────────────────────────────────────
 
 enum WindParticleQuality {

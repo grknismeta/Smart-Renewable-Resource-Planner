@@ -99,6 +99,71 @@ models.UserBase.metadata.create_all(bind=UserEngine)
 models.UserPinsBase.metadata.create_all(bind=UserPinsEngine)
 
 
+# ─── ONE-TIME MIGRATIONS ─────────────────────────────────────────────────────
+def _wind_migration_needed() -> bool:
+    """Flag dosyası kontrolü — migration zaten yapıldı mı?"""
+    import os
+    return not os.path.exists(
+        os.path.join(os.path.dirname(__file__), ".wind_migration_done")
+    )
+
+
+def _run_wind_speed_migration_sync():
+    """Eski km/h rüzgar verilerini m/s'ye dönüştür (batch'li, arka plan).
+
+    wind_speed_unit: 'ms' parametresi eklenmeden önce toplanan tüm veriler
+    km/h birimindeydi ama m/s olarak kaydedildi. Bu migration 3.6'ya bölerek düzeltir.
+    """
+    import os
+    from .db.database import SystemSessionLocal
+    from .db.models import HourlyWeatherData
+    from sqlalchemy import update, text
+
+    flag_path = os.path.join(os.path.dirname(__file__), ".wind_migration_done")
+    cutoff = datetime(2026, 4, 10, 0, 0, 0)
+    BATCH = 50_000  # 50K satır per commit — DB'yi kilitlemez
+
+    _info("Rüzgar hızı migration başlıyor (arka planda, batch=50K)...")
+
+    db = SystemSessionLocal()
+    try:
+        total_fixed = 0
+        while True:
+            # Batch: sadece henüz düzeltilmemiş satırları al
+            # wind_speed_10m > 15 → büyük olasılıkla km/h (doğru m/s nadiren >15)
+            result = db.execute(
+                text("""
+                    UPDATE hourly_weather_data
+                    SET wind_speed_10m  = wind_speed_10m  / 3.6,
+                        wind_speed_100m = wind_speed_100m / 3.6,
+                        wind_gusts_10m  = wind_gusts_10m  / 3.6
+                    WHERE id IN (
+                        SELECT id FROM hourly_weather_data
+                        WHERE timestamp < :cutoff
+                          AND wind_speed_10m IS NOT NULL
+                          AND wind_speed_10m > 15
+                        LIMIT :batch_size
+                    )
+                """),
+                {"cutoff": cutoff, "batch_size": BATCH},
+            )
+            db.commit()
+            affected = result.rowcount
+            total_fixed += affected
+            if affected < BATCH:
+                break  # Son batch — bitti
+
+        _ok(f"Rüzgar hızı migration tamamlandı: {total_fixed} kayıt düzeltildi")
+
+        with open(flag_path, "w") as f:
+            f.write(f"Migration completed at {datetime.now().isoformat()}\n")
+            f.write(f"Total rows fixed: {total_fixed}\n")
+    except Exception as e:
+        _warn(f"Rüzgar hızı migration hatası: {e}")
+    finally:
+        db.close()
+
+
 # ─── STARTUP / SHUTDOWN ───────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -107,6 +172,15 @@ async def lifespan(app: FastAPI):
     _section("Arkaplan Servisler", "[*]")
 
     import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    # 0. Rüzgar hızı migration (arka planda, sunucu başlamasını engellemez)
+    if _wind_migration_needed():
+        _info("Rüzgar hızı migration arka planda başlatılıyor...")
+        _migration_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="wind-migration")
+        asyncio.get_event_loop().run_in_executor(_migration_pool, _run_wind_speed_migration_sync)
+    else:
+        _ok("Rüzgar hızı migration: zaten tamamlanmış")
 
     # 1. Günlük veri güncelleme
     try:
@@ -116,11 +190,25 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         _warn(f"Günlük Grid Güncelleyici başlatılamadı: {e}")
 
-    # 2. Saatlik veri güncelleme
+    # 2. Saatlik veri güncelleme — başlangıçta bir kez + her 1 saatte tekrar
     try:
         from .services.collectors.hourly import async_update_hourly_data
-        asyncio.create_task(async_update_hourly_data())
-        _ok("Saatlik Hava Veri Güncelleyici başlatıldı")
+
+        async def _periodic_hourly_update():
+            """İlk çalıştırma + periyodik 1 saatlik döngü."""
+            await async_update_hourly_data()
+            _ok("Saatlik Hava Veri Güncelleyici ilk çalıştırma tamamlandı")
+            while True:
+                await asyncio.sleep(3600)  # 1 saat bekle
+                try:
+                    _info("Periyodik saatlik veri güncellemesi başlıyor...")
+                    await async_update_hourly_data()
+                    _ok("Periyodik saatlik veri güncellemesi tamamlandı")
+                except Exception as exc:
+                    _warn(f"Periyodik güncelleme hatası: {exc}")
+
+        asyncio.create_task(_periodic_hourly_update())
+        _ok("Saatlik Hava Veri Güncelleyici başlatıldı (1 saatte bir tekrar)")
     except Exception as e:
         _warn(f"Saatlik Hava Güncelleyici başlatılamadı: {e}")
 

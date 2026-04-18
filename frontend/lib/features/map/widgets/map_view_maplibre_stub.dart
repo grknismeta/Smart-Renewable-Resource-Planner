@@ -21,6 +21,11 @@ class MapViewMapLibre extends StatelessWidget {
   static void clearSelectionMode() {}
   static void setInteractive(bool enable) {}
   static void setClickGuard(bool active) {}
+  static void setMaxBounds(
+      double swLng, double swLat, double neLng, double neLat) {}
+  static void clearMaxBounds() {}
+  static void setShowcasePins(String geojsonStr) {}
+  static dynamic get activeControllerForOverlay => null;
 
   @override
   Widget build(BuildContext context) {

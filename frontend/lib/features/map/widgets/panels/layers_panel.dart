@@ -8,11 +8,13 @@ import 'package:frontend/features/map/models/map_models.dart';
 class LayersPanel extends StatelessWidget {
   final ThemeViewModel theme;
   final MapViewModel mapViewModel;
+  final VoidCallback? onClearMapSelection;
 
   const LayersPanel({
     super.key,
     required this.theme,
     required this.mapViewModel,
+    this.onClearMapSelection,
   });
 
   @override
@@ -34,14 +36,20 @@ class LayersPanel extends StatelessWidget {
           ),
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.80,
+              // Mobilde daha kısa panel (ekranın %65'i), masaüstünde %80
+              maxHeight: MediaQuery.of(context).size.height *
+                  (MediaQuery.of(context).size.width < 600 ? 0.60 : 0.80),
             ),
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _MapLibreSection(theme: theme, vm: mapViewModel),
+                  _MapLibreSection(
+                    theme: theme,
+                    vm: mapViewModel,
+                    onClearMapSelection: onClearMapSelection,
+                  ),
                 ],
               ),
             ),
@@ -104,17 +112,23 @@ class _SectionHeader extends StatelessWidget {
 class _MapLibreSection extends StatefulWidget {
   final ThemeViewModel theme;
   final MapViewModel vm;
+  final VoidCallback? onClearMapSelection;
 
-  const _MapLibreSection({required this.theme, required this.vm});
+  const _MapLibreSection({
+    required this.theme,
+    required this.vm,
+    this.onClearMapSelection,
+  });
 
   @override
   State<_MapLibreSection> createState() => _MapLibreSectionState();
 }
 
 class _MapLibreSectionState extends State<_MapLibreSection> {
+  bool _toolsExpanded      = true;
   bool _styleExpanded      = true;
   bool _projectionExpanded = true;
-  bool _heatmapExpanded    = true;
+  bool _choroplethExpanded = true;
   bool _pinExpanded        = true;
   bool _satelliteExpanded  = false;
   bool _windExpanded       = true;
@@ -125,13 +139,72 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
 
   @override
   Widget build(BuildContext context) {
-    final heatmapActive = vm.mlHeatmapMode != MlHeatmapMode.none;
     final globeActive   = vm.showGlobe;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ── Araçlar ─────────────────────────────────────────────────────
+        _SectionHeader(
+          title: 'Araçlar', expanded: _toolsExpanded, theme: theme,
+          onToggle: () => setState(() => _toolsExpanded = !_toolsExpanded),
+        ),
+        if (_toolsExpanded) ...[
+          const SizedBox(height: 6),
+          _toolButton(
+            'Önerilen Bölgeler',
+            Icons.auto_awesome_rounded,
+            Colors.purpleAccent,
+            vm.isRecommendationsPanelOpen,
+            globeActive ? null : () => vm.toggleRecommendationsPanel(),
+          ),
+          _toolButton(
+            'Bölge Modu',
+            Icons.map_outlined,
+            Colors.lightBlueAccent,
+            vm.isRegionsModeActive,
+            globeActive ? null : () {
+              vm.openRegionMode();
+              if (!vm.isProvinceModeActive) {
+                widget.onClearMapSelection?.call();
+              }
+            },
+          ),
+          _toolButton(
+            'İl Modu',
+            Icons.apartment_rounded,
+            Colors.tealAccent,
+            vm.isProvincesModeActive,
+            globeActive ? null : () {
+              vm.openProvincesMode();
+              if (!vm.isProvinceModeActive) {
+                widget.onClearMapSelection?.call();
+              }
+            },
+          ),
+          _toolButton(
+            'İlçe Modu',
+            Icons.grid_view_rounded,
+            Colors.orangeAccent,
+            vm.isDistrictsModeActive,
+            globeActive ? null : () {
+              vm.openDistrictsMode();
+              if (!vm.isProvinceModeActive) {
+                widget.onClearMapSelection?.call();
+              }
+            },
+          ),
+          _toolButton(
+            'Zaman Simülasyonu',
+            Icons.play_circle_outline_rounded,
+            Colors.cyanAccent,
+            vm.isAnimationMode,
+            globeActive ? null : () => vm.toggleAnimationMode(),
+          ),
+        ],
+
+        const SizedBox(height: 10),
         // ── Harita Stili ────────────────────────────────────────────────
         _SectionHeader(
           title: 'Harita Stili', expanded: _styleExpanded, theme: theme,
@@ -169,7 +242,7 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
         ),
         if (_projectionExpanded) ...[
           const SizedBox(height: 6),
-          _effectRow('Globe Projeksiyon', Icons.public_outlined,
+          _effectRow('Global Projeksiyon', Icons.public_outlined,
               vm.showGlobe, Colors.deepPurpleAccent, vm.toggleShowGlobe),
           if (globeActive) ...[
             const SizedBox(height: 10),
@@ -184,7 +257,7 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                 const Icon(Icons.lock_outline_rounded, size: 13, color: Colors.deepPurpleAccent),
                 const SizedBox(width: 6),
                 Expanded(child: Text(
-                  'Globe projeksiyon açıkken diğer özellikler kullanılamaz. Yalnızca pinler görünür.',
+                  'Global projeksiyon açıkken Türkiye özellikleri devre dışı kalır. Kapattığınızda tüm ayarlar geri gelir.',
                   style: TextStyle(color: Colors.deepPurpleAccent.withValues(alpha: 0.8), fontSize: 9.5),
                 )),
               ]),
@@ -202,20 +275,43 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 10),
-                // ── Isı Haritası ──────────────────────────────────────
+                // ── Tematik Harita (Choropleth) ─────────────────────
                 _SectionHeader(
-                  title: 'Isı Haritası', expanded: _heatmapExpanded, theme: theme,
-                  onToggle: () => setState(() => _heatmapExpanded = !_heatmapExpanded),
+                  title: 'Tematik Harita', expanded: _choroplethExpanded, theme: theme,
+                  onToggle: () => setState(() => _choroplethExpanded = !_choroplethExpanded),
                 ),
-                if (_heatmapExpanded) ...[
+                if (_choroplethExpanded) ...[
                   const SizedBox(height: 6),
-                  _heatmapOpt('Güneş Potansiyeli', MlHeatmapMode.solar, Colors.orangeAccent, Icons.wb_sunny_outlined),
-                  _heatmapOpt('Rüzgar Potansiyeli', MlHeatmapMode.wind, Colors.cyanAccent, Icons.air),
-                  _heatmapOpt('Sıcaklık', MlHeatmapMode.temperature, Colors.deepOrangeAccent, Icons.thermostat_outlined),
-                  if (heatmapActive && !globeActive) ...[
-                    const SizedBox(height: 10),
-                    _heatmapControls(context),
-                  ],
+                  _choroplethOpt('Güneş Işınımı', ChoroplethMode.solar, Colors.orangeAccent, Icons.wb_sunny_outlined),
+                  _choroplethOpt('Rüzgar Hızı', ChoroplethMode.wind, Colors.cyanAccent, Icons.air),
+                  _choroplethOpt('Sıcaklık', ChoroplethMode.temperature, Colors.deepOrangeAccent, Icons.thermostat_outlined),
+                  if (vm.isChoroplethLoading)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 36, top: 4),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        SizedBox(width: 12, height: 12, child: CircularProgressIndicator(
+                          strokeWidth: 1.5, color: theme.secondaryTextColor)),
+                        const SizedBox(width: 6),
+                        Text('Veri yükleniyor…',
+                          style: TextStyle(fontSize: 10, color: theme.secondaryTextColor)),
+                      ]),
+                    ),
+                  const SizedBox(height: 4),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Row(children: [
+                      Icon(Icons.info_outline_rounded, size: 10,
+                          color: theme.secondaryTextColor.withValues(alpha: 0.6)),
+                      const SizedBox(width: 4),
+                      Expanded(child: Text(
+                        'İlçe poligonlarını güncel saat verisiyle renklendirir',
+                        style: TextStyle(
+                          color: theme.secondaryTextColor.withValues(alpha: 0.6),
+                          fontSize: 9,
+                        ),
+                      )),
+                    ]),
+                  ),
                 ],
 
                 const SizedBox(height: 10),
@@ -330,102 +426,6 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
     );
   }
 
-  /// Isı haritası parametre kontrolleri (radius, intensity, palette)
-  Widget _heatmapControls(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: theme.cardColor.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: theme.secondaryTextColor.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Yarıçap (Radius)
-          Row(children: [
-            Icon(Icons.blur_on_outlined, size: 12, color: theme.secondaryTextColor),
-            const SizedBox(width: 4),
-            Text('Yarıçap', style: TextStyle(color: theme.secondaryTextColor, fontSize: 10)),
-            const Spacer(),
-            Text('${vm.heatmapRadius.round()}', style: TextStyle(color: theme.textColor, fontSize: 10, fontWeight: FontWeight.bold)),
-          ]),
-          SliderTheme(
-            data: SliderThemeData(
-              trackHeight: 2,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-              activeTrackColor: Colors.orangeAccent,
-              inactiveTrackColor: theme.secondaryTextColor.withValues(alpha: 0.2),
-              thumbColor: Colors.orangeAccent,
-              overlayColor: Colors.orangeAccent.withValues(alpha: 0.2),
-            ),
-            child: Slider(
-              value: vm.heatmapRadius,
-              min: 10, max: 100,
-              onChanged: vm.setHeatmapRadius,
-            ),
-          ),
-
-          // Yoğunluk (Intensity)
-          Row(children: [
-            Icon(Icons.brightness_6_outlined, size: 12, color: theme.secondaryTextColor),
-            const SizedBox(width: 4),
-            Text('Yoğunluk', style: TextStyle(color: theme.secondaryTextColor, fontSize: 10)),
-            const Spacer(),
-            Text(vm.heatmapIntensity.toStringAsFixed(1), style: TextStyle(color: theme.textColor, fontSize: 10, fontWeight: FontWeight.bold)),
-          ]),
-          SliderTheme(
-            data: SliderThemeData(
-              trackHeight: 2,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-              activeTrackColor: Colors.cyanAccent,
-              inactiveTrackColor: theme.secondaryTextColor.withValues(alpha: 0.2),
-              thumbColor: Colors.cyanAccent,
-              overlayColor: Colors.cyanAccent.withValues(alpha: 0.2),
-            ),
-            child: Slider(
-              value: vm.heatmapIntensity,
-              min: 0.2, max: 5.0,
-              onChanged: vm.setHeatmapIntensity,
-            ),
-          ),
-
-          // Palet seçimi
-          const SizedBox(height: 4),
-          Row(children: HeatmapPalette.values.map((p) {
-            final active = vm.heatmapPalette == p;
-            return Expanded(child: GestureDetector(
-              onTap: () => vm.setHeatmapPalette(p),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                decoration: BoxDecoration(
-                  color: active ? Colors.orangeAccent.withValues(alpha: 0.18) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: active ? Colors.orangeAccent : theme.secondaryTextColor.withValues(alpha: 0.2),
-                  ),
-                ),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(p.icon, size: 11, color: active ? Colors.orangeAccent : theme.secondaryTextColor),
-                  const SizedBox(height: 2),
-                  Text(p.displayName, style: TextStyle(
-                    color: active ? Colors.orangeAccent : theme.secondaryTextColor,
-                    fontSize: 8.5, fontWeight: active ? FontWeight.bold : FontWeight.normal,
-                  ), textAlign: TextAlign.center),
-                ]),
-              ),
-            ));
-          }).toList()),
-        ],
-      ),
-    );
-  }
-
   /// Pin türü filtreleme bölümü
   Widget _pinFilterSection() {
     final pinTypes = [
@@ -507,10 +507,10 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
     );
   }
 
-  Widget _heatmapOpt(String label, MlHeatmapMode mode, Color color, IconData icon) {
-    final active = vm.mlHeatmapMode == mode;
+  Widget _choroplethOpt(String label, ChoroplethMode mode, Color color, IconData icon) {
+    final active = vm.choroplethMode == mode;
     return InkWell(
-      onTap: () => vm.setMlHeatmapMode(active ? MlHeatmapMode.none : mode),
+      onTap: () => vm.setChoroplethMode(active ? ChoroplethMode.none : mode),
       borderRadius: BorderRadius.circular(6),
       child: Padding(padding: const EdgeInsets.symmetric(vertical: 5),
         child: Row(children: [
@@ -527,7 +527,7 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
           const SizedBox(width: 8),
           Expanded(child: Text(label, style: TextStyle(
             color: active ? theme.textColor : theme.secondaryTextColor, fontSize: 12))),
-          if (active) Icon(Icons.layers_rounded, size: 12, color: color),
+          if (active) Icon(Icons.map_rounded, size: 12, color: color),
         ])),
     );
   }
@@ -573,6 +573,45 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
               ),
           ],
         ]),
+      ),
+    );
+  }
+
+  /// Araçlar bölümündeki buton satırı — tıklanabilir, aktif durumda renk değişir
+  Widget _toolButton(
+    String label, IconData icon, Color color, bool active, VoidCallback? onTap,
+  ) {
+    final disabled = onTap == null;
+    return Opacity(
+      opacity: disabled ? 0.35 : 1.0,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 26, height: 26,
+              decoration: BoxDecoration(
+                color: active ? color.withValues(alpha: 0.18) : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: active ? color : color.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Icon(icon, size: 13,
+                  color: active ? color : color.withValues(alpha: 0.5)),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(label, style: TextStyle(
+              color: active ? theme.textColor : theme.secondaryTextColor,
+              fontSize: 12,
+            ))),
+            if (active)
+              Icon(Icons.check_circle_rounded, size: 14, color: color),
+          ]),
+        ),
       ),
     );
   }

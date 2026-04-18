@@ -133,19 +133,14 @@ class SidebarLauncher extends StatelessWidget {
                           authViewModel: authViewModel,
                           isCollapsed: false,
                           onAuthAction: () async {
-                            Navigator.pop(context); // Close bottom sheet
-                            if (isGuest) {
-                              Navigator.of(
-                                context,
-                              ).pushReplacementNamed('/auth');
-                            } else {
+                            if (!isGuest) {
                               await authViewModel.logout();
-                              if (!context.mounted) return;
-                              // Navigation stack'ini temizle ve login ekranına dön
-                              Navigator.of(
-                                context,
-                              ).pushNamedAndRemoveUntil('/', (route) => false);
                             }
+                            if (!context.mounted) return;
+                            Navigator.of(context).pushNamedAndRemoveUntil(
+                              '/landing',
+                              (route) => false,
+                            );
                           },
                         ),
                         const SizedBox(height: 24),

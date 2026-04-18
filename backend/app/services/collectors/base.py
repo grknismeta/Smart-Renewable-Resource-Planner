@@ -11,7 +11,7 @@ HISTORICAL_FORECAST_API_URL = "https://historical-forecast-api.open-meteo.com/v1
 # Logging Setup
 logger = logging.getLogger(__name__)
 
-def setup_client(cache_name='.cache', expire_after=3600, retries=5, backoff_factor=0.2):
+def setup_client(cache_name='.cache', expire_after=600, retries=5, backoff_factor=0.2):
     """
     Sets up the Open-Meteo client with caching and retry logic.
     """

@@ -9,10 +9,25 @@ class BaseService {
 
   BaseService(this.storageService);
 
+  /// Web ortamında tarayıcının bağlandığı hostname'i döndürür.
+  /// Telefon 192.168.x.x üzerinden erişiyorsa o IP'yi kullanır.
+  /// PC localhost ise 127.0.0.1 döner.
+  static String get webApiBase {
+    if (kIsWeb) {
+      try {
+        final host = Uri.base.host; // window.location.hostname
+        if (host.isNotEmpty) return 'http://$host:8000';
+      } catch (_) {}
+    }
+    return 'http://127.0.0.1:8000';
+  }
+
   String get baseUrl {
     if (kIsWeb) {
-      return 'http://127.0.0.1:8000';
+      return webApiBase;
     } else if (Platform.isAndroid) {
+      // LAN üzerinden PC'ye erişim (backend 0.0.0.0:8000'de dinliyor)
+      // Not: PC IP değişirse burayı güncelle veya .env ile yapılandır
       return 'http://192.168.1.7:8000';
     } else {
       return 'http://127.0.0.1:8000';

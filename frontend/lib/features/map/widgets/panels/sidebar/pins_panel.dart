@@ -1,10 +1,12 @@
 // lib/presentation/widgets/sidebar/pins_panel.dart
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/features/map/viewmodels/map_view_model.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
-import 'package:frontend/features/map/widgets/dialogs/map_dialogs.dart';
+import 'package:frontend/core/network/api_service.dart';
+import 'package:frontend/features/map/dialogs/map_dialogs.dart';
 
 /// Sidebar'da pin listesini gösteren panel
 /// Sidebar'da pin listesini gösteren panel
@@ -26,6 +28,7 @@ class PinsPanel extends StatefulWidget {
 
 class _PinsPanelState extends State<PinsPanel> {
   bool _isExpanded = false;
+  bool _isReanalyzing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -114,7 +117,47 @@ class _PinsPanelState extends State<PinsPanel> {
 
           // Genişletilmiş Liste
           if (_isExpanded) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+
+            // Tüm Pinleri Güncelle butonu
+            if (widget.mapViewModel.pins.isNotEmpty)
+              SizedBox(
+                width: double.infinity,
+                height: 30,
+                child: OutlinedButton.icon(
+                  onPressed: _isReanalyzing ? null : _batchReanalyze,
+                  icon: _isReanalyzing
+                      ? SizedBox(
+                          width: 12, height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            color: widget.theme.secondaryTextColor,
+                          ),
+                        )
+                      : Icon(Icons.refresh_rounded, size: 14,
+                          color: Colors.tealAccent.withValues(alpha: 0.8)),
+                  label: Text(
+                    _isReanalyzing ? 'Güncelleniyor…' : 'Tüm Pinleri Güncelle',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: _isReanalyzing
+                          ? widget.theme.secondaryTextColor
+                          : Colors.tealAccent.withValues(alpha: 0.9),
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(
+                      color: Colors.tealAccent.withValues(alpha: 0.3),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 8),
 
             // Güneş Panelleri
             if (solarPins.isNotEmpty) ...[
@@ -173,6 +216,36 @@ class _PinsPanelState extends State<PinsPanel> {
         ],
       ),
     );
+  }
+
+  Future<void> _batchReanalyze() async {
+    setState(() => _isReanalyzing = true);
+    try {
+      final api = Provider.of<ApiService>(context, listen: false);
+      final result = await api.resource.batchReanalyze();
+      final updated = result['updated'] ?? 0;
+      final errors = result['errors'] ?? 0;
+      if (mounted) {
+        // Pinleri yeniden yükle
+        await widget.mapViewModel.fetchPins();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$updated pin güncellendi${errors > 0 ? ', $errors hata' : ''}'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Güncelleme hatası: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isReanalyzing = false);
+    }
   }
 
   Widget _buildCategoryHeader(String title, int count, Color color) {

@@ -11,17 +11,9 @@ class MapControls extends StatelessWidget {
   final VoidCallback onZoomOut;
   final bool isSelectingRegion;
   final bool isLayersPanelVisible;
-  final VoidCallback? onToggleRecommendations;
-  final bool isRecommendationsPanelOpen;
-  final VoidCallback? onToggleProvinceMode; // geriye dönük uyumluluk
-  final bool isProvinceModeActive;          // geriye dönük uyumluluk
-  final VoidCallback? onOpenProvincesMode;
-  final bool isProvincesModeActive;
-  final VoidCallback? onOpenDistrictsMode;
-  final bool isDistrictsModeActive;
-  final VoidCallback? onToggleAnimation;
-  final bool isAnimationMode;
   final bool isGlobeMode;
+  /// Choropleth lejantı açıkken zoom butonları yukarı kayar.
+  final bool hasChoroplethLegend;
 
   const MapControls({
     super.key,
@@ -33,17 +25,8 @@ class MapControls extends StatelessWidget {
     required this.onZoomOut,
     required this.isSelectingRegion,
     required this.isLayersPanelVisible,
-    this.onToggleRecommendations,
-    this.isRecommendationsPanelOpen = false,
-    this.onToggleProvinceMode,
-    this.isProvinceModeActive = false,
-    this.onOpenProvincesMode,
-    this.isProvincesModeActive = false,
-    this.onOpenDistrictsMode,
-    this.isDistrictsModeActive = false,
-    this.onToggleAnimation,
-    this.isAnimationMode = false,
     this.isGlobeMode = false,
+    this.hasChoroplethLegend = false,
   });
 
   @override
@@ -75,73 +58,15 @@ class MapControls extends StatelessWidget {
                 color: isLayersPanelVisible ? Colors.greenAccent : theme.textColor,
                 theme: theme,
               ),
-              const SizedBox(height: 16),
-
-              // Önerilen Bölgeler
-              if (onToggleRecommendations != null)
-                MapControlButton(
-                  icon: Icons.auto_awesome_rounded,
-                  tooltip: isGlobeMode ? "Global modda kullanılamaz" : "Önerilen Bölgeler",
-                  onTap: isGlobeMode ? () {} : onToggleRecommendations!,
-                  color: isGlobeMode
-                      ? theme.secondaryTextColor.withValues(alpha: 0.3)
-                      : isRecommendationsPanelOpen
-                          ? Colors.purpleAccent
-                          : theme.textColor,
-                  theme: theme,
-                ),
-              const SizedBox(height: 16),
-
-              // İl Modu — Tüm 81 ili doğrudan göster
-              if (onOpenProvincesMode != null)
-                MapControlButton(
-                  icon: Icons.apartment_rounded,
-                  tooltip: isGlobeMode ? "Global modda kullanılamaz" : "İl Modu",
-                  onTap: isGlobeMode ? () {} : onOpenProvincesMode!,
-                  color: isGlobeMode
-                      ? theme.secondaryTextColor.withValues(alpha: 0.3)
-                      : isProvincesModeActive
-                          ? Colors.tealAccent
-                          : theme.textColor,
-                  theme: theme,
-                ),
-              const SizedBox(height: 16),
-
-              // İlçe Modu — Tüm Türkiye ilçelerini doğrudan göster
-              if (onOpenDistrictsMode != null)
-                MapControlButton(
-                  icon: Icons.grid_view_rounded,
-                  tooltip: isGlobeMode ? "Global modda kullanılamaz" : "İlçe Modu",
-                  onTap: isGlobeMode ? () {} : onOpenDistrictsMode!,
-                  color: isGlobeMode
-                      ? theme.secondaryTextColor.withValues(alpha: 0.3)
-                      : isDistrictsModeActive
-                          ? Colors.orangeAccent
-                          : theme.textColor,
-                  theme: theme,
-                ),
-              const SizedBox(height: 16),
-
-              // Zaman Simülasyonu
-              if (onToggleAnimation != null)
-                MapControlButton(
-                  icon: Icons.play_circle_outline_rounded,
-                  tooltip: isGlobeMode ? "Global modda kullanılamaz" : "Zaman Simülasyonu",
-                  onTap: isGlobeMode ? () {} : onToggleAnimation!,
-                  color: isGlobeMode
-                      ? theme.secondaryTextColor.withValues(alpha: 0.3)
-                      : isAnimationMode
-                          ? Colors.cyanAccent
-                          : theme.textColor,
-                  theme: theme,
-                ),
             ],
           )),
         ),
 
-        // 2. Zoom Buttons (Bottom Left)
-        Positioned(
-          bottom: 40, // Sheet is minimized (only handle at ~20-30px), so 40-50 is safe.
+        // 2. Zoom Buttons (Bottom Left) — choropleth lejantı açıkken yukarı kayar
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          bottom: hasChoroplethLegend ? 155 : 40,
           left: 20,
           child: PointerInterceptor(child: Column(
             children: [

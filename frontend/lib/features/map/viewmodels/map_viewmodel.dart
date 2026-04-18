@@ -18,7 +18,7 @@ import 'package:frontend/data/models/recommendation_model.dart';
 export 'package:frontend/features/map/layers/map_layers_system.dart'
     show MapLayerType;
 export 'package:frontend/features/map/models/map_models.dart'
-    show MlHeatmapMode, MlBaseStyle, HeatmapPalette;
+    show MlHeatmapMode, MlBaseStyle, HeatmapPalette, ChoroplethMode;
 
 // SharedPreferences key prefix — versiyonlu, schema değişirse eski cache invalidate olur
 const _kCityPrefix = 'city_v2_';
@@ -63,6 +63,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   int? _draggingPointIndex; // Sürüklenen nokta indeksi
   OptimizationResponse? _optimizationResult; // Optimizasyon sonuçları
   List<Equipment> _equipments = [];
+  DateTime? _equipmentsLastFetch;
   bool _equipmentsLoading = false;
 
   // Pin şehir adı cache: {pinId: "İl / İlçe"}
@@ -113,6 +114,10 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   // --- Coğrafi Seçim Modu (Bölge / İl / İlçe) ---
   bool _isProvinceModeActive = false;
   SelectionLevel _selectionLevel = SelectionLevel.none;
+  /// Kullanıcının başlangıçta açtığı mod (region/province/district).
+  /// selectProvince() çağrıldığında davranışı belirler.
+  SelectionLevel _initialSelectionMode = SelectionLevel.none;
+  SelectionLevel get initialSelectionMode => _initialSelectionMode;
   String? _selectedRegionName;
   String? _selectedProvinceName;
   String? _selectedProvinceCode;  // 3 harfli il kodu (ör. "ist")
@@ -204,7 +209,11 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   bool get isProvinceModeActive => _isProvinceModeActive;
   SelectionLevel get selectionLevel => _selectionLevel;
 
-  /// İl modu aktif mi? (province seviyesinde + provinceFilter yok)
+  /// Bölge modu aktif mi? (region seviyesinde)
+  bool get isRegionsModeActive =>
+      _isProvinceModeActive && _selectionLevel == SelectionLevel.region;
+
+  /// İl modu aktif mi? (province seviyesinde + bölge filtresi yok)
   bool get isProvincesModeActive =>
       _isProvinceModeActive && _selectionLevel == SelectionLevel.province;
 
@@ -262,17 +271,62 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   }
 
   /// Seçili ilçenin hava özeti — district-summary listesinden eşleştirme.
-  /// Önce normalize edilmiş ilçe adıyla eşleştirir (location_code opsiyonel).
+  /// GeoJSON "Zonguldak Merkez" formatında gelir; API "Merkez" döndürür.
+  /// Boşluk/tire farkları ve "Merkez" kısa adıyla da eşleştirme yapılır.
+
+  // Bölünmüş Merkez ilçeleri → "Merkez" verisi ile eşleştirilir
+  static const _merkezSplitDistricts = <String>{
+    'muratpasa', 'kepez', 'konyaalti', 'dosemealti', 'aksu', // antalya
+    'efeler', // aydin
+    'karesi', 'altieylul', // balikesir
+    'merkezefendi', 'pamukkale', // denizli
+    'sur', 'baglar', 'kayapinar', 'yenisehir', // diyarbakir
+    'yakutiye', 'aziziye', 'palandoken', // erzurum
+    'odunpazari', 'tepebasi', // eskisehir
+    'antakya', 'defne', // hatay
+    'izmit', 'basiskele', 'kartepe', // kocaeli
+    'battalgazi', 'yesilyurt', // malatya
+    'sehzadeler', 'yunus emre', // manisa
+    'artuklu', 'kiziltepe', // mardin
+    'akdeniz', 'mezitli', 'toroslar', // mersin
+    'mentese', // mugla
+    'altinordu', 'catalpinar', // ordu
+    'adapazari', 'serdivan', 'erenler', 'arifiye', // sakarya
+    'ilkadim', 'atakum', 'canik', 'tekkekoy', // samsun
+    'haliliye', 'eyyubiye', 'karakopru', // sanliurfa
+    'suleymanpasa', 'kapakli', 'ergene', // tekirdag
+    'ortahisar', // trabzon
+    'ipekyolu', 'tusba', 'edremit', // van
+  };
+
   DistrictSummary? get selectedDistrictSummary {
     if (_selectedDistrictName == null || _districtSummaries.isEmpty) return null;
     final nameNorm = _normalizeProvinceName(_selectedDistrictName!);
-    try {
-      return _districtSummaries.firstWhere(
-        (d) => _normalizeProvinceName(d.districtName) == nameNorm,
-      );
-    } catch (_) {
-      return null;
+    // Boşluk-insensitive versiyonu (Yunus Emre ↔ Yunusemre)
+    final nameCompact = nameNorm.replaceAll(' ', '');
+
+    // 1. Tam eşleşme
+    for (final d in _districtSummaries) {
+      final dn = _normalizeProvinceName(d.districtName);
+      if (dn == nameNorm || dn.replaceAll(' ', '') == nameCompact) return d;
     }
+
+    // 2. "X Merkez" formatı → API'de "Merkez" olarak döner
+    if (_selectedDistrictName!.endsWith(' Merkez')) {
+      for (final d in _districtSummaries) {
+        if (_normalizeProvinceName(d.districtName) == 'merkez') return d;
+      }
+    }
+
+    // 3. Bölünmüş Merkez ilçeleri → API'deki "Merkez" verisini kullan
+    if (_merkezSplitDistricts.contains(nameNorm) ||
+        _merkezSplitDistricts.contains(nameCompact)) {
+      for (final d in _districtSummaries) {
+        if (_normalizeProvinceName(d.districtName) == 'merkez') return d;
+      }
+    }
+
+    return null;
   }
 
   String? get selectedProvinceCode => _selectedProvinceCode;
@@ -393,6 +447,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         'selectionLevel': _selectionLevel,
         'provinceModeActive': _isProvinceModeActive,
         'turbines': _show3DTurbines,
+        'choroplethMode': choroplethMode,
+        'animationMode': _isAnimationMode,
+        'recommendationsOpen': _isRecommendationsPanelOpen,
       };
       // Türkiye'ye özgü özellikleri kapat
       _mlHeatmapMode = MlHeatmapMode.none;
@@ -403,6 +460,13 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       _show3DTurbines = false;
       _selectionLevel = SelectionLevel.none;
       _isProvinceModeActive = false;
+      if (choroplethMode != ChoroplethMode.none) {
+        setChoroplethMode(ChoroplethMode.none);
+      }
+      if (_isAnimationMode) toggleAnimationMode();
+      if (_isRecommendationsPanelOpen) {
+        _isRecommendationsPanelOpen = false;
+      }
       _showGlobe = true;
     } else {
       // Globe kapatılıyor → önceki durumu geri yükle
@@ -417,6 +481,19 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         _show3DTurbines = s['turbines'] as bool? ?? false;
         _selectionLevel = s['selectionLevel'] as SelectionLevel? ?? SelectionLevel.none;
         _isProvinceModeActive = s['provinceModeActive'] as bool? ?? false;
+        // Choropleth geri yükle
+        final savedChoro = s['choroplethMode'] as ChoroplethMode?;
+        if (savedChoro != null && savedChoro != ChoroplethMode.none) {
+          setChoroplethMode(savedChoro);
+        }
+        // Animasyon geri yükle
+        if (s['animationMode'] == true && !_isAnimationMode) {
+          toggleAnimationMode();
+        }
+        // Öneriler panelini geri yükle
+        if (s['recommendationsOpen'] == true) {
+          _isRecommendationsPanelOpen = true;
+        }
         _preGlobeState = null;
       }
     }
@@ -498,26 +575,47 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   /// Seçim modunu kapat.
   void closeSelectionMode() {
-    _isProvinceModeActive = false;
-    _selectionLevel       = SelectionLevel.none;
-    _selectedRegionName   = null;
-    _selectedProvinceName = null;
-    _selectedDistrictName = null;
+    _isProvinceModeActive  = false;
+    _selectionLevel        = SelectionLevel.none;
+    _initialSelectionMode  = SelectionLevel.none;
+    _selectedRegionName    = null;
+    _selectedProvinceName  = null;
+    _selectedDistrictName  = null;
     safeNotify();
   }
 
-  /// İl modunu aç/kapat. Tüm 81 ili doğrudan gösterir; bölge filtresi isteğe bağlıdır.
+  /// Bölge modunu aç/kapat. 7 bölgeyi doğrudan gösterir.
+  void openRegionMode() {
+    if (isRegionsModeActive) {
+      closeSelectionMode();
+      return;
+    }
+    _isProvinceModeActive  = true;
+    _selectionLevel        = SelectionLevel.region;
+    _initialSelectionMode  = SelectionLevel.region;
+    _selectedRegionName    = null;
+    _selectedProvinceName  = null;
+    _selectedDistrictName  = null;
+    _districtSummaries     = [];
+    safeNotify();
+    if (_regionSummaries.isEmpty) loadRegionSummaries();
+  }
+
+  /// İl modunu aç/kapat. Tüm 81 ili doğrudan gösterir.
+  /// İle tıklayınca il bilgisi gösterilir ama harita il seviyesinde kalır →
+  /// kullanıcı başka illere de tıklayabilir.
   void openProvincesMode() {
     if (_isProvinceModeActive && _selectionLevel == SelectionLevel.province) {
       closeSelectionMode();
       return;
     }
-    _isProvinceModeActive = true;
-    _selectionLevel       = SelectionLevel.province;
-    _selectedRegionName   = null;
-    _selectedProvinceName = null;
-    _selectedDistrictName = null;
-    _districtSummaries    = [];
+    _isProvinceModeActive  = true;
+    _selectionLevel        = SelectionLevel.province;
+    _initialSelectionMode  = SelectionLevel.province;
+    _selectedRegionName    = null;
+    _selectedProvinceName  = null;
+    _selectedDistrictName  = null;
+    _districtSummaries     = [];
     safeNotify();
     if (_provinceSummaries.isEmpty) loadProvinceSummaries();
     if (_regionSummaries.isEmpty) loadRegionSummaries();
@@ -529,12 +627,13 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       closeSelectionMode();
       return;
     }
-    _isProvinceModeActive = true;
-    _selectionLevel       = SelectionLevel.district;
-    _selectedRegionName   = null;
-    _selectedProvinceName = null;
-    _selectedDistrictName = null;
-    _districtSummaries    = [];
+    _isProvinceModeActive  = true;
+    _selectionLevel        = SelectionLevel.district;
+    _initialSelectionMode  = SelectionLevel.district;
+    _selectedRegionName    = null;
+    _selectedProvinceName  = null;
+    _selectedDistrictName  = null;
+    _districtSummaries     = [];
     safeNotify();
     if (_provinceSummaries.isEmpty) loadProvinceSummaries();
     if (_regionSummaries.isEmpty) loadRegionSummaries();
@@ -553,14 +652,16 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   }
 
   /// İl seçildi → ilçe seviyesine geç. İlçe verisini arka planda yükle.
+  /// Her 3 modda da (Bölge/İl/İlçe) il seçilince ilçeleri gösterir.
+  /// `_initialSelectionMode` korunur — geri dönüşte hangi moda döneceğini bilir.
   void selectProvince(String provinceName) {
     _selectedProvinceName = provinceName;
-    _selectedProvinceCode = null; // il adıyla seçimde kodu sıfırla
+    _selectedProvinceCode = null;
     _selectedDistrictName = null;
-    _districtSummaries    = [];   // önceki ilin ilçelerini temizle
+    _districtSummaries    = [];
     _selectionLevel       = SelectionLevel.district;
     safeNotify();
-    loadDistrictSummaries(provinceName); // arka planda yükle
+    loadDistrictSummaries(provinceName);
   }
 
   /// İlçe seçildi.
@@ -587,13 +688,15 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     safeNotify();
   }
 
-  /// İl seçimini temizle → il listesine geri dön (bölge filtresi korunur).
+  /// İl seçimini temizle → başlangıç moduna göre doğru seviyeye geri dön.
   void clearSelectedProvince() {
     _selectedProvinceName = null;
     _selectedProvinceCode = null;
     _selectedDistrictName = null;
     _districtSummaries    = [];
-    _selectionLevel       = SelectionLevel.province;
+    // İl veya İlçe modunda → province seviyesine dön (tüm iller görünür)
+    // Bölge modunda → province seviyesine dön (bölge filtresi korunur)
+    _selectionLevel = SelectionLevel.province;
     safeNotify();
   }
 
@@ -610,16 +713,19 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   /// Bölge seçimini temizle → il listesine geri dön (geriye dönük uyumluluk).
   void clearSelectedRegion() => clearRegionFilter();
 
-  /// Tüm seçimi temizle → il listesine sıfırla.
+  /// Tüm seçimi temizle → başlangıç moduna geri dön.
   void clearAllSelection() {
     _selectedRegionName   = null;
     _selectedProvinceName = null;
     _selectedProvinceCode = null;
     _selectedDistrictName = null;
     _districtSummaries    = [];
-    _selectionLevel = _isProvinceModeActive
-        ? SelectionLevel.province
-        : SelectionLevel.none;
+    // Başlangıç moduna geri dön
+    if (_isProvinceModeActive) {
+      _selectionLevel = _initialSelectionMode;
+    } else {
+      _selectionLevel = SelectionLevel.none;
+    }
     safeNotify();
   }
 
@@ -705,11 +811,46 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     await _loadWeatherSummarySafe();
   }
 
+  /// Tüm hava durumu verilerini sıfırdan yükler.
+  /// "Verileri Güncelle" butonu bu metodu çağırır.
+  bool _isRefreshing = false;
+  bool get isRefreshing => _isRefreshing;
+
+  Future<void> refreshAllWeatherData() async {
+    if (_isRefreshing) return;
+    _isRefreshing = true;
+    safeNotify();
+    try {
+      // 1) Backend cache'ini atla — frontend cache'i temizle
+      _apiService.weather.invalidateCache();
+
+      // 2) Özet verileri yeniden yükle
+      await _loadWeatherSummarySafe();
+
+      // 3) Aktif choropleth varsa yeniden yükle
+      await forceRefreshChoropleth();
+
+      // 4) Aktif heatmap varsa yeniden yükle
+      if (currentLayer != MapLayerType.none) {
+        await fetchHeatmapDataForLayer(currentLayer, forceRefresh: true);
+      }
+    } catch (e) {
+      debugPrint('[MapVM] refreshAllWeatherData error: $e');
+    } finally {
+      _isRefreshing = false;
+      safeNotify();
+    }
+  }
+
   void _handleAuthChange() {
     if (_authViewModel.isLoggedIn == true) {
       unawaited(fetchPins());
     } else if (_authViewModel.isLoggedIn == false) {
+      // Logout: tüm kullanıcıya ait verileri temizle
       _pins = [];
+      _pinCityNames.clear();
+      _equipments = [];
+      _equipmentsLastFetch = null;
       notifyListeners();
     }
   }
@@ -717,12 +858,21 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   Future<void> loadEquipments({String? type, bool forceRefresh = false}) async {
     if (_equipmentsLoading) return;
 
-    if (!forceRefresh && _equipments.isNotEmpty && type == null) return;
+    // If we have cached equipment, skip re-fetch unless forceRefresh AND stale (>5 min)
+    if (_equipments.isNotEmpty) {
+      if (!forceRefresh) return;
+      if (_equipmentsLastFetch != null &&
+          DateTime.now().difference(_equipmentsLastFetch!).inMinutes < 5) {
+        return;
+      }
+    }
 
     _equipmentsLoading = true;
     notifyListeners();
     try {
-      _equipments = await _apiService.equipment.fetchEquipments(type: type);
+      // Always fetch all equipment (no type filter); client-side filtering handles the rest
+      _equipments = await _apiService.equipment.fetchEquipments();
+      _equipmentsLastFetch = DateTime.now();
     } catch (e) {
       debugPrint('[MapViewModel.loadEquipments] Hata: $e');
     } finally {
@@ -884,8 +1034,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       _pins = await _apiService.resource.fetchPins();
       // 1. Önce SharedPreferences'tan anlık yükle (API çağrısı yok)
       await _loadCityNamesFromCache();
-      // 2. Sonra eksik olanları arka planda API'den çek
-      _fetchMissingCityNames();
+      // 2. Sonra eksik olanları API'den çek (await ile isim boş kalmasını önle)
+      await _fetchMissingCityNames();
     } catch (e) {
       debugPrint('[MapViewModel] Pin yüklenirken hata: $e');
     } finally {
@@ -920,11 +1070,13 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   @override
   void dispose() {
     _disposed = true;
+    _animTimer?.cancel();
+    _animTimer = null;
     _authViewModel.removeListener(_handleAuthChange);
     super.dispose();
   }
 
-  void _fetchMissingCityNames() {
+  Future<void> _fetchMissingCityNames() async {
     if (_cityFetchRunning) return;
     // DB'de kayıtlı konum bilgisi olan pinleri atla — sadece eksik olanları çek
     final missing = _pins.where((p) {
@@ -938,7 +1090,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     }).toList();
     if (missing.isEmpty) return;
     _cityFetchRunning = true;
-    _fetchCityNamesSequential(missing);
+    await _fetchCityNamesSequential(missing);
   }
 
   Future<void> _fetchCityNamesSequential(List<dynamic> pins) async {
@@ -1117,15 +1269,15 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         truncatedTime,
       );
 
-      // EĞER HARİTA KATMANI AÇIKSA, ONU DA GÜNCELLE
+      // EĞER HARİTA KATMANI AÇIKSA, ONU DA GÜNCELLE — await ile tamamlanmasını bekle
       if (currentLayer != MapLayerType.none) {
-        unawaited(fetchHeatmapDataForLayer(currentLayer));
+        await fetchHeatmapDataForLayer(currentLayer);
       }
     } catch (e) {
       debugPrint('Hava durumu yüklenirken hata: $e');
       _weatherData = [];
     }
-    notifyListeners();
+    safeNotify();
   }
 
   /// Belirli bir şehir için 7 günlük saatlik verileri yükle
@@ -1404,16 +1556,21 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   String _animMetric      = 'wind';       // wind | temperature | radiation
   String _animInterval    = 'daily';      // daily | hourly
   double _animSpeedFps    = 5.0;
-  DateTime _animStartDate = DateTime(2024, 1, 1);
-  DateTime _animEndDate   = DateTime(2024, 12, 31);
+  // Varsayılan: son 1 ay (bugünden geriye)
+  DateTime _animStartDate = DateTime.now().subtract(const Duration(days: 30));
+  DateTime _animEndDate   = DateTime.now();
   String? _animError;
   String _animRangeInfo   = '';  // "Günlük: 2015–2024 · Saatlik: 2024–2025" gibi
 
   // Standard harita için frame verisi + timer
-  List<dynamic>? _animFrames;       // frames[i] = {"ts": "...", "pts": [[lat,lon,val], ...]}
+  List<dynamic>? _animFrames;       // frames[i] = {"ts": "...", "pts": [[lat,lon,val,city], ...]}
   double _animMetricMin = 0.0;
   double _animMetricMax = 1.0;
   Timer? _animTimer;
+
+  // İl bazlı polygon animasyon state'i — her frame için il→değer haritası
+  Map<String, double>? _animProvinceValues; // city_name → raw metric value
+  int _animProvinceFrameIdx = -1;           // son render edilen frame
 
   bool   get isAnimationMode        => _isAnimationMode;
   bool   get animIsPlaying          => _animIsPlaying;
@@ -1428,11 +1585,14 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   DateTime get animEndDate          => _animEndDate;
   String? get animError             => _animError;
   String get animRangeInfo          => _animRangeInfo;
+  Map<String, double>? get animProvinceValues => _animProvinceValues;
+  double get animMetricMin          => _animMetricMin;
+  double get animMetricMax          => _animMetricMax;
 
   /// Animasyon modunu aç/kapat.
   void toggleAnimationMode() {
     if (_isAnimationMode) {
-      // Kapat: animasyonu durdur, heatmap'i sıfırla
+      // Kapat: animasyonu durdur, polygon verilerini sıfırla
       _animTimer?.cancel();
       _animTimer = null;
       _jsAnimStop();
@@ -1443,6 +1603,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       _animCurrentTimestamp = '';
       _animError        = null;
       _animFrames       = null;
+      _animProvinceValues = null;
+      _animProvinceFrameIdx = -1;
     } else {
       _isAnimationMode = true;
       // Açılışta mevcut veri aralığını arka planda çek
@@ -1526,7 +1688,15 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       }
     } catch (e) {
       // processResponse zaten FastAPI detail mesajını Exception içine koyuyor
-      _animError = e.toString().replaceFirst('Exception: ', '');
+      final raw = e.toString().replaceFirst('Exception: ', '');
+      // Kullanıcıya ham hata yerine okunabilir mesaj göster
+      if (raw.contains('ClientFailed') || raw.contains('SocketException') || raw.contains('Connection')) {
+        _animError = 'Sunucuya bağlanılamadı. Lütfen backend\'in çalıştığından emin olun.';
+      } else if (raw.contains('404') || raw.contains('bulunamadı')) {
+        _animError = 'Seçilen tarih aralığında veri bulunamadı.';
+      } else {
+        _animError = 'Veri yüklenirken hata oluştu. Farklı bir tarih aralığı deneyin.';
+      }
       debugPrint('[MapViewModel.loadAnimationData] $e');
     } finally {
       _animIsLoading = false;
@@ -1534,11 +1704,30 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     }
   }
 
-  /// Standard harita: belirtilen frame'i FlutterMap heatmap'e yazar.
+  /// Belirtilen frame'i il polygon'larına yazar.
+  /// Backend artık her noktada [lat, lon, val, city_name] döndürür.
   void _renderStandardMapFrame(int frame) {
     if (_animFrames == null || frame < 0 || frame >= _animFrames!.length) return;
+    if (frame == _animProvinceFrameIdx) return; // Aynı frame tekrar render edilmesin
+    _animProvinceFrameIdx = frame;
+
     final frameData = _animFrames![frame] as Map;
     final pts = frameData['pts'] as List? ?? [];
+
+    // İl bazlı değer haritası oluştur
+    final provinceValues = <String, double>{};
+    for (final pt in pts) {
+      if (pt is! List || pt.length < 3) continue;
+      final val = (pt[2] as num).toDouble();
+      // Backend city_name gönderiyorsa (4. eleman) onu kullan
+      final city = pt.length > 3 ? pt[3].toString() : '';
+      if (city.isNotEmpty) {
+        provinceValues[city] = val;
+      }
+    }
+    _animProvinceValues = provinceValues;
+
+    // Eski heatmap tabanlı render'ı da koru (web JS hâlâ kullanabilir)
     final layerType = _animMetric == 'wind'
         ? MapLayerType.wind
         : _animMetric == 'temperature'
@@ -1637,9 +1826,12 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   }
 
   /// JS animasyon callback'inden çağrılır — frame index + timestamp günceller.
+  /// Aynı zamanda il polygon'larını günceller.
   void onAnimFrameChanged(int index, String ts) {
     _animCurrentFrame     = index;
     _animCurrentTimestamp = ts;
+    // Il polygon'larını da güncelle
+    _renderStandardMapFrame(index);
     safeNotify();
   }
 

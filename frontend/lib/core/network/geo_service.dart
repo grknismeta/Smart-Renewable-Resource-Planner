@@ -43,10 +43,6 @@ class GeoService extends BaseService {
       }
 
       // Geo motoru kapalı (404) veya erişilemiyor → her konum serbest
-      debugPrint(
-        '[GeoService] Geo endpoint yanıt vermedi (${response.statusCode}) - '
-        'kurulum serbest bırakıldı.',
-      );
       return {'suitable': true, 'geo_disabled': true};
     } catch (e) {
       // Ağ hatası, timeout vs. → engellemeden devam et

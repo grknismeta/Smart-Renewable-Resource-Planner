@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SRRP v2.0 — Gelistirme Yol Haritasi</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #00e5ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --orange: #db6d28;
+    --purple: #bc8cff;
+    --blue: #58a6ff;
+    --pink: #f778ba;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 0;
+  }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, #0d1117 0%, #1a1f35 40%, #0d2137 100%);
+    padding: 60px 40px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle at 60% 40%, rgba(0,229,255,0.06) 0%, transparent 50%),
+                radial-gradient(circle at 30% 70%, rgba(63,185,80,0.04) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-size: 2.4em;
+    font-weight: 700;
+    letter-spacing: -1px;
+    background: linear-gradient(90deg, var(--accent), var(--green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    position: relative;
+  }
+  .hero .subtitle {
+    color: var(--text-dim);
+    font-size: 1.1em;
+    margin-top: 8px;
+  }
+  .hero .meta {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+  .hero .meta span {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 0.85em;
+    color: var(--text-dim);
+  }
+  .hero .meta span strong { color: var(--accent); }
+
+  /* Content */
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 24px;
+  }
+
+  /* Current Status */
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin: 24px 0;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    transition: transform 0.2s, border-color 0.2s;
+  }
+  .stat-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .stat-card .value { font-size: 1.8em; font-weight: 700; color: var(--accent); }
+  .stat-card .label { font-size: 0.85em; color: var(--text-dim); margin-top: 4px; }
+
+  /* Phase sections */
+  .phase {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    margin: 32px 0;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+  .phase:hover { border-color: var(--accent); }
+  .phase-header {
+    padding: 24px 28px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+  }
+  .phase-header:hover { background: var(--surface2); }
+  .phase-header h2 {
+    font-size: 1.3em;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .phase-header .badge {
+    font-size: 0.65em;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+  .badge-critical { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
+  .badge-active { background: rgba(0,229,255,0.1); color: var(--accent); border: 1px solid rgba(0,229,255,0.3); }
+  .badge-planned { background: rgba(210,153,34,0.1); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3); }
+  .badge-future { background: rgba(139,148,158,0.1); color: var(--text-dim); border: 1px solid var(--border); }
+
+  .phase-arrow {
+    font-size: 1.2em;
+    color: var(--text-dim);
+    transition: transform 0.3s;
+  }
+  .phase.open .phase-arrow { transform: rotate(180deg); }
+
+  .phase-body {
+    padding: 0 28px 28px;
+    display: none;
+    border-top: 1px solid var(--border);
+    padding-top: 20px;
+  }
+  .phase.open .phase-body { display: block; }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.9em;
+  }
+  th {
+    background: var(--surface2);
+    color: var(--accent);
+    text-align: left;
+    padding: 10px 14px;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    color: var(--text);
+  }
+  tr:hover td { background: rgba(0,229,255,0.03); }
+
+  /* Task lists */
+  .task-list { list-style: none; margin: 12px 0; }
+  .task-list li {
+    padding: 10px 16px;
+    border-left: 3px solid var(--border);
+    margin: 8px 0;
+    background: var(--surface2);
+    border-radius: 0 8px 8px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .task-list li.done { border-left-color: var(--green); opacity: 0.7; }
+  .task-list li.active { border-left-color: var(--accent); }
+  .task-list li.pending { border-left-color: var(--yellow); }
+  .task-list li.blocked { border-left-color: var(--red); }
+  .task-icon { font-size: 1.1em; flex-shrink: 0; margin-top: 1px; }
+  .task-text strong { color: var(--text); }
+  .task-text span { color: var(--text-dim); font-size: 0.9em; }
+
+  /* Code blocks */
+  .code-block {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.85em;
+    overflow-x: auto;
+    margin: 16px 0;
+    white-space: pre;
+    line-height: 1.5;
+    color: var(--text-dim);
+  }
+
+  /* Architecture diagram */
+  .arch-diagram {
+    background: linear-gradient(180deg, var(--surface2) 0%, var(--surface) 100%);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 20px 0;
+    text-align: center;
+  }
+  .arch-row {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin: 12px 0;
+    flex-wrap: wrap;
+  }
+  .arch-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 20px;
+    min-width: 140px;
+    font-size: 0.85em;
+    transition: all 0.2s;
+  }
+  .arch-box:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .arch-box.highlight { border-color: var(--accent); box-shadow: 0 0 15px rgba(0,229,255,0.1); }
+  .arch-box .box-title { font-weight: 600; color: var(--accent); font-size: 0.9em; }
+  .arch-box .box-detail { color: var(--text-dim); font-size: 0.8em; margin-top: 4px; }
+  .arch-connector {
+    color: var(--text-dim);
+    font-size: 1.5em;
+    margin: 4px 0;
+  }
+
+  /* AI Integration */
+  .ai-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .ai-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.2s;
+  }
+  .ai-card:hover { border-color: var(--purple); box-shadow: 0 0 20px rgba(188,140,255,0.08); }
+  .ai-card h4 { color: var(--purple); margin-bottom: 8px; font-size: 1em; }
+  .ai-card p { color: var(--text-dim); font-size: 0.85em; }
+  .ai-card .ai-phase { font-size: 0.75em; color: var(--text-dim); margin-top: 10px; }
+
+  /* Timeline */
+  .timeline {
+    position: relative;
+    margin: 30px 0;
+    padding-left: 40px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, var(--accent), var(--green), var(--yellow), var(--purple), var(--red));
+  }
+  .timeline-item {
+    position: relative;
+    margin: 20px 0;
+    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -32px;
+    top: 22px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    background: var(--bg);
+  }
+  .timeline-item.done::before { background: var(--green); border-color: var(--green); }
+  .timeline-item.active::before { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .timeline-item h4 { color: var(--text); font-size: 1em; }
+  .timeline-item .tl-desc { color: var(--text-dim); font-size: 0.85em; margin-top: 4px; }
+  .timeline-item .tl-time { font-size: 0.75em; color: var(--accent); margin-top: 8px; }
+
+  /* Warning box */
+  .warning-box {
+    background: rgba(248,81,73,0.06);
+    border: 1px solid rgba(248,81,73,0.2);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 24px 0;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .warning-box .warn-icon { font-size: 1.5em; flex-shrink: 0; }
+  .warning-box .warn-text h4 { color: var(--red); font-size: 1em; margin-bottom: 4px; }
+  .warning-box .warn-text p { color: var(--text-dim); font-size: 0.9em; }
+
+  /* Data table */
+  .data-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 20px 0;
+  }
+  @media (max-width: 768px) {
+    .data-summary { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 1.6em; }
+    .hero .meta { gap: 10px; }
+    .phase-header h2 { font-size: 1.1em; }
+  }
+  .data-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .data-box h4 { color: var(--green); margin-bottom: 12px; font-size: 0.95em; }
+
+  h3 {
+    color: var(--accent);
+    font-size: 1.05em;
+    margin: 24px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(0,229,255,0.15);
+  }
+  p { margin: 8px 0; color: var(--text-dim); font-size: 0.92em; }
+  strong { color: var(--text); }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-dim);
+    font-size: 0.8em;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <h1>SRRP v2.0 Gelistirme Yol Haritasi</h1>
+  <p class="subtitle">Smart Renewable Resource Planner — Akademik MVP'den Ticari Urune</p>
+  <div class="meta">
+    <span><strong>Tarih:</strong> 1 Nisan 2026</span>
+    <span><strong>Durum:</strong> Aktif Gelistirme</span>
+    <span><strong>Backend:</strong> FastAPI 2.1.0</span>
+    <span><strong>Frontend:</strong> Flutter + MapLibre</span>
+    <span><strong>DB:</strong> PostgreSQL 16 + PostGIS</span>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- Mevcut Durum -->
+<div class="status-grid">
+  <div class="stat-card"><div class="value">13</div><div class="label">Backend Router</div></div>
+  <div class="stat-card"><div class="value">11</div><div class="label">Backend Servis</div></div>
+  <div class="stat-card"><div class="value">8</div><div class="label">Frontend Modul</div></div>
+  <div class="stat-card"><div class="value">10</div><div class="label">DB Migration</div></div>
+  <div class="stat-card"><div class="value">9.5 GB</div><div class="label">Veritabani</div></div>
+  <div class="stat-card"><div class="value">~1000</div><div class="label">Ilce Verisi</div></div>
+</div>
+
+<!-- FAZ 0 -->
+<div class="phase open" id="faz0">
+  <div class="phase-header" onclick="togglePhase('faz0')">
+    <h2>Faz 0: Mevcut Hata Duzeltmeleri <span class="badge badge-critical">KRITIK</span></h2>
+    <span class="phase-arrow">&#9660;</span>
+  </div>
+  <div class="phase-body">
+    <p>Diger fazlara gecmeden once mevcut hatalarin duzeltilmesi gerekiyor.</p>
+
+    <h3>Ruzgar Parcaciklari (Canli Akis) v3</h3>
+    <ul class="task-list">
+      <li class="active"><span class="task-icon">&#9881;</span><div class="task-text"><strong>Trail engine performans testi</strong><br><span>Telefon + bilgisayar testi</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Dense veri endpoint dogrulama</strong><br><span>/wind-vectors?dense=true ~1000 nokta test</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Renk paleti ve hiz ince ayari</strong><br><span>Windy referansiyla karsilastirma</span></div></li>
+    </ul>
+
+    <h3>Veri Kalitesi</h3>
+    <ul class="task-list">
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Ilce-il eslestirme duzeltmesi</strong><br><span>Antakya&#8594;Hatay, Payas&#8594;Hatay, Andirin&#8594;K.Maras (SQL UPDATE)</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Choropleth renksiz ilce kontrolu</strong><br><span>ASCII normalize eslestirme dogrulamasi</span></div></li>
+    </ul>
+
+    <h3>UI/UX</h3>
+    <ul class="task-list">
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Sidebar mobil gorunum ince ayar</strong></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Time slider optimizasyonu</strong></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Feature interaction (choropleth + wind + globe cakisma)</strong></div></li>
+    </ul>
+
+    <h3>Bulut Ortusu (Cloud Layer) Fix</h3>
+    <ul class="task-list">
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Cloud layer opacity ayari</strong><br><span>3D terrain aktifken bulut katmaninin dogru gorunmesi</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Bulut verisi guncelleme sikligi</strong><br><span>Saatlik Open-Meteo cloud_cover ile senkron</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Toggle ile acma/kapama</strong><br><span>Layers panelindeki mevcut toggle'in dogru calismasi</span></div></li>
+    </ul>
+
+    <h3>Il Sinirlari Varsayilan Gorunurluk Fix</h3>
+    <ul class="task-list">
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Baslangicta il sinirlari gorunsun</strong><br><span>Harita yuklendiginde varsayilan acik</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Ilce sinirlari zoom seviyesine gore</strong><br><span>Zoom >8 iken otomatik gorunsun</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Sinir cizgi stili iyilestirme</strong><br><span>Daha belirgin, ince ve temiz cizgiler</span></div></li>
+    </ul>
+
+    <h3>Global Projeksiyon Tasarimi</h3>
+    <ul class="task-list">
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Globe modu state yonetimi</strong><br><span>Turkiye disina cikinca harita davranisi</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Turkiye disi pin engelleme</strong><br><span>Sadece Turkiye'ye pin koyabilsin</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Zoom-out siniri ve globe gecis animasyonu</strong><br><span>Yaklastikca projection degisimi</span></div></li>
+    </ul>
+    <p style="color:var(--yellow);font-style:italic;">Not: Tasarim Faz 0'da planlanir, uygulama Faz 1'de yapilir.</p>
+  </div>
+</div>
+
+<!-- FAZ 1 -->
+<div class="phase" id="faz1">
+  <div class="phase-header" onclick="togglePhase('faz1')">
+    <h2>Faz 1: 3D Harita ve Gorsel Iyilestirmeler <span class="badge badge-active">1-2 HAFTA</span></h2>
+    <span class="phase-arrow">&#9660;</span>
+  </div>
+  <div class="phase-body">
+    <h3>MapLibre 3D Terrain</h3>
+    <table>
+      <tr><th>Gorev</th><th>Dosya</th><th>Detay</th></tr>
+      <tr><td>Terrain source ekleme</td><td>index.html</td><td>raster-dem source (AWS/MapTiler CDN)</td></tr>
+      <tr><td>setTerrain() cagrisi</td><td>index.html</td><td>exaggeration: 1.5 (ayarlanabilir)</td></tr>
+      <tr><td>Sky/atmosfer layer</td><td>index.html</td><td>Google Earth tarzinda gokyuzu</td></tr>
+      <tr><td>DEM toggle entegrasyonu</td><td>layers_panel.dart</td><td>Mevcut toggle&#8594;terrain baglantisi</td></tr>
+      <tr><td>Exaggeration slider</td><td>layers_panel.dart</td><td>Yukseklik abartma kontrolu</td></tr>
+    </table>
+
+    <h3>Temizlik</h3>
+    <table>
+      <tr><th>Silinecek</th><th>Boyut</th><th>Sebep</th></tr>
+      <tr><td>backend/data/dem/*.tif</td><td>785 MB</td><td>Terrain CDN + Elevation API yeterli</td></tr>
+      <tr><td>backend/data/vector/gis_osm_buildings_*</td><td>1.7 GB</td><td>3D buildings CDN'den</td></tr>
+      <tr><td>backend/data/vector/gis_osm_roads_*</td><td>1.1 GB</td><td>Base layer CDN'den</td></tr>
+      <tr><td>backend/tamdb/</td><td>1.7 GB</td><td>Eski SQLite yedekleri</td></tr>
+      <tr><td><strong>TOPLAM TASARRUF</strong></td><td><strong>5.3 GB</strong></td><td></td></tr>
+    </table>
+
+    <p><strong>Performans:</strong> 3D terrain tamamen client-side. CDN'den tile gelir, kullanicinin GPU'su render eder. Sunucuya ek yuk: <strong>SIFIR</strong>.</p>
+  </div>
+</div>
+
+<!-- FAZ 2 -->
+<div class="phase" id="faz2">
+  <div class="phase-header" onclick="togglePhase('faz2')">
+    <h2>Faz 2: Kisitlama Sistemi (Kirmizi Bolgeler) <span class="badge badge-planned">2-3 HAFTA</span></h2>
+    <span class="phase-arrow">&#9660;</span>
+  </div>
+  <div class="phase-body">
+    <h3>PostGIS Kisitlama Tablolari</h3>
+    <table>
+      <tr><th>Tablo</th><th>Geometri</th><th>Kaynak</th><th>Boyut</th></tr>
+      <tr><td>restricted_water</td><td>Polygon</td><td>OSM water</td><td>~55 MB</td></tr>
+      <tr><td>restricted_roads</td><td>LineString</td><td>OSM roads (filtreli)</td><td>~200 MB</td></tr>
+      <tr><td>restricted_parks</td><td>Polygon</td><td>IUCN / Tabiat Varliklari</td><td>~10 MB</td></tr>
+      <tr><td>restricted_military</td><td>Polygon</td><td>Kamu verisi</td><td>~2 MB</td></tr>
+      <tr><td>urban_centers</td><td>Polygon</td><td>OSM admin</td><td>~50 MB</td></tr>
+      <tr><td>power_substations</td><td>Point</td><td>OSM power</td><td>~5 MB</td></tr>
+      <tr><td>power_lines</td><td>LineString</td><td>OSM power</td><td>~30 MB</td></tr>
+    </table>
+
+    <h3>Pin Validation API</h3>
+    <div class="code-block">POST /pins/validate
+Body: { "lat": 37.5, "lon": 32.1, "type": "solar" }
+
+Response:
+{
+  "suitable": true,
+  "score": 78,
+  "blockers": [],
+  "warnings": [
+    { "type": "slope", "severity": "medium",
+      "message": "Egim %22 — kurulum maliyeti artabilir" }
+  ],
+  "details": {
+    "elevation": 1250, "slope": 22,
+    "nearest_road_m": 450, "nearest_water_m": 3200,
+    "nearest_substation_km": 12.5, "land_use": "tarimsal"
+  }
+}</div>
+
+    <h3>Harita Gorsellestirme</h3>
+    <ul class="task-list">
+      <li class="pending"><span class="task-icon">&#128308;</span><div class="task-text"><strong>Kirmizi: Yasak bolgeler</strong><br><span>Gol, deniz, askeri, milli park — saydam kirmizi katman</span></div></li>
+      <li class="pending"><span class="task-icon">&#128992;</span><div class="task-text"><strong>Sari: Uyari bolgeleri</strong><br><span>Dik egim, koruma alani yakini</span></div></li>
+      <li class="pending"><span class="task-icon">&#128994;</span><div class="task-text"><strong>Yesil: Uygun bolgeler</strong><br><span>Faz 3'te hesaplanacak skor bazli</span></div></li>
+    </ul>
+  </div>
+</div>
+
+<!-- FAZ 3 -->
+<div class="phase" id="faz3">
+  <div class="phase-header" onclick="togglePhase('faz3')">
+    <h2>Faz 3: Uygunluk Skoru Motoru (Yesil Bolgeler) <span class="badge badge-planned">3-4 HAFTA</span></h2>
+    <span class="phase-arrow">&#9660;</span>
+  </div>
+  <div class="phase-body">
+    <h3>Katmanli Mimari</h3>
+    <div class="arch-diagram">
+      <div class="arch-box highlight" style="max-width:500px;margin:0 auto;">
+        <div class="box-title">KATMAN 4: TERCIH AGI</div>
+        <div class="box-detail">Tum katmanlarin birlesik optimal siralamasi</div>
+      </div>
+      <div class="arch-connector">&#9650;</div>
+      <div class="arch-box" style="max-width:500px;margin:0 auto;">
+        <div class="box-title">KATMAN 3: FINANSAL KATMAN</div>
+        <div class="box-detail">LCOE, ROI, NPV, YEKDEM, Karbon Kredisi</div>
+      </div>
+      <div class="arch-connector">&#9650;</div>
+      <div class="arch-box" style="max-width:500px;margin:0 auto;">
+        <div class="box-title">KATMAN 2: UYGUNLUK SKORU</div>
+        <div class="box-detail">Kaynak potansiyeli + arazi = 0-100 puan</div>
+      </div>
+      <div class="arch-connector">&#9650;</div>
+      <div class="arch-box" style="max-width:500px;margin:0 auto;border-color:var(--red);">
+        <div class="box-title" style="color:var(--red);">KATMAN 1: KISITLAMA FILTRESI</div>
+        <div class="box-detail">Yasak bolgeler (0/1) — gecemezse ust katmana cikamaz</div>
+      </div>
+    </div>
+
+    <h3>Skor Hesaplama Faktorleri</h3>
+    <div class="data-summary">
+      <div class="data-box">
+        <h4>&#9728; Gunes Paneli</h4>
+        <table>
+          <tr><td>Yillik GHI</td><td>%30</td></tr>
+          <tr><td>Sicaklik etkisi</td><td>%10</td></tr>
+          <tr><td>Egim (guney yonlu)</td><td>%10</td></tr>
+          <tr><td>Bulutluluk varyansi</td><td>%5</td></tr>
+          <tr><td>Sebeke mesafesi</td><td>%15</td></tr>
+          <tr><td>Ulasim erisimi</td><td>%10</td></tr>
+          <tr><td>Arazi duzlugu</td><td>%10</td></tr>
+          <tr><td>Arazi kullanimi</td><td>%10</td></tr>
+        </table>
+      </div>
+      <div class="data-box">
+        <h4>&#127744; Ruzgar Turbini</h4>
+        <table>
+          <tr><td>Ort. ruzgar hizi (100m)</td><td>%30</td></tr>
+          <tr><td>Ruzgar surekliligi</td><td>%15</td></tr>
+          <tr><td>Yon tutarliligi</td><td>%10</td></tr>
+          <tr><td>Mevsimsel varyans</td><td>%5</td></tr>
+          <tr><td>Sebeke mesafesi</td><td>%15</td></tr>
+          <tr><td>Egim (tepe ustu)</td><td>%10</td></tr>
+          <tr><td>Turbulans riski</td><td>%10</td></tr>
+          <tr><td>Bos alan yeterliligi</td><td>%5</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <h3>Grid Bazli Pre-Compute</h3>
+    <p>Turkiye uzerinde <strong>1km x 1km grid</strong> (~500K hucre). Haftada 1 kez cron job ile hesaplanir, <code>grid_scores</code> tablosuna yazilir, MVT tile olarak haritada gosterilir.</p>
+
+    <h3>AHP (Analytic Hierarchy Process) Sihirbazi</h3>
+    <ul class="task-list">
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Ikili karsilastirma wizard'i</strong><br><span>"Sebeke mesafesi mi onemli, ruzgar hizi mi?" — kullanici secer</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Tutarlilik kontrolu (CR &lt; 0.1)</strong><br><span>Kullanicinin cevaplari tutarsizsa uyari ver</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Otomatik agirlik hesaplama</strong><br><span>AHP matrisinden faktor agirliklarini cikart</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Profil kaydetme</strong><br><span>"Yatirimci profili", "Cevreci profil" gibi hazir setler</span></div></li>
+    </ul>
+  </div>
+</div>
+
+<!-- FAZ 4 -->
+<div class="phase" id="faz4">
+  <div class="phase-header" onclick="togglePhase('faz4')">
+    <h2>Faz 4: Finansal Katman <span class="badge badge-planned">2-3 HAFTA</span></h2>
+    <span class="phase-arrow">&#9660;</span>
+  </div>
+  <div class="phase-body">
+    <table>
+      <tr><th>Metrik</th><th>Aciklama</th><th>Durum</th></tr>
+      <tr><td>LCOE</td><td>Levelized Cost of Energy ($/kWh)</td><td style="color:var(--yellow)">Yeni</td></tr>
+      <tr><td>IRR</td><td>Internal Rate of Return</td><td style="color:var(--yellow)">Yeni</td></tr>
+      <tr><td>Karbon Kredisi</td><td>CO2 tasarrufu x Borsa fiyati</td><td style="color:var(--yellow)">Yeni</td></tr>
+      <tr><td>Sebeke Maliyeti</td><td>Trafo mesafesi x OG kablo birim fiyat</td><td style="color:var(--yellow)">Yeni</td></tr>
+      <tr><td>NPV</td><td>Net Present Value (iyilestirilecek)</td><td style="color:var(--green)">Mevcut</td></tr>
+      <tr><td>Geri Odeme</td><td>CAPEX / Yillik Net Gelir</td><td style="color:var(--green)">Mevcut</td></tr>
+      <tr><td>YEKDEM</td><td>Garanti tarifeli gelir hesabi</td><td style="color:var(--green)">Mevcut</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- FAZ 5 -->
+<div class="phase" id="faz5">
+  <div class="phase-header" onclick="togglePhase('faz5')">
+    <h2>Faz 5: Yapay Zeka ve ML <span class="badge badge-planned">4-6 HAFTA</span></h2>
+    <span class="phase-arrow">&#9660;</span>
+  </div>
+  <div class="phase-body">
+    <h3>AI Entegrasyon Noktalari</h3>
+    <div class="ai-grid">
+      <div class="ai-card">
+        <h4>&#129302; AI Chatbot</h4>
+        <p>Dogal dille soru-cevap: "Konya'da en iyi ilce neresi?", "Bu pin neden dusuk skor aldi?", "5M TL butce ile nereye kurayim?"</p>
+        <div class="ai-phase">LLM: Gemini API veya Claude API</div>
+      </div>
+      <div class="ai-card">
+        <h4>&#128200; ML Uretim Tahmini</h4>
+        <p>XGBoost/LSTM ile P50 (ortalama) ve P90 (kotu senaryo) uretim projeksiyonlari. 1+ yillik veriyle egitim.</p>
+        <div class="ai-phase">ml_projection_placeholder.dart hazir</div>
+      </div>
+      <div class="ai-card">
+        <h4>&#128161; Akilli Oneriler</h4>
+        <p>"Bu bolgeye ruzgar yerine gunes daha verimli", "Senaryonuz A, B'den %15 daha karli" gibi proaktif oneriler.</p>
+        <div class="ai-phase">Mevcut recommendations engine uzerine</div>
+      </div>
+      <div class="ai-card">
+        <h4>&#9888; Anomali Tespiti</h4>
+        <p>Veri kalitesi kontrolu: "Bu bolgenin ruzgar verisi normalden %40 sapma gosteriyor — sensor hatasi olabilir"</p>
+        <div class="ai-phase">Istatistiksel + ML hybrid</div>
+      </div>
+      <div class="ai-card">
+        <h4>&#127758; Iklim Senaryolari</h4>
+        <p>IPCC RCP 4.5/8.5 ile "2050'de bu bolgede kuraklik %20 artarsa HES uretimim ne olur?" sorusunun cevabi.</p>
+        <div class="ai-phase">Faz 7 — Ileri seviye</div>
+      </div>
+      <div class="ai-card">
+        <h4>&#128221; Rapor Yazimi</h4>
+        <p>AI destekli profesyonel fizibilite raporu metni olusturma. Finansal ozet, risk analizi, teknik degerlendirme.</p>
+        <div class="ai-phase">Faz 7 — Ileri seviye</div>
+      </div>
+      <div class="ai-card">
+        <h4>&#128295; Predictive Maintenance</h4>
+        <p>Tuzluluk, toz, nem, sicaklik bazli bakim takvimi onerisi. Panel temizleme ve turbin yaglama sikligini tahmin eder.</p>
+        <div class="ai-phase">Faz 5 — Yapay Zeka</div>
+      </div>
+      <div class="ai-card">
+        <h4>&#9878; AHP Sihirbazi</h4>
+        <p>Kullaniciya ikili karsilastirma sorulari sorar, otomatik agirlik hesaplar. "Yatirimci" ve "Cevreci" hazir profiller.</p>
+        <div class="ai-phase">Faz 3 — Uygunluk Skoru</div>
+      </div>
+      <div class="ai-card">
+        <h4>&#128225; Cati Analizi (CV)</h4>
+        <p>OpenCV ile uydu fotografindan cati siniri tespiti, alan hesabi, golge analizi ve panel yerlestirme optimizasyonu.</p>
+        <div class="ai-phase">Faz 7 — Ileri seviye</div>
+      </div>
+    </div>
+
+    <h3>Chatbot Ornek Konusmalar</h3>
+    <div class="code-block">Kullanici: "Konya'da gunes paneli icin en iyi ilce neresi?"
+
+Bot: "Konya'nin en yuksek GHI degerine sahip ilcesi Cihanbeyli
+      (5.2 kWh/m2/gun). Egim %3, sebeke mesafesi 8km.
+      Uygunluk skoru: 87/100. Pin eklemek ister misiniz?"
+
+─────────────────────────────────────────────
+
+Kullanici: "Bu pin neden dusuk skor aldi?"
+
+Bot: "Pin #42 (Artvin, Yusufeli) — Skor: 34/100
+      - Egim %45 (cok dik)
+      - Sebeke 28km uzakta
+      - GHI 3.1 kWh/m2/gun (ortalamanin altinda)
+      Ancak HES potansiyeli yuksek: debi ~12 m3/s."</div>
+
+    <h3>Predictive Maintenance (Ongorucu Bakim)</h3>
+    <ul class="task-list">
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Bolgesel cevre analizi</strong><br><span>Tuzluluk (deniz yakinligi), toz yogunlugu, nem orani</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Panel kirlilik modeli</strong><br><span>Toz + nem + sicaklik → temizleme sikligi tahmini</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Turbin asinma modeli</strong><br><span>Ruzgar hizi + turbulans + tuz → bakim takvimi</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Bakim takvimi onerisi</strong><br><span>"Bu bolgede panelleri ayda 1 temizle, turbin yaglamasi 6 ayda 1"</span></div></li>
+      <li class="pending"><span class="task-icon">&#9898;</span><div class="task-text"><strong>Maliyet etkisi</strong><br><span>Bakim ihmalinin verim dususune etkisi (%)</span></div></li>
+    </ul>
+  </div>
+</div>
+
+<!-- FAZ 6 -->
+<div class="phase" id="faz6">
+  <div class="phase-header" onclick="togglePhase('faz6')">
+    <h2>Faz 6: Sunucu Tasima (Deployment) <span class="badge badge-future">LOCAL TEST SONRASI</span></h2>
+    <span class="phase-arrow">&#9660;</span>
+  </div>
+  <div class="phase-body">
+    <div class="warning-box">
+      <div class="warn-icon">&#9888;</div>
+      <div class="warn-text">
+        <h4>ALTIN KURAL</h4>
+        <p>Bilgisayarda gorup test etmeden sunucuya yukleme! Tum ozellikler local'de tamamlanip, coklu kullanici testinden gecip, hatalar yakalanip duzeltildikten sonra sunucuya gecilecek.</p>
+      </div>
+    </div>
+
+    <h3>Deployment Mimarisi</h3>
+    <div class="arch-diagram">
+      <div class="arch-box highlight"><div class="box-title">Internet</div></div>
+      <div class="arch-connector">&#9660;</div>
+      <div class="arch-box highlight"><div class="box-title">Nginx</div><div class="box-detail">SSL + Reverse Proxy</div></div>
+      <div class="arch-connector">&#9660;</div>
+      <div class="arch-row">
+        <div class="arch-box"><div class="box-title">Flutter Web</div><div class="box-detail">Statik dosyalar</div></div>
+        <div class="arch-box"><div class="box-title">Uvicorn</div><div class="box-detail">FastAPI Backend</div></div>
+      </div>
+      <div class="arch-connector">&#9660;</div>
+      <div class="arch-row">
+        <div class="arch-box"><div class="box-title">PostgreSQL</div><div class="box-detail">+ PostGIS 3.4</div></div>
+        <div class="arch-box"><div class="box-title">Redis</div><div class="box-detail">Cache Layer</div></div>
+      </div>
+      <div class="arch-connector">&#9660;</div>
+      <div class="arch-box"><div class="box-title">Cron Jobs</div><div class="box-detail">Saatlik veri guncelleme</div></div>
+    </div>
+
+    <h3>Sunucu Secimleri</h3>
+    <table>
+      <tr><th>Secenek</th><th>Fiyat</th><th>CPU</th><th>RAM</th><th>Disk</th></tr>
+      <tr><td><strong>Hetzner CX22</strong></td><td>~$5/ay</td><td>2 vCPU</td><td>4 GB</td><td>40 GB SSD</td></tr>
+      <tr><td>Hetzner CX32</td><td>~$9/ay</td><td>4 vCPU</td><td>8 GB</td><td>80 GB SSD</td></tr>
+      <tr><td>Oracle Free</td><td>$0</td><td>4 OCPU</td><td>24 GB</td><td>200 GB</td></tr>
+    </table>
+
+    <h3>Sunucuya Gidecek Veriler</h3>
+    <table>
+      <tr><th>Bilesen</th><th>Boyut</th></tr>
+      <tr><td>PostgreSQL dump (6 ay kirpilmis)</td><td>~5.2 GB</td></tr>
+      <tr><td>GeoJSON (il/ilce sinirlari)</td><td>~38 MB</td></tr>
+      <tr><td>Flutter web build</td><td>~30 MB</td></tr>
+      <tr><td>Backend kaynak kodu</td><td>~2 MB</td></tr>
+      <tr><td><strong>TOPLAM</strong></td><td><strong>~5.3 GB</strong></td></tr>
+    </table>
+
+    <h3>Guvenlik Kontrol Listesi</h3>
+    <ul class="task-list">
+      <li class="pending"><span class="task-icon">&#128274;</span><div class="task-text"><strong>SSH key authentication</strong> — Sifre ile girisi kapat</div></li>
+      <li class="pending"><span class="task-icon">&#128274;</span><div class="task-text"><strong>UFW Firewall</strong> — Sadece 80, 443, 22</div></li>
+      <li class="pending"><span class="task-icon">&#128274;</span><div class="task-text"><strong>fail2ban</strong> — Brute-force korumasi</div></li>
+      <li class="pending"><span class="task-icon">&#128274;</span><div class="task-text"><strong>Let's Encrypt SSL</strong> — HTTPS zorunlu</div></li>
+      <li class="pending"><span class="task-icon">&#128274;</span><div class="task-text"><strong>CORS guncelleme</strong> — Domain'i origins'e ekle</div></li>
+      <li class="pending"><span class="task-icon">&#128274;</span><div class="task-text"><strong>Rate limiting</strong> — Nginx'te API limit</div></li>
+      <li class="pending"><span class="task-icon">&#128274;</span><div class="task-text"><strong>Otomatik yedekleme</strong> — Haftada 1 pg_dump</div></li>
+    </ul>
+  </div>
+</div>
+
+<!-- FAZ 7 -->
+<div class="phase" id="faz7">
+  <div class="phase-header" onclick="togglePhase('faz7')">
+    <h2>Faz 7: Ileri Seviye Ozellikler <span class="badge badge-future">UZUN VADE</span></h2>
+    <span class="phase-arrow">&#9660;</span>
+  </div>
+  <div class="phase-body">
+    <div class="ai-grid">
+      <div class="ai-card">
+        <h4>&#128196; PDF Fizibilite Raporu</h4>
+        <p>15-20 sayfa, bankaya sunulabilir kalite. Kapak, yonetici ozeti, finansal tablolar, harita gorselleri.</p>
+      </div>
+      <div class="ai-card">
+        <h4>&#128267; Enerji Depolama (ESS)</h4>
+        <p>Li-Ion/LFP boyutlandirma. Autonomy Days hesabi. Batarya kapasitesi ve maliyet.</p>
+      </div>
+      <div class="ai-card">
+        <h4>&#128200; Yuk Profili</h4>
+        <p>Ev/fabrika/tarimsal tuketim modelleri. Self-Consumption Rate. Sebekeye satis optimizasyonu.</p>
+      </div>
+      <div class="ai-card">
+        <h4>&#128747; Drone Rotasi</h4>
+        <p>Haritada poligon sec, .kml/.gpx cikti al. Arazi egimine uygun irtifa planlamasi.</p>
+      </div>
+      <div class="ai-card">
+        <h4>&#127970; EPIAS Arbitraj</h4>
+        <p>Spot piyasa fiyatlari. Ucuz saatte depola, pahali saatte sat. Gelir projeksiyonu.</p>
+      </div>
+      <div class="ai-card">
+        <h4>&#129309; Yatirimci Vitrini</h4>
+        <p>Projeleri "Yatirimci Ariyorum" etiketiyle yayinlama. Anonim/acik paylasim.</p>
+      </div>
+      <div class="ai-card">
+        <h4>&#9728; Yuzer GES (Floating Solar)</h4>
+        <p>Baraj golu yuzeyinde panel simulasyonu. Buhaslasma tasarrufu, HES+Yuzer GES hibrit senaryo, dalga/ruzgar etkisi.</p>
+      </div>
+      <div class="ai-card">
+        <h4>&#127960; Cati Analizi (Computer Vision)</h4>
+        <p>OpenCV ile uydu fotografindan cati siniri tespiti, alan hesabi, yon analizi, golge analizi, panel yerlestirme.</p>
+      </div>
+      <div class="ai-card">
+        <h4>&#127912; Design System v2.0</h4>
+        <p>Scientific Glassmorphism. Neon renk sistemi (sari=gunes, mavi=ruzgar, yesil=HES). Animasyonlu veri gecisleri. Responsive grid.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Timeline -->
+<h2 style="color:var(--accent);margin:40px 0 20px;font-size:1.4em;">Gelistirme Zaman Cizelgesi</h2>
+
+<div class="timeline">
+  <div class="timeline-item active">
+    <h4>Faz 0 — Bug Fix ve Ince Ayar</h4>
+    <div class="tl-desc">Ruzgar parcaciklari, veri kalitesi, UI, bulut ortusu, il sinirlari, global projeksiyon tasarimi</div>
+    <div class="tl-time">&#9654; SIMDI</div>
+  </div>
+  <div class="timeline-item">
+    <h4>Faz 1 — 3D Terrain + Gorsel</h4>
+    <div class="tl-desc">MapLibre setTerrain, DEM temizligi, atmosfer, global projeksiyon uygulamasi</div>
+    <div class="tl-time">1-2 Hafta</div>
+  </div>
+  <div class="timeline-item">
+    <h4>Faz 2 — Kisitlama Sistemi</h4>
+    <div class="tl-desc">PostGIS kisitlama, pin validation, kirmizi bolgeler</div>
+    <div class="tl-time">2-3 Hafta</div>
+  </div>
+  <div class="timeline-item">
+    <h4>Faz 3 — Uygunluk Skoru</h4>
+    <div class="tl-desc">Multi-criteria hesaplama, grid pre-compute, heatmap, AHP sihirbazi</div>
+    <div class="tl-time">3-4 Hafta</div>
+  </div>
+  <div class="timeline-item">
+    <h4>Faz 4 — Finansal Katman</h4>
+    <div class="tl-desc">LCOE, IRR, karbon kredisi, sebeke maliyeti</div>
+    <div class="tl-time">2-3 Hafta</div>
+  </div>
+  <div class="timeline-item">
+    <h4>Faz 5 — Yapay Zeka</h4>
+    <div class="tl-desc">AI chatbot, ML tahmin, akilli oneriler, predictive maintenance</div>
+    <div class="tl-time">4-6 Hafta</div>
+  </div>
+  <div class="timeline-item">
+    <h4>&#128736; Local Test Donemi</h4>
+    <div class="tl-desc">Coklu kullanici testi, hata yakalama, performans</div>
+    <div class="tl-time">1-2 Hafta</div>
+  </div>
+  <div class="timeline-item">
+    <h4>Faz 6 — Sunucu Tasima</h4>
+    <div class="tl-desc">VPS, Docker, SSL, monitoring</div>
+    <div class="tl-time">1 Hafta</div>
+  </div>
+  <div class="timeline-item">
+    <h4>Faz 7 — Ileri Ozellikler</h4>
+    <div class="tl-desc">PDF rapor, ESS, drone, yuzer GES, cati analizi (CV), Design System v2.0</div>
+    <div class="tl-time">Uzun Vade (3-6 Ay)</div>
+  </div>
+</div>
+
+</div><!-- container -->
+
+<div class="footer">
+  SRRP v2.0 Gelistirme Yol Haritasi &mdash; 1 Nisan 2026 &mdash; Gurkan &amp; Claude Code
+</div>
+
+<script>
+function togglePhase(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('open');
+}
+// Open all phases on load for first view
+// document.querySelectorAll('.phase').forEach(p => p.classList.add('open'));
+</script>
+</body>
+</html>

@@ -9,6 +9,7 @@ from app.schemas import schemas
 from app.db import models
 from app.services import solar_service as solar_calculations, wind_service as wind_calculations
 from app.services.hydro_service import calculate_annual_hydro_production, suggest_turbine_type, analyze_two_points
+from app.services.hourly_weather_helper import get_hourly_weather_for_pin
 from app.db.database import get_db, get_system_db, get_user_pins_db
 from app.schemas.schemas import PinCalculationResponse, SolarCalculationResponse, WindCalculationResponse, HydroCalculationResponse, PinBase, FinancialAnalysis
 
@@ -267,10 +268,17 @@ async def calculate_pin_potential(
     Veritabanına kaydetmeden anlık hesaplama yapar.
     PERFORMANS: Hesaplamalar ana thread'i tıkamaması için threadpool'da çalıştırılır.
     """
-    # 1. Hava Verilerini Çek
+    # 1. Hava Verilerini Çek — önce saatlik, bulamazsa grid fallback
+    hourly_result = await run_in_threadpool(
+        get_hourly_weather_for_pin,
+        system_db, float(pin_data.latitude), float(pin_data.longitude), 365
+    )
+    hourly_data = hourly_result.get("hours", []) if hourly_result else []
+
+    # Fallback: saatlik veri yoksa eski grid ortalaması
     weather_stats = crud.get_weather_stats(system_db, float(pin_data.latitude), float(pin_data.longitude))
     if weather_stats is None: weather_stats = {}
-    
+
     selected_equipment: Optional[models.Equipment] = None
     if pin_data.equipment_id is not None:
         selected_equipment = crud.get_equipment(system_db, pin_data.equipment_id)
@@ -279,25 +287,26 @@ async def calculate_pin_potential(
         panel_area = float(pin_data.panel_area or 10.0)
         efficiency: float = 0.20
         model_name: str = "Veri Analizli Standart Panel"
-        
+
         if selected_equipment is not None and str(selected_equipment.type) == "Solar":
             eff_val = selected_equipment.efficiency
             if eff_val is not None: efficiency = float(cast(float, eff_val))
             model_name = str(selected_equipment.name)
 
-        # ASYNC WRAPPER: Bu işlem CPU'yu yorar, arka plana atıyoruz.
+        # Saatlik veriden hesapla, yoksa fallback
         results = await run_in_threadpool(
             solar_calculations.calculate_solar_power_production,
             latitude=float(pin_data.latitude),
             longitude=float(pin_data.longitude),
             panel_area=panel_area,
             panel_efficiency=efficiency,
-            weather_stats=weather_stats
+            weather_stats=weather_stats,
+            hourly_data=hourly_data,
         )
-        
+
         if "error" in results: raise HTTPException(status_code=500, detail=results["error"])
-        
-        
+
+
         annual_kwh = float(results["predicted_annual_production_kwh"])
         solar_res = SolarCalculationResponse(
             solar_irradiance_kw_m2=float(results["daily_avg_potential_kwh_m2"]),
@@ -317,20 +326,24 @@ async def calculate_pin_potential(
         if selected_equipment is not None and str(selected_equipment.type) == "Wind":
              model_name = str(selected_equipment.name)
 
-        # ASYNC WRAPPER: Rüzgar hesabı da ağır olabilir.
+        # Saatlik veriden hesapla, yoksa fallback
         results = await run_in_threadpool(
             wind_calculations.calculate_wind_power_production,
             latitude=float(pin_data.latitude),
             longitude=float(pin_data.longitude),
-            weather_stats=weather_stats
+            weather_stats=weather_stats,
+            hourly_data=hourly_data,
         )
         
         if "error" in results: raise HTTPException(status_code=500, detail=results["error"])
         
         annual_kwh = float(results["predicted_annual_production_kwh"])
-        
-        avg_monthly = annual_kwh / 12.0
-        monthly_sim = { "Ocak": avg_monthly * 1.2, "Haziran": avg_monthly * 0.8 } # Örnek kısaltma
+
+        # Saatlik veriden gelen aylık kırılımı kullan, yoksa basit sim
+        monthly_prod = results.get("month_by_month_prediction")
+        if not monthly_prod:
+            avg_monthly = annual_kwh / 12.0
+            monthly_prod = {"Ocak": avg_monthly * 1.2, "Haziran": avg_monthly * 0.8}
 
         wind_res = WindCalculationResponse(
             wind_speed_m_s=float(results["avg_wind_speed_ms"]),
@@ -338,7 +351,7 @@ async def calculate_pin_potential(
             turbine_model=model_name,
             potential_kwh_annual=annual_kwh,
             capacity_factor=float(results.get("capacity_factor", 0.3)),
-            monthly_production=monthly_sim,
+            monthly_production=monthly_prod,
             financials=None
         )
         return PinCalculationResponse(resource_type="Rüzgar Türbini", wind_calculation=wind_res)
@@ -425,21 +438,27 @@ async def analyze_pin(
         basin_area_km2=pin_obj.basin_area_km2, # type: ignore
     )
     
-    # 3. Hesaplama yap (calculate_pin_potential mantığı)
+    # 3. Hesaplama yap — önce saatlik veri, sonra fallback
+    hourly_result = await run_in_threadpool(
+        get_hourly_weather_for_pin,
+        system_db, float(pin_data.latitude), float(pin_data.longitude), 365
+    )
+    hourly_data = hourly_result.get("hours", []) if hourly_result else []
+
     weather_stats = crud.get_weather_stats(system_db, float(pin_data.latitude), float(pin_data.longitude))
     if weather_stats is None: weather_stats = {}
-    
+
     selected_equipment: Optional[models.Equipment] = None
     if pin_data.equipment_id is not None:
         selected_equipment = crud.get_equipment(system_db, pin_data.equipment_id)
-        
+
     calculation_result = None
-    
+
     if pin_data.type == "Güneş Paneli":
         panel_area = float(pin_data.panel_area or 10.0)
         efficiency: float = 0.20
         model_name: str = "Veri Analizli Standart Panel"
-        
+
         if selected_equipment is not None and str(selected_equipment.type) == "Solar":
             eff_val = selected_equipment.efficiency
             if eff_val is not None: efficiency = float(cast(float, eff_val))
@@ -451,14 +470,15 @@ async def analyze_pin(
             longitude=float(pin_data.longitude),
             panel_area=panel_area,
             panel_efficiency=efficiency,
-            weather_stats=weather_stats
+            weather_stats=weather_stats,
+            hourly_data=hourly_data,
         )
-        
+
         if "error" in results: raise HTTPException(status_code=500, detail=results["error"])
-        
+
         annual_kwh = float(results["predicted_annual_production_kwh"])
         avg_rad = float(results["daily_avg_potential_kwh_m2"])
-        
+
         # Panel kapasitesi fizikten türetilir: kWp = alan(m²) × verim × 1kW/m²
         capacity_kw_solar = panel_area * efficiency
         financials = calculate_financials(annual_kwh, "Solar", capacity_kw_solar)
@@ -474,15 +494,15 @@ async def analyze_pin(
             monthly_production=results.get("month_by_month_prediction"),
             financials=financials
         )
-        
+
         calculation_result = schemas.PinCalculationResponse(
-            resource_type="Güneş Paneli", 
+            resource_type="Güneş Paneli",
             solar_calculation=solar_res
         ).model_dump()
-        
+
         # Pinin avg_solar_irradiance alanını güncelle (commit sonraki blokta yapılıyor)
         pin_obj.avg_solar_irradiance = avg_rad
-        
+
     elif pin_data.type == "Rüzgar Türbini":
         model_name = "Standart 3.3MW Türbin"
         if selected_equipment is not None and str(selected_equipment.type) == "Wind":
@@ -492,16 +512,20 @@ async def analyze_pin(
             wind_calculations.calculate_wind_power_production,
             latitude=float(pin_data.latitude),
             longitude=float(pin_data.longitude),
-            weather_stats=weather_stats
+            weather_stats=weather_stats,
+            hourly_data=hourly_data,
         )
         
         if "error" in results: raise HTTPException(status_code=500, detail=results["error"])
         
         annual_kwh = float(results["predicted_annual_production_kwh"])
         avg_speed = float(results["avg_wind_speed_ms"])
-        avg_monthly = annual_kwh / 12.0
-        # Basit bir aylık dağılım (Simülasyon)
-        monthly_sim = { "Ocak": avg_monthly * 1.2, "Haziran": avg_monthly * 0.8 } 
+
+        # Saatlik veriden gelen aylık kırılımı kullan
+        monthly_prod = results.get("month_by_month_prediction")
+        if not monthly_prod:
+            avg_monthly = annual_kwh / 12.0
+            monthly_prod = {"Ocak": avg_monthly * 1.2, "Haziran": avg_monthly * 0.8}
 
         # Kapasite: kullanıcının girdiği MW → kW
         capacity_kw_wind = float(pin_data.capacity_mw) * 1000.0
@@ -513,7 +537,7 @@ async def analyze_pin(
             turbine_model=model_name,
             potential_kwh_annual=annual_kwh,
             capacity_factor=float(results.get("capacity_factor", 0.3)),
-            monthly_production=monthly_sim,
+            monthly_production=monthly_prod,
             financials=financials
         )
         
@@ -622,5 +646,121 @@ async def hydro_elevation_analysis(
     
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
-    
+
     return result
+
+
+# ── Toplu Pin Re-Analiz ──────────────────────────────────────────────────────
+
+@router.post("/batch/reanalyze")
+async def batch_reanalyze_pins(
+    db: Session = Depends(get_db),
+    system_db: Session = Depends(get_system_db),
+    user_pins_db: Session = Depends(get_user_pins_db),
+    current_user: models.User = Depends(auth.get_current_active_user),
+):
+    """
+    Kullanıcının tüm pinlerini güncel saatlik verilerle yeniden analiz eder.
+    Frontend'den "Tüm Pinleri Güncelle" butonu ile tetiklenir.
+    """
+    user_id = cast(int, current_user.id)
+    pins = crud.get_pins_by_owner(db, user_id, limit=500)
+
+    if not pins:
+        return {"updated": 0, "errors": 0, "message": "Pin bulunamadı"}
+
+    updated = 0
+    errors = 0
+    details: list = []
+
+    for pin_obj in pins:
+        try:
+            lat = float(pin_obj.latitude)  # type: ignore
+            lon = float(pin_obj.longitude)  # type: ignore
+            pin_type = str(pin_obj.type)  # type: ignore
+
+            # Saatlik veri çek
+            hourly_result = await run_in_threadpool(
+                get_hourly_weather_for_pin, system_db, lat, lon, 365
+            )
+            hourly_data = hourly_result.get("hours", []) if hourly_result else []
+            weather_stats = crud.get_weather_stats(system_db, lat, lon) or {}
+
+            result_data: Optional[dict] = None
+
+            if pin_type == "Güneş Paneli":
+                panel_area = float(pin_obj.panel_area or 10.0)  # type: ignore
+                efficiency = 0.20
+                eq = crud.get_equipment(system_db, pin_obj.equipment_id) if pin_obj.equipment_id else None  # type: ignore
+                if eq and str(eq.type) == "Solar" and eq.efficiency:
+                    efficiency = float(eq.efficiency)
+
+                results = await run_in_threadpool(
+                    solar_calculations.calculate_solar_power_production,
+                    latitude=lat, longitude=lon,
+                    panel_area=panel_area, panel_efficiency=efficiency,
+                    weather_stats=weather_stats, hourly_data=hourly_data,
+                )
+                if "error" not in results:
+                    annual_kwh = float(results["predicted_annual_production_kwh"])
+                    capacity_kw = panel_area * efficiency
+                    financials = calculate_financials(annual_kwh, "Solar", capacity_kw)
+                    result_data = {
+                        "resource_type": "Güneş Paneli",
+                        "solar_calculation": {
+                            "solar_irradiance_kw_m2": results["daily_avg_potential_kwh_m2"],
+                            "potential_kwh_annual": annual_kwh,
+                            "monthly_production": results.get("month_by_month_prediction"),
+                            "financials": financials,
+                            "method": results.get("method"),
+                        },
+                    }
+                    pin_obj.avg_solar_irradiance = results["daily_avg_potential_kwh_m2"]  # type: ignore
+
+            elif pin_type == "Rüzgar Türbini":
+                results = await run_in_threadpool(
+                    wind_calculations.calculate_wind_power_production,
+                    latitude=lat, longitude=lon,
+                    weather_stats=weather_stats, hourly_data=hourly_data,
+                )
+                if "error" not in results:
+                    annual_kwh = float(results["predicted_annual_production_kwh"])
+                    capacity_kw = float(pin_obj.capacity_mw or 3.3) * 1000.0  # type: ignore
+                    financials = calculate_financials(annual_kwh, "Wind", capacity_kw)
+                    result_data = {
+                        "resource_type": "Rüzgar Türbini",
+                        "wind_calculation": {
+                            "wind_speed_m_s": results["avg_wind_speed_ms"],
+                            "potential_kwh_annual": annual_kwh,
+                            "capacity_factor": results.get("capacity_factor"),
+                            "monthly_production": results.get("month_by_month_prediction"),
+                            "financials": financials,
+                            "method": results.get("method"),
+                        },
+                    }
+                    pin_obj.avg_wind_speed = results["avg_wind_speed_ms"]  # type: ignore
+
+            # HES pinlerini atla (yağış verisi zaten uzun süreli)
+
+            if result_data:
+                crud.create_or_update_pin_analysis(user_pins_db, int(pin_obj.id), result_data)  # type: ignore
+                updated += 1
+                details.append({"pin_id": pin_obj.id, "status": "ok"})  # type: ignore
+            else:
+                details.append({"pin_id": pin_obj.id, "status": "skipped"})  # type: ignore
+
+        except Exception as e:
+            errors += 1
+            details.append({"pin_id": pin_obj.id, "status": "error", "msg": str(e)})  # type: ignore
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    return {
+        "updated": updated,
+        "errors": errors,
+        "total": len(pins),
+        "details": details,
+    }

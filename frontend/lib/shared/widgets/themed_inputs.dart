@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:frontend/core/theme/app_theme.dart';
 
 /// Tema uyumlu text field widget'ı
@@ -12,6 +13,7 @@ class ThemedTextField extends StatelessWidget {
   final void Function(String)? onChanged;
   final Widget? prefixIcon;
   final Widget? suffixIcon;
+  final List<TextInputFormatter>? inputFormatters;
 
   const ThemedTextField({
     super.key,
@@ -24,6 +26,7 @@ class ThemedTextField extends StatelessWidget {
     this.onChanged,
     this.prefixIcon,
     this.suffixIcon,
+    this.inputFormatters,
   });
 
   @override
@@ -32,6 +35,10 @@ class ThemedTextField extends StatelessWidget {
       controller: controller,
       style: TextStyle(color: theme.textColor),
       keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+      inputFormatters: inputFormatters ??
+          (isNumber
+              ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))]
+              : null),
       obscureText: obscureText,
       validator: validator,
       onChanged: onChanged,

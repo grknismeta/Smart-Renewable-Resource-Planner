@@ -132,7 +132,13 @@ class _ScenarioScreenState extends State<ScenarioScreen> {
       child: CustomAppBar(
         title: 'Senaryolar',
         textColor: theme.textColor,
-        onBack: () => Navigator.of(context).pushReplacementNamed('/map'),
+        onBack: () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          } else {
+            Navigator.of(context).pushReplacementNamed('/');
+          }
+        },
         actions: [
           Tooltip(
             message: 'Senaryo Karşılaştır',

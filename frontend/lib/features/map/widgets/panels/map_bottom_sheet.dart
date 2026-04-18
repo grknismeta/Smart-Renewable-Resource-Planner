@@ -8,10 +8,33 @@ import 'package:frontend/features/map/viewmodels/map_view_model.dart';
 import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
 
-class MapBottomSheet extends StatelessWidget {
+class MapBottomSheet extends StatefulWidget {
   final VoidCallback? onScenariosTap;
 
   const MapBottomSheet({super.key, this.onScenariosTap});
+
+  @override
+  State<MapBottomSheet> createState() => _MapBottomSheetState();
+}
+
+class _MapBottomSheetState extends State<MapBottomSheet>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _refreshSpinController;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshSpinController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _refreshSpinController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,12 +44,24 @@ class MapBottomSheet extends StatelessWidget {
     final bool isGuest = !(authViewModel.isLoggedIn ?? false);
     final mq = MediaQuery.of(context);
 
+    // Refresh animasyonu senkronize
+    if (mapViewModel.isRefreshing) {
+      _refreshSpinController.repeat();
+    } else {
+      _refreshSpinController.stop();
+      _refreshSpinController.reset();
+    }
+
+    // Mobilde biraz daha büyük başlangıç boyutu (handle görünür olsun)
+    final isMobile = mq.size.width < 600;
+    final minSize = isMobile ? 0.05 : 0.03;
+
     return DraggableScrollableSheet(
-      initialChildSize: 0.03,
-      minChildSize: 0.03,
+      initialChildSize: minSize,
+      minChildSize: minSize,
       maxChildSize: 0.6,
       snap: true,
-      snapSizes: const [0.03, 0.4, 0.6],
+      snapSizes: [minSize, 0.4, 0.6],
       builder: (context, scrollController) {
         return ScrollConfiguration(
           behavior: ScrollConfiguration.of(context).copyWith(
@@ -87,7 +122,7 @@ class MapBottomSheet extends StatelessWidget {
                                 theme: theme,
                                 isGuest: isGuest,
                                 isCollapsed: false,
-                                onTap: onScenariosTap,
+                                onTap: widget.onScenariosTap,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -112,23 +147,61 @@ class MapBottomSheet extends StatelessWidget {
                           mapViewModel: mapViewModel,
                           isCollapsed: false,
                         ),
+                        const SizedBox(height: 12),
+                        // Verileri Güncelle butonu
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton.icon(
+                            onPressed: mapViewModel.isRefreshing
+                                ? null
+                                : () => mapViewModel.refreshAllWeatherData(),
+                            icon: RotationTransition(
+                              turns: _refreshSpinController,
+                              child: Icon(
+                                Icons.refresh,
+                                size: 18,
+                                color: mapViewModel.isRefreshing
+                                    ? theme.secondaryTextColor
+                                    : Colors.blueAccent,
+                              ),
+                            ),
+                            label: Text(
+                              mapViewModel.isRefreshing
+                                  ? 'Güncelleniyor...'
+                                  : 'Verileri Güncelle',
+                              style: TextStyle(
+                                color: mapViewModel.isRefreshing
+                                    ? theme.secondaryTextColor
+                                    : Colors.blueAccent,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(
+                                  color: Colors.blueAccent.withValues(alpha: 0.3),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 16),
                         SidebarFooter(
                           theme: theme,
                           authViewModel: authViewModel,
                           isCollapsed: false,
                           onAuthAction: () async {
-                            if (isGuest) {
-                              Navigator.of(
-                                context,
-                              ).pushReplacementNamed('/auth');
-                            } else {
+                            if (!isGuest) {
                               await authViewModel.logout();
-                              if (!context.mounted) return;
-                              Navigator.of(
-                                context,
-                              ).pushNamedAndRemoveUntil('/', (route) => false);
                             }
+                            if (!context.mounted) return;
+                            Navigator.of(context).pushNamedAndRemoveUntil(
+                              '/landing',
+                              (route) => false,
+                            );
                           },
                         ),
                       ],

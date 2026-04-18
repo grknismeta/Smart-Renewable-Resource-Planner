@@ -5,8 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'package:frontend/core/theme/theme_view_model.dart';
 import 'package:frontend/features/map/viewmodels/map_view_model.dart';
-import 'package:frontend/features/map/widgets/dialogs/map_dialogs.dart'; 
-import 'package:frontend/features/map/widgets/dialogs/optimization_dialog.dart';
+import 'package:frontend/features/map/dialogs/map_dialogs.dart';
 
 class PlacementIndicator extends StatelessWidget {
   final String? placingPinType;

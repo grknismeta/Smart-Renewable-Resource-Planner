@@ -49,3 +49,36 @@ backend/reference_coords.sql
 git_files.txt
 
 backend/*.db          ← database.db, srrp_dev.db, system_data.db, user_data.db
+
+# AI Indexing Karantinası — Antigravity/Gemini çökmesini önler
+android/.gradle/
+android/app/build/
+build/
+frontend/build/
+.dart_tool/
+*.jar
+*.class
+
+# Flutter generated
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/windows/flutter/
+frontend/linux/flutter/
+
+# Antigravity / Gemini Karantinası - Ağır dosya türleri
+*.tif
+*.shp
+*.dbf
+*.shx
+*.geojson
+*.xlsx
+flutter_run_log.txt
+git_files.txt
+tree_structure.txt
+*.sql
+
+# Obsidian (knowledge vault) — kişisel ayarları commit etme, paylaşılan ayarları tut
+docs/knowledge/srrp-knowledge/.obsidian/workspace.json
+docs/knowledge/srrp-knowledge/.obsidian/workspace-mobile.json
+docs/knowledge/srrp-knowledge/.obsidian/cache/
+docs/knowledge/srrp-knowledge/.trash/

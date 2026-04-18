@@ -149,11 +149,18 @@ class SidebarFooter extends StatelessWidget {
           onAuthAction!();
           return;
         }
-
+        // Fallback: onAuthAction verilmediyse
         if (isGuest) {
-          Navigator.of(context).pushReplacementNamed('/auth');
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/landing',
+            (route) => false,
+          );
         } else {
           authViewModel.logout();
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/landing',
+            (route) => false,
+          );
         }
       },
     );

@@ -11,6 +11,7 @@ class ProvinceInfoCard extends StatelessWidget {
   final String provinceName;
   final ProvinceSummary? summary;
   final DistrictSummary? districtSummary; // ilçe seviyesi hava verisi
+  final bool isLoadingDistrictSummaries; // yükleme durumu
   final List<Pin> allPins;
   final ThemeViewModel theme;
   final VoidCallback onClose;
@@ -30,6 +31,7 @@ class ProvinceInfoCard extends StatelessWidget {
     required this.theme,
     required this.onClose,
     this.districtSummary,
+    this.isLoadingDistrictSummaries = false,
     this.selectionLevel = SelectionLevel.district,
     this.regionName,
     this.districtName,
@@ -315,7 +317,9 @@ class ProvinceInfoCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                 child: Text(
-                  'Hava durumu verisi yükleniyor...',
+                  isLoadingDistrictSummaries
+                      ? 'Hava durumu verisi yükleniyor...'
+                      : 'Bu ilçe için hava verisi bulunamadı.',
                   style: TextStyle(
                     color: theme.secondaryTextColor,
                     fontSize: 11,
