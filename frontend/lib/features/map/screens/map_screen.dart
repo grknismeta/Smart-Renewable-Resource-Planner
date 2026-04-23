@@ -450,11 +450,25 @@ class _MapScreenState extends State<MapScreen> {
     // Choropleth legends (sol alt)
     Widget? choroLegend;
     if (vm.choroplethMode == ChoroplethMode.solar) {
+      // Palet: 0 W/m² (gece/lacivert) → 50 (soluk sarı) → 800 (bordo).
+      // Sıralama index.html _choroplethBuildStops('solar') ve
+      // map_view_maplibre_native.dart solar stop listesiyle BİREBİR aynı olmalı.
       choroLegend = LegendWidget(
-        theme: theme, title: 'Güneş Işınımı (İlçe)', titleFontSize: 10, unit: 'W/m²', width: 190,
-        gradientColors: const [Color(0xFFFFFFCC), Color(0xFFFFEDA0), Color(0xFFFED976), Color(0xFFFEB24C), Color(0xFFFD8D3C), Color(0xFFFC4E2A), Color(0xFFE31A1C), Color(0xFFBD0026), Color(0xFF800026), Color(0xFF4D0014)],
-        minLabel: '0', maxLabel: '400',
-        tickLabels: const ['0', '80', '160', '240', '320', '400'],
+        theme: theme, title: 'Güneş Işınımı (İlçe)', titleFontSize: 10, unit: 'W/m²', width: 210,
+        gradientColors: const [
+          Color(0xFF1A1A2E), // 0 — gece / lacivert
+          Color(0xFFFFFFCC), // 50 — soluk sarı
+          Color(0xFFFFEDA0), // 150
+          Color(0xFFFED976), // 250
+          Color(0xFFFEB24C), // 350
+          Color(0xFFFD8D3C), // 450
+          Color(0xFFFC4E2A), // 550
+          Color(0xFFE31A1C), // 650
+          Color(0xFFBD0026), // 750
+          Color(0xFF4D0014), // 800 — maksimum / bordo
+        ],
+        minLabel: '0', maxLabel: '800',
+        tickLabels: const ['0', '200', '400', '600', '800'],
       );
     } else if (vm.choroplethMode == ChoroplethMode.wind) {
       choroLegend = LegendWidget(

@@ -40,6 +40,10 @@ const _overlayFillLayerId = 'srrp-overlay-fill';
 const _overlayLineLayerId = 'srrp-overlay-line';
 const _overlayProvLineId  = 'srrp-overlay-prov-line';
 
+// Seçili ilçe mavi çerçeve (tüm modlarda kullanılır — ilçe seçildiğinde belirginleşir)
+const _districtHighlightSourceId = 'srrp-district-highlight';
+const _districtHighlightLayerId  = 'srrp-district-highlight-line';
+
 const _hillshadeSourceId  = 'srrp-hillshade-dem';
 const _hillshadeLayerId   = 'srrp-hillshade';
 
@@ -645,6 +649,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       // ────────────────────────────────────────────────────────
       if (initialMode == SelectionLevel.region) {
         final tappedRegion = _findRegionForProvince(province);
+        final levelNow = vm.selectionLevel;
 
         if (vm.selectedRegionName == null) {
           // Henüz bölge seçilmemiş → bölge seç
@@ -652,24 +657,34 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
             vm.selectRegion(tappedRegion);
             _flyToRegionBounds(tappedRegion);
           }
-        } else if (tappedRegion != vm.selectedRegionName) {
-          // Başka bölgeye tıklandı → o bölgeye geç
-          if (tappedRegion != null && tappedRegion.isNotEmpty) {
+        } else if (tappedRegion != vm.selectedRegionName &&
+                   tappedRegion != null && tappedRegion.isNotEmpty) {
+          // Başka bölgeye tıklandı — level'a göre davranış:
+          if (levelNow == SelectionLevel.region) {
+            // Bölge seviyesinde: sadece bölgeyi değiştir
             vm.selectRegion(tappedRegion);
             _flyToRegionBounds(tappedRegion);
+          } else {
+            // Province/district seviyesinde: tek tıkla hem bölge hem il geç
+            // (Kullanıcı spec: "Hala tıklama ile diğer bölgelere geçebilirim" + ile)
+            vm.selectRegion(tappedRegion);
+            vm.selectProvince(province);
+            await _loadDistrictBorders(province);
+            _flyToProvinceCentroid(province);
           }
-        } else if (vm.selectionLevel == SelectionLevel.province) {
+        } else if (levelNow == SelectionLevel.province) {
           // Aynı bölgede il tıklandı → ilçeleri göster
           vm.selectProvince(province);
           await _loadDistrictBorders(province);
           _flyToProvinceCentroid(province);
-        } else if (vm.selectionLevel == SelectionLevel.district) {
-          // İlçe seviyesinde: ilçe veya başka il
+        } else if (levelNow == SelectionLevel.district) {
+          // İlçe seviyesinde: ilçe veya başka il (aynı bölge)
           if (district.isNotEmpty && province == vm.selectedProvinceName) {
             vm.selectDistrict(district, province: province);
             await _loadDistrictBorders(province, highlightDistrict: district);
+            await _showDistrictHighlight(province, district);
           } else {
-            // Başka il → o ilin ilçelerine geç
+            // Başka il (aynı bölgede) → o ilin ilçelerine geç
             vm.selectProvince(province);
             await _loadDistrictBorders(province);
             _flyToProvinceCentroid(province);
@@ -680,6 +695,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       // İL MODU
       // ────────────────────────────────────────────────────────
       else if (initialMode == SelectionLevel.province) {
+        // İl modu = city → district drill-down
+        debugPrint('[GEO] İl modu tıklama — clicked=$province tappedDist=$district '
+            'curProv=${vm.selectedProvinceName} lvl=${vm.selectionLevel}');
         if (vm.selectionLevel == SelectionLevel.province ||
             province != vm.selectedProvinceName) {
           // Yeni il seçimi veya başka ile geçiş
@@ -690,9 +708,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         } else if (vm.selectionLevel == SelectionLevel.district &&
                    district.isNotEmpty &&
                    province == vm.selectedProvinceName) {
-          // Aynı ildeyken ilçe seçimi — overlay'ı güncelle (seçili ilçe vurgulu)
+          // Aynı ildeyken ilçe seçimi — mavi çerçeve ile vurgula
           vm.selectDistrict(district, province: province);
-          // İlçe seçiminde overlay'ı yeniden çizmeye gerek yok — bilgi paneli güncellenir
+          await _showDistrictHighlight(province, district);
         }
       }
       // ────────────────────────────────────────────────────────
@@ -701,7 +719,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       else if (initialMode == SelectionLevel.district) {
         if (district.isNotEmpty) {
           vm.selectDistrict(district, province: province);
-          // İlçe modunda renkleri değiştirme — sadece bilgi göster
+          // İlçe modunda renkleri değiştirme — sadece mavi çerçeve
+          await _showDistrictHighlight(province, district);
         }
       }
       // ────────────────────────────────────────────────────────
@@ -1149,8 +1168,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     try { await style.removeLayer(_bordersFillLayerId); } catch (_) {}
     try { await style.removeSource(_bordersSourceId); } catch (_) {}
     _bordersActive = false;
-    // Overlay katmanlarını da temizle (İl modu overlay'ı)
+    // Overlay + ilçe highlight katmanlarını da temizle
     await _removeOverlayLayers();
+    await _removeDistrictHighlight();
   }
 
   /// İl modu overlay katmanlarını kaldır (seçili ilin ilçeleri + mavi sınır).
@@ -1163,6 +1183,57 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     try { await style.removeSource(_overlaySourceId); } catch (_) {}
     try { await style.removeSource('srrp-overlay-prov'); } catch (_) {}
     _overlayActive = false;
+  }
+
+  /// Seçili ilçenin mavi çerçeve katmanını kaldır.
+  Future<void> _removeDistrictHighlight() async {
+    final style = _style;
+    if (style == null) return;
+    try { await style.removeLayer(_districtHighlightLayerId); } catch (_) {}
+    try { await style.removeSource(_districtHighlightSourceId); } catch (_) {}
+  }
+
+  /// Seçili ilçeyi mavi çerçeve ile vurgula. Her mod için çalışır.
+  Future<void> _showDistrictHighlight(String provinceName, String districtName) async {
+    final style = _style;
+    if (style == null || !_styleLoaded) return;
+
+    await _removeDistrictHighlight();
+
+    try {
+      final features = await _getDistrictFeatures();
+      final normProv = _normalizeForMatch(provinceName);
+      final normDist = _normalizeForMatch(districtName);
+      final match = features.where((f) {
+        final props = f['properties'] as Map<String, dynamic>? ?? {};
+        final p = (props['NAME_1'] ?? '').toString();
+        final d = (props['NAME_2'] ?? '').toString();
+        return _normalizeForMatch(p) == normProv && _normalizeForMatch(d) == normDist;
+      }).toList();
+
+      if (match.isEmpty) return;
+
+      final fc = {'type': 'FeatureCollection', 'features': match};
+      await style.addSource(ml.GeoJsonSource(
+        id: _districtHighlightSourceId,
+        data: jsonEncode(fc),
+      ));
+
+      await style.addLayer(
+        ml.LineStyleLayer(
+          id: _districtHighlightLayerId,
+          sourceId: _districtHighlightSourceId,
+          paint: <String, Object>{
+            'line-color': '#2196F3',
+            'line-width': 3.0,
+            'line-opacity': 0.95,
+          },
+        ),
+        belowLayerId: _pinsShadowLayerId,
+      );
+    } catch (e) {
+      debugPrint('[MapLibre-Native] İlçe vurgulama hatası: $e');
+    }
   }
 
   /// İl modunda seçili ilin ilçelerini overlay olarak göster + mavi sınır.
@@ -1782,7 +1853,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
           // İlk yüklemede tüm ilçeleri göster (province=null)
           await _loadDistrictBorders(null);
         }
-        // İlçe seçildiğinde borderleri yeniden çizme — sadece bilgi paneli güncellenir
+        // İlçe seçildiğinde borderleri yeniden çizme — sadece mavi çerçeve
       } else if (level == SelectionLevel.district) {
         // Bölge modu → ilçe seviyesi: overlay temizle, klasik ilçe sınırları yükle
         await _removeOverlayLayers();
@@ -1797,6 +1868,15 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         if (regionChanged && region != null) {
           _flyToRegionBounds(region);
         }
+      }
+
+      // Seçili ilçe mavi çerçeve — tüm modlarda geçerli (ilçe seçildiğinde belirginlik)
+      if (level == SelectionLevel.district &&
+          province != null && province.isNotEmpty &&
+          district != null && district.isNotEmpty) {
+        await _showDistrictHighlight(province, district);
+      } else {
+        await _removeDistrictHighlight();
       }
     } finally {
       _bordersSyncing = false;

@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:frontend/core/storage/secure_storage.dart';
+import 'package:frontend/core/config/backend_config.dart';
 
 class BaseService {
   final SecureStorageService storageService;
@@ -25,13 +26,14 @@ class BaseService {
   String get baseUrl {
     if (kIsWeb) {
       return webApiBase;
-    } else if (Platform.isAndroid) {
-      // LAN üzerinden PC'ye erişim (backend 0.0.0.0:8000'de dinliyor)
-      // Not: PC IP değişirse burayı güncelle veya .env ile yapılandır
-      return 'http://192.168.1.7:8000';
-    } else {
-      return 'http://127.0.0.1:8000';
     }
+    // Mobil/Desktop: Ayarlar dialoğundan ayarlanabilen URL
+    // (SharedPreferences). Varsayılan: BackendConfig.defaultMobileBackendUrl.
+    // PC IP'si LAN'da değişirse kullanıcı uygulama içinden güncelleyebilir.
+    if (Platform.isAndroid || Platform.isIOS) {
+      return BackendConfig.instance.mobileUrl;
+    }
+    return 'http://127.0.0.1:8000';
   }
 
   Future<Map<String, String>> getHeaders({String? token}) async {

@@ -96,6 +96,9 @@ external void _jsClearSelectionMode();
 @JS('window.srrpHighlightProvince')
 external void _jsHighlightProvince(String? provinceName);
 
+@JS('window.srrpHighlightDistrict')
+external void _jsHighlightDistrict(String? provinceName, String? districtName);
+
 @JS('window.srrpSetProvinceClickFn')
 external void _jsSetProvinceClickFn(JSFunction fn);
 
@@ -640,6 +643,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   SelectionLevel _lastSelectionLevel = SelectionLevel.none;
   String? _lastRegionName;
   String? _lastProvinceName;
+  String? _lastDistrictName;
 
   // ─── Animasyon frame callback ──────────────────────────────────────
   JSFunction? _animFrameJsCallback;
@@ -812,24 +816,34 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     if (!mounted || _vmRef == null) return;
     final name = nameArg?.dartify()?.toString() ?? '';
     if (name.isEmpty) return;
+    debugPrint('[GEO-WEB] Bölge click → $name');
     _vmRef!.selectRegion(name);
   }
 
   /// JS il tıklama → mod-farkındalıklı işleme
-  void _handleProvinceClickJs(JSAny? nameArg) {
+  /// [regionArg] JS tarafından feature.REGION property'sinden aktarılır.
+  /// Bölge modunda farklı bölgenin iline tıklandığında region güncellenir.
+  void _handleProvinceClickJs(JSAny? nameArg, JSAny? regionArg) {
     if (!mounted || _vmRef == null) return;
     final name = nameArg?.dartify()?.toString() ?? '';
     if (name.isEmpty) return;
+    final region = regionArg?.dartify()?.toString() ?? '';
     final vm = _vmRef!;
     final initial = vm.initialSelectionMode;
+    debugPrint('[GEO-WEB] İl click → $name (region=$region) '
+        '(initial=$initial lvl=${vm.selectionLevel} '
+        'curRegion=${vm.selectedRegionName} curProv=${vm.selectedProvinceName})');
 
-    if (initial == SelectionLevel.region) {
-      // Bölge modunda il tıklandığında → o ilin ilçelerine git
-      vm.selectProvince(name);
-    } else {
-      // İl modunda veya diğer → il seç, ilçeleri göster
-      vm.selectProvince(name);
+    // Bölge modunda tıklanan il farklı bir bölgedeyse, önce bölgeyi güncelle.
+    // Bu kullanıcı spec'i: "Hala tıklama ile Diğer bölgelere geçebilirim".
+    // İl modunda region'a DOKUNMA — initial==province iken region hep null kalır.
+    if (initial == SelectionLevel.region &&
+        region.isNotEmpty &&
+        region != vm.selectedRegionName) {
+      vm.selectRegion(region);
     }
+    // Ardından ile drill-down et (her mod için geçerli).
+    vm.selectProvince(name);
   }
 
   /// JS ilçe tıklama → mod-farkındalıklı işleme
@@ -841,6 +855,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
     final vm = _vmRef!;
     final initial = vm.initialSelectionMode;
+    debugPrint('[GEO-WEB] İlçe click → $raw '
+        '(initial=$initial lvl=${vm.selectionLevel} '
+        'curProv=${vm.selectedProvinceName} curDist=${vm.selectedDistrictName})');
 
     // "İstanbul|Kadıköy" → province=İstanbul, district=Kadıköy
     String province = '';
@@ -905,9 +922,11 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       final levelChanged = vm.selectionLevel != _lastSelectionLevel;
       final regionChanged = vm.selectedRegionName != _lastRegionName;
       final provinceChanged = vm.selectedProvinceName != _lastProvinceName;
+      final districtChanged = vm.selectedDistrictName != _lastDistrictName;
       // İlçe seçildiğinde (selectedDistrictName != null) harita katmanlarını
-      // yeniden kurma — sadece veri kartı güncellenir. Harita katmanları
-      // yalnızca seviye değiştiğinde veya il→ilçe geçişinde (districtName null) güncellenir.
+      // yeniden kurma — sadece veri kartı + ilçe highlight güncellenir. Harita
+      // katmanları yalnızca seviye değiştiğinde veya il→ilçe geçişinde
+      // (districtName null) güncellenir.
       final isDistrictDataOnly = provinceChanged &&
           vm.selectionLevel == SelectionLevel.district &&
           vm.selectedDistrictName != null;
@@ -918,6 +937,16 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _lastSelectionLevel = vm.selectionLevel;
         _lastRegionName = vm.selectedRegionName;
         _lastProvinceName = vm.selectedProvinceName;
+        _lastDistrictName = vm.selectedDistrictName;
+      } else if (districtChanged && vm.selectionLevel == SelectionLevel.district) {
+        // Hafif güncelleme: sadece seçili ilçenin mavi çerçevesini değiştir
+        try {
+          _jsHighlightDistrict(
+            vm.selectedProvinceName,
+            vm.selectedDistrictName,
+          );
+        } catch (_) {}
+        _lastDistrictName = vm.selectedDistrictName;
       }
     }
 
@@ -976,6 +1005,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   void _syncSelectionMode(MapViewModel vm) {
     if (!kIsWeb) return;
     if (!_styleLoaded) return; // Stil henüz yüklenmemişse işlem yapma
+    debugPrint('[GEO-WEB] _syncSelectionMode — initial=${vm.initialSelectionMode} '
+        'lvl=${vm.selectionLevel} region=${vm.selectedRegionName} '
+        'prov=${vm.selectedProvinceName} dist=${vm.selectedDistrictName}');
     switch (vm.selectionLevel) {
       case SelectionLevel.none:
         _jsClearSelectionMode();
@@ -984,19 +1016,28 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       case SelectionLevel.province:
         _jsSetupProvinceMode(vm.selectedRegionName);
       case SelectionLevel.district:
-        // İl modunda: tüm ilçeleri göster (null filtre) — başka ile geçiş yapılabilir
-        // Bölge/İlçe modunda: sadece seçili ilin ilçeleri
+        // İl modu: city→district drill-down — SADECE seçili ilin ilçeleri renklenir.
+        //   Diğer iller sınır olarak görünür. Tüm Türkiye ilçelerinin üstüne tıklama
+        //   kaydı düşebilir (cross-province navigation için); JS tarafında
+        //   hit=tüm-Türkiye, color=seçili-il ayrımı yapılır.
+        // İlçe modu: tüm Türkiye ilçeleri renklenir + tıklanabilir (filtre yok).
+        // Bölge modu drill-down: sadece seçili ilin ilçeleri (klasik drill-down).
         final initial = vm.initialSelectionMode;
         if (initial == SelectionLevel.province) {
-          _jsSetupDistrictMode(null); // Tüm Türkiye ilçeleri → başka ile tıklanabilir
-          // Seçili ili mavi sınırla vurgula
+          _jsSetupDistrictMode(vm.selectedProvinceName); // YALNIZ seçili ilin ilçeleri
           try { _jsHighlightProvince(vm.selectedProvinceName); } catch (_) {}
         } else if (initial == SelectionLevel.district) {
-          _jsSetupDistrictMode(null); // İlçe modu: tüm ilçeler, filtre yok
+          _jsSetupDistrictMode(null); // İlçe modu: tüm Türkiye
         } else {
-          // Bölge modu → ilçe: sadece seçili ilin ilçeleri
-          _jsSetupDistrictMode(vm.selectedProvinceName);
+          _jsSetupDistrictMode(vm.selectedProvinceName); // Bölge drill-down
         }
+        // Seçili ilçe varsa mavi çerçeve ile vurgula (tüm modlar için geçerli)
+        try {
+          _jsHighlightDistrict(
+            vm.selectedProvinceName,
+            vm.selectedDistrictName,
+          );
+        } catch (_) {}
     }
   }
 
@@ -1208,6 +1249,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       final resultJson = _jsQueryClick(point.lng.toDouble(), point.lat.toDouble());
       final result = jsonDecode(resultJson) as Map<String, dynamic>;
       final type = result['type'] as String? ?? 'none';
+      debugPrint('[GEO-WEB] 🎯 _onMapClick tip=$type lat=${point.lat.toStringAsFixed(4)} '
+          'lng=${point.lng.toStringAsFixed(4)}');
 
       if (type == 'pin') {
         // ── Pin tıklaması ──
@@ -1268,30 +1311,81 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   }
 
   /// Seçim katmanı tıklaması — il/ilçe/bölge
+  ///
+  /// ⚠️ Bu, JS hit layer click handler'ının paralel bir yoludur (`_onMapClick`
+  /// → `_jsQueryClick("selection")` → bu fonksiyon). Her iki yol da aynı
+  /// `selectX` çağrısını yapmalı; aksi takdirde state tutarsızlığı olur.
+  ///
+  /// Kullanıcı spec'ine göre davranış `_initialSelectionMode` tarafından
+  /// belirlenir:
+  /// - **region (Bölge modu):** 3-seviye drill-down (region → province → district).
+  ///   İlçe seviyesinde başka ile tıklanırsa doğrudan o ile drill-down.
+  /// - **province (İl modu):** 2-seviye drill-down (province → district).
+  ///   Bölge seçilmez, state'e hiç dokunulmaz.
+  /// - **district (İlçe modu):** Tek seviye — sadece `selectDistrict`.
   void _handleSelectionClick(Map<String, dynamic> props) {
     if (_vmRef == null) return;
     final vm = _vmRef!;
+    final initial = vm.initialSelectionMode;
 
-    // Composite ilçe modu: NAME_1 (il) + NAME_2 (ilçe)
     final name1 = props['NAME_1']?.toString() ?? '';
     final name2 = props['NAME_2']?.toString() ?? '';
     final region = props['REGION']?.toString() ?? '';
 
-    switch (vm.selectionLevel) {
+    debugPrint('[GEO-WEB] _handleSelectionClick — initial=$initial '
+        'lvl=${vm.selectionLevel} name1=$name1 name2=$name2 region=$region '
+        'curRegion=${vm.selectedRegionName} curProv=${vm.selectedProvinceName}');
+
+    switch (initial) {
       case SelectionLevel.region:
-        if (region.isNotEmpty) vm.selectRegion(region);
+        // Bölge modu: region → province → district
+        switch (vm.selectionLevel) {
+          case SelectionLevel.region:
+            if (region.isNotEmpty) vm.selectRegion(region);
+          case SelectionLevel.province:
+            // Bölge seçili, il bekleniyor.
+            // Kullanıcı spec: "Hala tıklama ile diğer bölgelere geçebilirim".
+            // Farklı bölgenin iline tıklama → o bölgeye geç + il seç (tek adımda).
+            if (region.isNotEmpty && region != vm.selectedRegionName) {
+              vm.selectRegion(region);
+              if (name1.isNotEmpty) vm.selectProvince(name1);
+            } else if (name1.isNotEmpty) {
+              vm.selectProvince(name1);
+            }
+          case SelectionLevel.district:
+            // İlçe seviyesinde: aynı ildeki ilçe → selectDistrict.
+            // Başka ildeki nokta → o ile drill-down; farklı bölgedeyse region'ı da güncelle.
+            if (name1.isNotEmpty && name1 == vm.selectedProvinceName &&
+                name2.isNotEmpty) {
+              vm.selectDistrict(name2, province: name1);
+            } else if (name1.isNotEmpty && name1 != vm.selectedProvinceName) {
+              if (region.isNotEmpty && region != vm.selectedRegionName) {
+                vm.selectRegion(region);
+              }
+              vm.selectProvince(name1);
+            }
+          case SelectionLevel.none:
+            break;
+        }
       case SelectionLevel.province:
-        // Bölge seçilmemişse → önce bölge seç (harita bazlı bölge seçimi)
-        if (vm.selectedRegionName == null && region.isNotEmpty) {
-          vm.selectRegion(region);
-        } else if (name1.isNotEmpty) {
-          vm.selectProvince(name1);
+        // İl modu: province → district (bölge YOK, region'a dokunma)
+        if (vm.selectionLevel == SelectionLevel.province) {
+          // İlk il seçimi
+          if (name1.isNotEmpty) vm.selectProvince(name1);
+        } else if (vm.selectionLevel == SelectionLevel.district) {
+          if (name1.isNotEmpty && name1 == vm.selectedProvinceName &&
+              name2.isNotEmpty) {
+            // Seçili ilin ilçesine tıklama
+            vm.selectDistrict(name2, province: name1);
+          } else if (name1.isNotEmpty && name1 != vm.selectedProvinceName) {
+            // Seçili il dışı nokta → o ile drill-down (yeni il)
+            vm.selectProvince(name1);
+          }
         }
       case SelectionLevel.district:
-        if (name2.isNotEmpty && name1.isNotEmpty) {
+        // İlçe modu: tek seviye
+        if (name1.isNotEmpty && name2.isNotEmpty) {
           vm.selectDistrict(name2, province: name1);
-        } else if (name1.isNotEmpty) {
-          vm.selectProvince(name1);
         }
       case SelectionLevel.none:
         break;

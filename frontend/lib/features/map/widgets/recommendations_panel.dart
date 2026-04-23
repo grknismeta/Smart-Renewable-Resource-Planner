@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/core/network/analysis_service.dart';
 import 'package:frontend/core/theme/app_theme.dart';
 import 'package:frontend/data/models/recommendation_model.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
@@ -56,10 +57,14 @@ class _RecommendationsPanelState extends State<RecommendationsPanel>
     setState(() => _expanded = !_expanded);
     if (_expanded) {
       _animController.forward();
-      // Veri yoksa yükle
-      if (widget.mapViewModel.recommendations == null &&
-          !widget.mapViewModel.isLoadingRecommendations) {
-        widget.mapViewModel.loadRecommendations();
+      final vm = widget.mapViewModel;
+      // Faz 1: `province_analysis` top-N (garantili veri)
+      if (vm.analysisWindTop == null && !vm.isLoadingAnalysisTop) {
+        vm.loadAnalysisTop();
+      }
+      // Opsiyonel: ML/Weibull kategorileri (varsa gösterilir)
+      if (vm.recommendations == null && !vm.isLoadingRecommendations) {
+        vm.loadRecommendations();
       }
     } else {
       _animController.reverse();
@@ -138,8 +143,21 @@ class _RecommendationsPanelState extends State<RecommendationsPanel>
                   color: theme.secondaryTextColor.withValues(alpha: 0.2),
                 ),
 
-                // Yükleniyor
-                if (vm.isLoadingRecommendations)
+                // Faz 1: Horizon seçici (1A / 3A / 6A / Yıllık)
+                _HorizonSelector(
+                  theme: theme,
+                  current: vm.analysisHorizon,
+                  onChanged: (h) => vm.setAnalysisHorizon(h),
+                  disabled: vm.isLoadingAnalysisTop,
+                ),
+
+                Divider(
+                  height: 1,
+                  color: theme.secondaryTextColor.withValues(alpha: 0.15),
+                ),
+
+                // Faz 1 içerik: yükleniyor / hata / veri
+                if (vm.isLoadingAnalysisTop)
                   const Padding(
                     padding: EdgeInsets.all(20),
                     child: Column(
@@ -150,15 +168,13 @@ class _RecommendationsPanelState extends State<RecommendationsPanel>
                         ),
                         SizedBox(height: 8),
                         Text(
-                          'Weibull analizi çalışıyor...',
+                          'Province analizi çalışıyor...',
                           style: TextStyle(color: Colors.white54, fontSize: 11),
                         ),
                       ],
                     ),
                   )
-
-                // Hata
-                else if (vm.recommendationError != null)
+                else if (vm.analysisTopError != null)
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -176,7 +192,9 @@ class _RecommendationsPanelState extends State<RecommendationsPanel>
                         ),
                         const SizedBox(height: 8),
                         TextButton.icon(
-                          onPressed: vm.loadRecommendations,
+                          onPressed: () => vm.loadAnalysisTop(
+                            horizon: vm.analysisHorizon,
+                          ),
                           icon: const Icon(Icons.refresh_rounded, size: 14),
                           label: const Text('Yeniden Dene'),
                           style: TextButton.styleFrom(
@@ -187,65 +205,38 @@ class _RecommendationsPanelState extends State<RecommendationsPanel>
                       ],
                     ),
                   )
-
-                // Boş veri / ML yakında
-                else if (vm.recommendations == null || vm.recommendations!.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        const Icon(
-                          Icons.auto_awesome_mosaic_rounded,
-                          color: Colors.purpleAccent,
-                          size: 32,
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'ML Tabanlı Öneri',
-                          style: TextStyle(
-                            color: theme.textColor,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Makine öğrenimi ile güçlendirilmiş\nbölge önerileri yakında aktif olacak.',
-                          style: TextStyle(
-                            color: theme.secondaryTextColor,
-                            fontSize: 11,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.purpleAccent.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Colors.purpleAccent.withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: const Text(
-                            '🚀 Geliştirme Aşamasında',
-                            style: TextStyle(
-                              color: Colors.purpleAccent,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-
-                // Kategoriler
                 else
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                    child: _buildCategories(vm.recommendations!, theme),
+                    child: _buildAnalysisCategories(vm, theme),
+                  ),
+
+                // Opsiyonel: ML/Weibull kategorileri (varsa)
+                if (vm.recommendations != null && !vm.recommendations!.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Divider(
+                          height: 12,
+                          color: theme.secondaryTextColor.withValues(alpha: 0.15),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4, bottom: 4),
+                          child: Text(
+                            'İleri Analiz (Weibull / Rüzgar Gülü)',
+                            style: TextStyle(
+                              color: theme.secondaryTextColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                        _buildCategories(vm.recommendations!, theme),
+                      ],
+                    ),
                   ),
               ],
             ),
@@ -253,6 +244,75 @@ class _RecommendationsPanelState extends State<RecommendationsPanel>
         ],
       ),
     );
+  }
+
+  /// Faz 1 `/analysis/provinces` top-N listelerini kategori bölümleri olarak
+  /// render eder. 3 kaynak (wind/solar/hydro) × seçili horizon.
+  Widget _buildAnalysisCategories(MapViewModel vm, ThemeViewModel theme) {
+    final wind = vm.analysisWindTop ?? const [];
+    final solar = vm.analysisSolarTop ?? const [];
+    final hydro = vm.analysisHydroTop ?? const [];
+    final horizon = vm.analysisHorizon;
+
+    if (wind.isEmpty && solar.isEmpty && hydro.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: Text(
+          'Bu pencere için henüz analiz sonucu yok.',
+          style: TextStyle(
+            color: theme.secondaryTextColor,
+            fontSize: 11,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (wind.isNotEmpty)
+          _AnalysisCategorySection(
+            title: '💨 En İyi Rüzgar',
+            subtitle: _subtitleFor(horizon),
+            color: Colors.redAccent,
+            items: wind,
+            horizon: horizon,
+            theme: theme,
+          ),
+        if (solar.isNotEmpty)
+          _AnalysisCategorySection(
+            title: '☀️ En İyi Güneş',
+            subtitle: _subtitleFor(horizon),
+            color: Colors.orangeAccent,
+            items: solar,
+            horizon: horizon,
+            theme: theme,
+          ),
+        if (hydro.isNotEmpty)
+          _AnalysisCategorySection(
+            title: '💧 En İyi Hidro',
+            subtitle: _subtitleFor(horizon),
+            color: Colors.lightBlueAccent,
+            items: hydro,
+            horizon: horizon,
+            theme: theme,
+          ),
+      ],
+    );
+  }
+
+  String _subtitleFor(AnalysisHorizon h) {
+    switch (h) {
+      case AnalysisHorizon.m1:
+        return 'Son 30 gün skoru';
+      case AnalysisHorizon.m3:
+        return 'Son 90 gün skoru';
+      case AnalysisHorizon.m6:
+        return 'Son 180 gün skoru';
+      case AnalysisHorizon.yearly:
+        return 'Son 365 gün skoru';
+    }
   }
 
   Widget _buildCategories(RecommendationsData data, ThemeViewModel theme) {
@@ -685,6 +745,238 @@ class _SolarDetailDialog extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
           child: const Text('Kapat'),
         ),
+      ],
+    );
+  }
+}
+
+// ── Faz 1: Horizon (zaman penceresi) seçici ──────────────────────────────────
+
+class _HorizonSelector extends StatelessWidget {
+  final ThemeViewModel theme;
+  final AnalysisHorizon current;
+  final ValueChanged<AnalysisHorizon> onChanged;
+  final bool disabled;
+
+  const _HorizonSelector({
+    required this.theme,
+    required this.current,
+    required this.onChanged,
+    required this.disabled,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const items = <(AnalysisHorizon, String)>[
+      (AnalysisHorizon.m1, '1A'),
+      (AnalysisHorizon.m3, '3A'),
+      (AnalysisHorizon.m6, '6A'),
+      (AnalysisHorizon.yearly, 'Yıl'),
+    ];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: items.map((entry) {
+          final isActive = entry.$1 == current;
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: InkWell(
+                onTap: disabled ? null : () => onChanged(entry.$1),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? Colors.purpleAccent.withValues(alpha: 0.25)
+                        : Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isActive
+                          ? Colors.purpleAccent.withValues(alpha: 0.6)
+                          : Colors.white.withValues(alpha: 0.1),
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      entry.$2,
+                      style: TextStyle(
+                        color: isActive
+                            ? Colors.purpleAccent
+                            : theme.secondaryTextColor,
+                        fontSize: 11,
+                        fontWeight:
+                            isActive ? FontWeight.bold : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ── Faz 1: Analiz Kategori Bölümü (wind/solar/hydro top-N) ───────────────────
+
+class _AnalysisCategorySection extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final Color color;
+  final List<ProvinceAnalysisItem> items;
+  final AnalysisHorizon horizon;
+  final ThemeViewModel theme;
+
+  const _AnalysisCategorySection({
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.items,
+    required this.horizon,
+    required this.theme,
+  });
+
+  @override
+  State<_AnalysisCategorySection> createState() =>
+      _AnalysisCategorySectionState();
+}
+
+class _AnalysisCategorySectionState extends State<_AnalysisCategorySection> {
+  bool _show = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = widget.theme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _show = !_show),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: widget.color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.title,
+                        style: TextStyle(
+                          color: theme.textColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        widget.subtitle,
+                        style: TextStyle(
+                          color: theme.secondaryTextColor,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: widget.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${widget.items.length}',
+                    style: TextStyle(
+                      color: widget.color,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  _show
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  color: theme.secondaryTextColor,
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_show)
+          ...widget.items.take(10).toList().asMap().entries.map((entry) {
+            final rank = entry.key + 1;
+            final item = entry.value;
+            final score = item.scoreFor(widget.horizon);
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 18,
+                    child: Text(
+                      '$rank.',
+                      style: TextStyle(
+                        color: theme.secondaryTextColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.location_on_rounded,
+                    size: 12,
+                    color: widget.color.withValues(alpha: 0.8),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      item.provinceName,
+                      style: TextStyle(
+                        color: theme.textColor,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  if (score != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: widget.color.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        score.toStringAsFixed(1),
+                        style: TextStyle(
+                          color: widget.color,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }),
+        const SizedBox(height: 6),
       ],
     );
   }

@@ -125,6 +125,15 @@ class _MapLibreSection extends StatefulWidget {
 }
 
 class _MapLibreSectionState extends State<_MapLibreSection> {
+  // Faz 3.4: Bulut katmanı demo dondurmasında devre dışı. Re-enable için
+  // `true` yap; `[[INBOX]]` "Bulut düzeltme" bölümünde kalan TODO'lar var
+  // (mobil port, zoom limit mesajı, yağmur/normal ayrımı, legend).
+  static const bool _cloudLayerEnabled = false;
+
+  // 3D efektler de demo için dondurdu — sprint sonrasında açılacak.
+  // `true` yapılırsa toggle'lar canlanır (3D türbinler / 3D arazi).
+  static const bool _threeDEffectsEnabled = false;
+
   bool _toolsExpanded      = true;
   bool _styleExpanded      = true;
   bool _projectionExpanded = true;
@@ -337,10 +346,19 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                 ),
                 if (_satelliteExpanded) ...[
                   const SizedBox(height: 6),
+                  // Bulut Örtüsü: Faz 3.4 (2026-04-22) — devre dışı.
+                  // Kök sebepler henüz çözülmedi: telefonda görünmüyor, zoom
+                  // limit uyarısı, yağmur/normal ayrımı yok, legend yok. Demo
+                  // öncesi mobil parity riski büyük → toggle disable + "YAKINDA".
+                  // Detaylı TODO: INBOX "Bulut düzeltme" bölümü.
+                  // Re-enable için `_cloudLayerEnabled = true` yap (dosya başı).
                   _effectRow('Bulut Örtüsü', Icons.cloud_outlined,
-                      vm.showCloudLayer, const Color(0xFF90CAF9),
-                      vm.toggleShowCloudLayer, badge: 'SAT'),
-                  if (vm.showCloudLayer) ...[
+                      _cloudLayerEnabled && vm.showCloudLayer,
+                      const Color(0xFF90CAF9),
+                      _cloudLayerEnabled ? vm.toggleShowCloudLayer : null,
+                      badge: _cloudLayerEnabled ? 'SAT' : 'YAKINDA',
+                      disabled: !_cloudLayerEnabled),
+                  if (_cloudLayerEnabled && vm.showCloudLayer) ...[
                     const SizedBox(height: 6),
                     Row(children: [
                       Icon(Icons.opacity_outlined, size: 12, color: theme.secondaryTextColor),
@@ -412,11 +430,26 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                 ),
                 if (_effectsExpanded) ...[
                   const SizedBox(height: 6),
-                  _effectRow('3D Türbinler', Icons.wind_power_outlined,
-                      vm.show3DTurbines, Colors.blueAccent,
-                      vm.toggleShow3DTurbines, badge: '3D'),
-                  _effectRow('3D Arazi', Icons.terrain_outlined,
-                      vm.show3DTerrain, Colors.teal, vm.toggleShow3DTerrain, badge: 'DEM'),
+                  // 3D Türbinler — demo dondurmasında devre dışı.
+                  _effectRow(
+                    '3D Türbinler',
+                    Icons.wind_power_outlined,
+                    _threeDEffectsEnabled && vm.show3DTurbines,
+                    Colors.blueAccent,
+                    _threeDEffectsEnabled ? vm.toggleShow3DTurbines : null,
+                    badge: _threeDEffectsEnabled ? '3D' : 'YAKINDA',
+                    disabled: !_threeDEffectsEnabled,
+                  ),
+                  // 3D Arazi — demo dondurmasında devre dışı.
+                  _effectRow(
+                    '3D Arazi',
+                    Icons.terrain_outlined,
+                    _threeDEffectsEnabled && vm.show3DTerrain,
+                    Colors.teal,
+                    _threeDEffectsEnabled ? vm.toggleShow3DTerrain : null,
+                    badge: _threeDEffectsEnabled ? 'DEM' : 'YAKINDA',
+                    disabled: !_threeDEffectsEnabled,
+                  ),
                 ],
               ],
             ),

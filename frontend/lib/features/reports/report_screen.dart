@@ -22,7 +22,15 @@ class ReportScreen extends StatefulWidget {
   /// Haritadan doğrudan bir il seçilerek açıldığında ön yükleme için.
   final String? initialProvince;
 
-  const ReportScreen({super.key, this.initialProvince});
+  /// Senaryo panelinden açıldığında ilgili senaryo otomatik seçilsin diye.
+  /// null ise normal akış (default tab: 0).
+  final int? initialScenarioId;
+
+  const ReportScreen({
+    super.key,
+    this.initialProvince,
+    this.initialScenarioId,
+  });
 
   @override
   State<ReportScreen> createState() => _ReportScreenState();
@@ -46,8 +54,13 @@ class _ReportScreenState extends State<ReportScreen> {
         reportVM.selectProvinceByName(widget.initialProvince!);
       }
       if (!mounted) return;
-      Provider.of<ScenarioViewModel>(context, listen: false)
-          .loadScenarios();
+      final scenarioVM =
+          Provider.of<ScenarioViewModel>(context, listen: false);
+      await scenarioVM.loadScenarios();
+      if (!mounted) return;
+      if (widget.initialScenarioId != null) {
+        scenarioVM.selectOnly(widget.initialScenarioId!);
+      }
     });
   }
 
@@ -56,8 +69,11 @@ class _ReportScreenState extends State<ReportScreen> {
     context.watch<ThemeViewModel>();
     return DefaultTabController(
       length: _kTabCount,
-      // Haritadan il seçilerek açıldıysa doğrudan İl Analizi tab'ına git
-      initialIndex: widget.initialProvince != null ? 1 : 0,
+      // Haritadan il seçilerek açıldıysa İl Analizi, senaryo ile açıldıysa
+      // Senaryo Karşılaştır tab'ına git.
+      initialIndex: widget.initialScenarioId != null
+          ? 2
+          : (widget.initialProvince != null ? 1 : 0),
       child: Scaffold(
         body: AppBackground(
           child: SafeArea(

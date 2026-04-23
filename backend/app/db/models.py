@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, JSON, Boolean, Text, Date, Index
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, JSON, Boolean, Text, Date, Index, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import UserBase, SystemBase
@@ -176,6 +176,58 @@ class HourlyWeatherData(SystemBase):
 
     # Konum kodu (ör. "ist0" = İstanbul il, "ist14" = Kadıköy)
     location_code = Column(String(10), nullable=True, index=True)
+
+
+# --- İL × KAYNAK SKOR TABLOSU (Faz 1 — Tek Kaynak) ---
+class ProvinceAnalysis(SystemBase):
+    """
+    81 il × 3 kaynak (wind/solar/hydro) için ön-hesaplanmış skorlar.
+    Raporlar, İl Analizi, Önerilen Bölgeler ve Choropleth bu tablodan beslenir.
+    Saatlik scheduler tetiklemesi sonrası yeniden hesaplanır (incremental).
+    """
+    __tablename__ = "province_analysis"
+    __table_args__ = (
+        UniqueConstraint("province_name", "resource_type", name="uq_province_resource"),
+        Index("ix_province_analysis_type_score6m", "resource_type", "score_6m"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    province_name = Column(String, nullable=False, index=True)
+    resource_type = Column(String, nullable=False, index=True)  # wind | solar | hydro
+
+    # Normalize 0-100 skorlar (4 pencere: 30 / 90 / 180 / 365 gün)
+    score_1m = Column(Float, nullable=True)
+    score_3m = Column(Float, nullable=True)
+    score_6m = Column(Float, nullable=True)
+    score_yearly = Column(Float, nullable=True)
+
+    # Ham metrikler (debug / detay ekranları için)
+    avg_wind_speed = Column(Float, nullable=True)           # m/s @ 100m
+    avg_solar_radiation = Column(Float, nullable=True)      # W/m² shortwave
+    avg_temperature = Column(Float, nullable=True)          # °C
+    capacity_factor = Column(Float, nullable=True)          # 0-1
+
+    sample_count = Column(Integer, nullable=True)           # kaç saatlik kayıttan üretildi
+    computed_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+# --- SCHEDULER META (son çalışma zamanı — "228 dk önce" fix) ---
+class SchedulerMeta(SystemBase):
+    """
+    APScheduler iş'lerinin son çalışma bilgisi.
+    /system/status endpoint'i bu tablodan last_run_at okur.
+    """
+    __tablename__ = "scheduler_meta"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_name = Column(String, unique=True, nullable=False, index=True)
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    next_run_at = Column(DateTime(timezone=True), nullable=True)
+    last_status = Column(String, nullable=True)             # ok | fail | running
+    last_duration_seconds = Column(Float, nullable=True)
+    last_error = Column(Text, nullable=True)
+    run_count = Column(Integer, default=0)
+
 
 # ===============================================
 # C) KULLANICI PIN VERİLERİ (UserPinsBase) - user_pins_data.db

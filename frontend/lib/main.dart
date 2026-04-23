@@ -9,6 +9,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:frontend/core/network/api_service.dart';
 import 'package:frontend/core/storage/secure_storage.dart';
 import 'package:frontend/core/services/connectivity_service.dart';
+import 'package:frontend/core/config/backend_config.dart';
 
 // ViewModels
 import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
@@ -32,6 +33,10 @@ Future<void> main() async {
 
   // Türkçe tarih formatlamasını başlat — DateFormat('...', 'tr_TR') için zorunlu.
   await initializeDateFormatting('tr_TR', null);
+
+  // Backend URL cache'ini SharedPreferences'ten yükle.
+  // Kullanıcı Ayarlar → Veri Kaynağı → Backend URL'den override edebilir.
+  await BackendConfig.instance.init();
 
   // Widget build hatalarını debug konsoluna yaz (red screen göster ama susturma).
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -107,7 +112,22 @@ class MyApp extends StatelessWidget {
                   page = const MapScreen();
                   break;
                 case '/reports':
-                  page = const ReportScreen();
+                  // Harita → il, Senaryo paneli → scenarioId gönderebilir.
+                  final args = settings.arguments;
+                  String? initialProvince;
+                  int? initialScenarioId;
+                  if (args is Map) {
+                    final p = args['province'];
+                    if (p is String && p.isNotEmpty) initialProvince = p;
+                    final sId = args['scenarioId'];
+                    if (sId is int) initialScenarioId = sId;
+                  } else if (args is String && args.isNotEmpty) {
+                    initialProvince = args;
+                  }
+                  page = ReportScreen(
+                    initialProvince: initialProvince,
+                    initialScenarioId: initialScenarioId,
+                  );
                   break;
                 case '/scenarios':
                   page = const ScenarioScreen();

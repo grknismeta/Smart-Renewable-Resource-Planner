@@ -59,6 +59,11 @@ class ReportViewModel extends BaseViewModel {
   int? _selectedProvinceIndex;
   List<ProvinceSummary> _provinceSummaries = [];
 
+  // Faz 1: `/analysis/province/{name}` detayı (3 kaynak × 4 pencere).
+  ProvinceDetail? _provinceAnalysisDetail;
+  bool _isLoadingProvinceAnalysis = false;
+  String? _provinceAnalysisError;
+
   int? get selectedProvinceIndex => _selectedProvinceIndex;
   List<ProvinceSummary> get provinceSummaries => _provinceSummaries;
   ProvinceSummary? get selectedProvinceSummary =>
@@ -67,9 +72,17 @@ class ReportViewModel extends BaseViewModel {
           ? _provinceSummaries[_selectedProvinceIndex!]
           : null;
 
+  ProvinceDetail? get provinceAnalysisDetail => _provinceAnalysisDetail;
+  bool get isLoadingProvinceAnalysis => _isLoadingProvinceAnalysis;
+  String? get provinceAnalysisError => _provinceAnalysisError;
+
   void setSelectedProvinceIndex(int idx) {
     _selectedProvinceIndex = idx;
     notifyListeners();
+    final s = selectedProvinceSummary;
+    if (s != null) {
+      _loadProvinceAnalysisDetail(s.provinceName);
+    }
   }
 
   /// İl adına göre provinceSummaries listesinde arar ve otomatik seçer.
@@ -81,6 +94,24 @@ class ReportViewModel extends BaseViewModel {
       (p) => _asciiLower(p.provinceName) == norm,
     );
     if (idx >= 0) setSelectedProvinceIndex(idx);
+  }
+
+  /// Faz 1: `/analysis/province/{name}` → 3 kaynak × 4 pencere.
+  Future<void> _loadProvinceAnalysisDetail(String name) async {
+    _isLoadingProvinceAnalysis = true;
+    _provinceAnalysisError = null;
+    _provinceAnalysisDetail = null;
+    notifyListeners();
+    try {
+      _provinceAnalysisDetail =
+          await _apiService.analysis.fetchProvinceDetail(name);
+    } catch (e) {
+      debugPrint('[ReportVM] province analysis detail hata: $e');
+      _provinceAnalysisError = e.toString();
+    } finally {
+      _isLoadingProvinceAnalysis = false;
+      notifyListeners();
+    }
   }
 
   static String _asciiLower(String s) {

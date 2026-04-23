@@ -185,6 +185,8 @@ class WeatherService extends BaseService {
   /// [start] / [end]: "YYYY-MM-DD"
   /// [metric]: "wind" | "temperature" | "radiation"
   /// [interval]: "daily" | "hourly"
+  ///
+  /// 60 sn timeout — saatlik mod + geniş tarih aralığı 10+ MB yanıt üretebilir.
   Future<Map<String, dynamic>> fetchAnimationData({
     required String start,
     required String end,
@@ -199,7 +201,8 @@ class WeatherService extends BaseService {
         'interval': interval,
       },
     );
-    final response = await http.get(uri);
+    final response =
+        await http.get(uri).timeout(const Duration(seconds: 60));
     final data = processResponse(response);
     if (data is Map<String, dynamic>) return data;
     throw Exception('Animasyon verisi alınamadı');

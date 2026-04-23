@@ -524,10 +524,15 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   void toggleRecommendationsPanel() {
     _isRecommendationsPanelOpen = !_isRecommendationsPanelOpen;
-    if (_isRecommendationsPanelOpen &&
-        _recommendations == null &&
-        !_isLoadingRecommendations) {
-      loadRecommendations();
+    if (_isRecommendationsPanelOpen) {
+      // Faz 1 top-N (garantili veri — province_analysis tablosundan)
+      if (_analysisWindTop == null && !_isLoadingAnalysisTop) {
+        loadAnalysisTop();
+      }
+      // Opsiyonel: eski Weibull/ML kategorileri (varsa ek bilgi olarak)
+      if (_recommendations == null && !_isLoadingRecommendations) {
+        loadRecommendations();
+      }
     }
     safeNotify();
   }
@@ -1545,6 +1550,80 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     notifyListeners();
   }
 
+  // ─── Faz 1 — Top-N Analiz (province_analysis tek kaynak) ────────────────────
+  //
+  // `/analysis/provinces` üzerinden 3 kaynak × konfigüre edilen horizon için
+  // top-N il listesi çeker. Önerilen Bölgeler paneli bunu kullanır.
+
+  List<ProvinceAnalysisItem>? _analysisWindTop;
+  List<ProvinceAnalysisItem>? _analysisSolarTop;
+  List<ProvinceAnalysisItem>? _analysisHydroTop;
+  AnalysisHorizon _analysisHorizon = AnalysisHorizon.m6;
+  bool _isLoadingAnalysisTop = false;
+  String? _analysisTopError;
+
+  List<ProvinceAnalysisItem>? get analysisWindTop => _analysisWindTop;
+  List<ProvinceAnalysisItem>? get analysisSolarTop => _analysisSolarTop;
+  List<ProvinceAnalysisItem>? get analysisHydroTop => _analysisHydroTop;
+  AnalysisHorizon get analysisHorizon => _analysisHorizon;
+  bool get isLoadingAnalysisTop => _isLoadingAnalysisTop;
+  String? get analysisTopError => _analysisTopError;
+
+  /// Top-N analiz listelerini (rüzgar + güneş + hidro) paralel çeker.
+  Future<void> loadAnalysisTop({
+    AnalysisHorizon horizon = AnalysisHorizon.m6,
+    int limit = 10,
+  }) async {
+    if (_isLoadingAnalysisTop) return;
+    _analysisHorizon = horizon;
+    _isLoadingAnalysisTop = true;
+    _analysisTopError = null;
+    notifyListeners();
+
+    try {
+      final results = await Future.wait([
+        _apiService.analysis.fetchProvinces(
+          type: AnalysisResourceType.wind,
+          horizon: horizon,
+          limit: limit,
+        ),
+        _apiService.analysis.fetchProvinces(
+          type: AnalysisResourceType.solar,
+          horizon: horizon,
+          limit: limit,
+        ),
+        _apiService.analysis.fetchProvinces(
+          type: AnalysisResourceType.hydro,
+          horizon: horizon,
+          limit: limit,
+        ),
+      ]);
+      _analysisWindTop = results[0].items;
+      _analysisSolarTop = results[1].items;
+      _analysisHydroTop = results[2].items;
+    } catch (e) {
+      debugPrint('[MapViewModel.loadAnalysisTop] Hata: $e');
+      _analysisTopError = e.toString();
+    } finally {
+      _isLoadingAnalysisTop = false;
+      notifyListeners();
+    }
+  }
+
+  /// Horizon'u değiştirir ve listeleri yeniden çeker.
+  Future<void> setAnalysisHorizon(AnalysisHorizon horizon) async {
+    if (_analysisHorizon == horizon) return;
+    await loadAnalysisTop(horizon: horizon);
+  }
+
+  void clearAnalysisTop() {
+    _analysisWindTop = null;
+    _analysisSolarTop = null;
+    _analysisHydroTop = null;
+    _analysisTopError = null;
+    notifyListeners();
+  }
+
   // ─── Zaman Simülasyonu (Animasyon) State ───────────────────────────────────
 
   bool _isAnimationMode   = false;
@@ -1614,18 +1693,46 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   }
 
   /// Backend'den kullanılabilir tarih aralığını çekip `_animRangeInfo`'ya yaz.
+  /// Ayrıca varsayılan tarih aralığı veritabanı aralığının dışındaysa
+  /// (örn. "bugün" 2026-04 ama veri 2024-12'de bitiyor) son 30 güne çeker.
   Future<void> _fetchAnimationRange() async {
     try {
       final data = await _apiService.weather.fetchAnimationRange();
-      final dMin = data['daily_min']  ?? '?';
-      final dMax = data['daily_max']  ?? '?';
-      final hMin = data['hourly_min'] ?? '?';
-      final hMax = data['hourly_max'] ?? '?';
+      final dMin = (data['daily_min'] ?? '').toString();
+      final dMax = (data['daily_max'] ?? '').toString();
+      final hMin = (data['hourly_min'] ?? '').toString();
+      final hMax = (data['hourly_max'] ?? '').toString();
       // Yıl kısmını kısalt: "2015-12-31" → "2015"
       String yr(String s) => s.length >= 4 ? s.substring(0, 4) : s;
-      _animRangeInfo = 'Günlük: ${yr(dMin)}–${yr(dMax)}  ·  Saatlik: ${yr(hMin)}–${yr(hMax)}';
+      _animRangeInfo = 'Günlük: ${yr(dMin.isEmpty ? "?" : dMin)}–${yr(dMax.isEmpty ? "?" : dMax)}'
+          '  ·  Saatlik: ${yr(hMin.isEmpty ? "?" : hMin)}–${yr(hMax.isEmpty ? "?" : hMax)}';
+
+      // Varsayılan tarih aralığını veri aralığına göre ayarla.
+      // Kullanıcı henüz manuel değiştirmediyse ve mevcut end date veritabanı
+      // aralığının dışındaysa, sonu veri_max'a, başı veri_max-30gün'e çek.
+      final activeMax = _animInterval == 'hourly'
+          ? (hMax.isNotEmpty ? hMax : dMax)
+          : dMax;
+      if (activeMax.isNotEmpty) {
+        try {
+          final maxDate = DateTime.parse(activeMax);
+          // Kullanıcı default'ta DateTime.now() kullanıyor; endDate maxDate'ten
+          // ileri ise bilgilendirici şekilde geri çek.
+          if (_animEndDate.isAfter(maxDate)) {
+            _animEndDate = maxDate;
+            final newStart = maxDate.subtract(const Duration(days: 30));
+            if (_animStartDate.isBefore(newStart) || _animStartDate.isAfter(maxDate)) {
+              _animStartDate = newStart;
+            }
+            _clampAnimEndDate();
+          }
+        } catch (_) {
+          // parse başarısız → ignore
+        }
+      }
     } catch (e) {
       _animRangeInfo = '';
+      debugPrint('[MapViewModel._fetchAnimationRange] $e');
     }
     safeNotify();
   }
@@ -1689,15 +1796,33 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     } catch (e) {
       // processResponse zaten FastAPI detail mesajını Exception içine koyuyor
       final raw = e.toString().replaceFirst('Exception: ', '');
-      // Kullanıcıya ham hata yerine okunabilir mesaj göster
-      if (raw.contains('ClientFailed') || raw.contains('SocketException') || raw.contains('Connection')) {
-        _animError = 'Sunucuya bağlanılamadı. Lütfen backend\'in çalıştığından emin olun.';
-      } else if (raw.contains('404') || raw.contains('bulunamadı')) {
+      final lower = raw.toLowerCase();
+
+      // Kullanıcıya ham hata yerine okunabilir mesaj göster.
+      // Önce en spesifik hatalar (timeout / ağ) — sonra genel fallback.
+      if (lower.contains('timeoutexception') || lower.contains('timed out')) {
+        _animError =
+            'İstek zaman aşımına uğradı (60 sn). Daha kısa bir tarih aralığı seçin.';
+      } else if (lower.contains('socketexception') ||
+          lower.contains('clientexception') ||
+          lower.contains('failed to fetch') ||
+          lower.contains('connection refused') ||
+          lower.contains('connection closed') ||
+          lower.contains('network is unreachable')) {
+        _animError =
+            'Sunucuya bağlanılamadı. Backend çalışıyor mu? (URL: ${_apiService.weather.baseUrl})';
+      } else if (lower.contains('404') || lower.contains('bulunamadı')) {
         _animError = 'Seçilen tarih aralığında veri bulunamadı.';
+      } else if (lower.contains('500') || lower.contains('internal server')) {
+        _animError = 'Sunucu hatası (500). Tarih aralığını daraltın.';
+      } else if (raw.isNotEmpty && raw.length < 120) {
+        // Backend'in döndürdüğü "detail" mesajı anlamlıysa direkt göster
+        _animError = 'Hata: $raw';
       } else {
         _animError = 'Veri yüklenirken hata oluştu. Farklı bir tarih aralığı deneyin.';
       }
-      debugPrint('[MapViewModel.loadAnimationData] $e');
+      debugPrint('[MapViewModel.loadAnimationData] URL=${_apiService.weather.baseUrl}/weather/animation '
+          'metric=$_animMetric interval=$_animInterval err=$e');
     } finally {
       _animIsLoading = false;
       safeNotify();

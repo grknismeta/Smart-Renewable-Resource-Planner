@@ -46,6 +46,15 @@ class ScenarioViewModel extends BaseViewModel {
     notifyListeners();
   }
 
+  /// Mevcut seçimi temizleyip verilen id'yi tekil olarak seçer.
+  /// Raporlar sayfası `scenarioId` argümanıyla açıldığında kullanılır.
+  void selectOnly(int id) {
+    _selectedScenarioIds
+      ..clear()
+      ..add(id);
+    notifyListeners();
+  }
+
   Future<void> loadScenarios() async {
     setBusy(true);
 

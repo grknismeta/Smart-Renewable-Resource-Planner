@@ -1,4 +1,5 @@
 import 'package:frontend/core/storage/secure_storage.dart';
+import 'package:frontend/core/network/analysis_service.dart';
 import 'package:frontend/core/network/auth_service.dart';
 import 'package:frontend/core/network/equipment_service.dart';
 import 'package:frontend/core/network/geo_service.dart';
@@ -10,6 +11,7 @@ import 'package:frontend/core/network/weather_service.dart';
 import 'package:frontend/core/network/recommendation_service.dart';
 import 'package:frontend/core/network/wind_vector_service.dart';
 
+export 'package:frontend/core/network/analysis_service.dart';
 export 'package:frontend/core/network/auth_service.dart';
 export 'package:frontend/core/network/equipment_service.dart';
 export 'package:frontend/core/network/geo_service.dart';
@@ -24,6 +26,7 @@ export 'package:frontend/core/network/wind_vector_service.dart';
 class ApiService {
   final SecureStorageService _storageService;
 
+  late final AnalysisService analysis;
   late final AuthService auth;
   late final EquipmentService equipment;
   late final GeoService geo;
@@ -36,6 +39,7 @@ class ApiService {
   late final WindVectorService windVector;
 
   ApiService(this._storageService) {
+    analysis = AnalysisService(_storageService);
     auth = AuthService(_storageService);
     equipment = EquipmentService(_storageService);
     geo = GeoService(_storageService);

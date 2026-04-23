@@ -670,16 +670,23 @@ def get_animation_frames(
 
             metric_col = _DAILY_METRIC_COL[metric]
 
+            # NOT: WeatherData tablosunda `city_name` yok — sadece `province_name`
+            # (merge/backfill ile doldurulur) ve `district_name`. Animasyon için
+            # il merkezlerini alıyoruz (district_name NULL veya 'Merkez').
             rows = db.query(
                 WeatherData.latitude,
                 WeatherData.longitude,
                 WeatherData.date,
-                WeatherData.city_name,
+                WeatherData.province_name,
                 metric_col.label("val"),
             ).filter(
                 WeatherData.date >= start_date,
                 WeatherData.date <= end_date,
                 metric_col.isnot(None),
+                or_(
+                    WeatherData.district_name.is_(None),
+                    WeatherData.district_name == "Merkez",
+                ),
             ).order_by(WeatherData.date).all()
 
             # Tarih → [(lat, lon, val, city)] gruplama
@@ -691,7 +698,7 @@ def get_animation_frames(
                     round(row.latitude, 4),
                     round(row.longitude, 4),
                     v,
-                    row.city_name or "",
+                    row.province_name or "",
                 ])
                 all_vals.append(v)
 
@@ -1129,54 +1136,104 @@ def get_district_choropleth(
     db = SystemSessionLocal()
     try:
         if mode == "latest":
-            # Tüm ilçeler için TEK global en son timestamp'i bul
-            # Bu sayede doğu-batı tutarsızlığı olmaz (aynı saat, aynı veri).
+            # ⚠️ Eskiden tek global max(timestamp) kullanılıyordu → Türkiye'nin
+            # doğu-batı enlem farkı (~1h 20m) + fetch dalga geciktirmesi yüzünden
+            # doğudaki ilçeler son saate sahip değilse haritadan düşüyordu
+            # (kullanıcı raporu: "sol yükleniyor sağ yüklenmiyor").
+            # Çözüm: her ilçe için KENDİ en son saatini al. Solar için de
+            # her ilçenin KENDİ en son gündüz saatini al (gece → lacivert floor).
             from sqlalchemy import and_
 
-            global_max_ts = db.query(
-                func.max(HourlyWeatherData.timestamp),
-            ).filter(
-                HourlyWeatherData.district_name.isnot(None),
-            ).scalar()
+            # Her ilçenin en son saatinin timestamp'i
+            latest_per_district = (
+                db.query(
+                    HourlyWeatherData.city_name.label("c"),
+                    HourlyWeatherData.district_name.label("d"),
+                    func.max(HourlyWeatherData.timestamp).label("max_ts"),
+                )
+                .filter(HourlyWeatherData.district_name.isnot(None))
+                .group_by(
+                    HourlyWeatherData.city_name,
+                    HourlyWeatherData.district_name,
+                )
+                .subquery()
+            )
 
-            if not global_max_ts:
+            rows = (
+                db.query(
+                    HourlyWeatherData.city_name,
+                    HourlyWeatherData.district_name,
+                    HourlyWeatherData.wind_speed_100m.label("avg_wind"),
+                    HourlyWeatherData.shortwave_radiation.label("avg_radiation"),
+                    HourlyWeatherData.temperature_2m.label("avg_temp"),
+                    HourlyWeatherData.timestamp.label("row_ts"),
+                )
+                .join(
+                    latest_per_district,
+                    and_(
+                        HourlyWeatherData.city_name == latest_per_district.c.c,
+                        HourlyWeatherData.district_name == latest_per_district.c.d,
+                        HourlyWeatherData.timestamp == latest_per_district.c.max_ts,
+                    ),
+                )
+                .all()
+            )
+
+            if not rows:
                 cache_set(cache_key, {}, ttl_seconds=60)
                 return {}
 
-            # Global timestamp'e ait tüm satırları çek
-            rows = db.query(
-                HourlyWeatherData.city_name,
-                HourlyWeatherData.district_name,
-                HourlyWeatherData.wind_speed_100m.label("avg_wind"),
-                HourlyWeatherData.shortwave_radiation.label("avg_radiation"),
-                HourlyWeatherData.temperature_2m.label("avg_temp"),
-            ).filter(
-                HourlyWeatherData.district_name.isnot(None),
-                HourlyWeatherData.timestamp == global_max_ts,
-            ).all()
+            # Meta için: tüm ilçeler arasında en eski ve en yeni saat
+            _all_ts = [r.row_ts for r in rows if r.row_ts]
+            global_max_ts = max(_all_ts) if _all_ts else None
+            global_min_ts = min(_all_ts) if _all_ts else None
 
-            # Solar için: gündüz saatlerindeki en son global timestamp
-            # Gece ise tüm Türkiye'de 0 olacak → tek global daylight timestamp
-            global_solar_ts = db.query(
-                func.max(HourlyWeatherData.timestamp),
-            ).filter(
-                HourlyWeatherData.district_name.isnot(None),
-                HourlyWeatherData.shortwave_radiation > 0,
-            ).scalar()
+            # Solar: her ilçenin en son GÜNDÜZ saatini ayrıca getir
+            # (ilçe gece saatindeyse avg_radiation=0 olur; gündüz lookup'tan
+            # gelen değer yoksa 0 olarak kalır → lacivert floor doğru).
+            latest_solar_per_district = (
+                db.query(
+                    HourlyWeatherData.city_name.label("c"),
+                    HourlyWeatherData.district_name.label("d"),
+                    func.max(HourlyWeatherData.timestamp).label("max_ts"),
+                )
+                .filter(
+                    HourlyWeatherData.district_name.isnot(None),
+                    HourlyWeatherData.shortwave_radiation > 0,
+                )
+                .group_by(
+                    HourlyWeatherData.city_name,
+                    HourlyWeatherData.district_name,
+                )
+                .subquery()
+            )
 
-            _solar_lookup: dict[str, float] = {}
-            if global_solar_ts:
-                solar_rows = db.query(
+            solar_rows = (
+                db.query(
                     HourlyWeatherData.city_name,
                     HourlyWeatherData.district_name,
                     HourlyWeatherData.shortwave_radiation.label("radiation"),
-                ).filter(
-                    HourlyWeatherData.district_name.isnot(None),
-                    HourlyWeatherData.timestamp == global_solar_ts,
-                ).all()
-                for sr in solar_rows:
-                    if sr.city_name and sr.district_name and sr.radiation:
-                        _solar_lookup[f"{sr.city_name}|{sr.district_name}"] = float(sr.radiation)
+                    HourlyWeatherData.timestamp.label("ts"),
+                )
+                .join(
+                    latest_solar_per_district,
+                    and_(
+                        HourlyWeatherData.city_name == latest_solar_per_district.c.c,
+                        HourlyWeatherData.district_name == latest_solar_per_district.c.d,
+                        HourlyWeatherData.timestamp == latest_solar_per_district.c.max_ts,
+                    ),
+                )
+                .all()
+            )
+
+            _solar_lookup: dict[str, float] = {}
+            _solar_ts_list = []
+            for sr in solar_rows:
+                if sr.city_name and sr.district_name and sr.radiation:
+                    _solar_lookup[f"{sr.city_name}|{sr.district_name}"] = float(sr.radiation)
+                    if sr.ts:
+                        _solar_ts_list.append(sr.ts)
+            global_solar_ts = max(_solar_ts_list) if _solar_ts_list else None
         else:
             cutoff = datetime.now() - timedelta(hours=hours)
 
@@ -1278,9 +1335,14 @@ def get_district_choropleth(
         )
 
         # Meta bilgi: verinin hangi zamana ait olduğu
+        # mode=latest artık per-district en son saati kullanıyor → tek ts yerine
+        # [min, max] aralığı expose edilir. Frontend "en güncel" yazısı için
+        # data_timestamp'i max olarak korur (geri uyumluluk).
         meta: dict = {}
         if mode == "latest" and global_max_ts:
             meta["data_timestamp"] = global_max_ts.isoformat()
+            if global_min_ts:
+                meta["data_timestamp_min"] = global_min_ts.isoformat()
             if global_solar_ts:
                 meta["solar_timestamp"] = global_solar_ts.isoformat()
         else:

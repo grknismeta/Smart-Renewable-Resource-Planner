@@ -3,6 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:frontend/core/network/analysis_service.dart';
 import 'package:frontend/core/theme/app_theme.dart';
 import 'package:frontend/data/models/weather_model.dart';
 import 'package:frontend/features/reports/viewmodels/report_viewmodel.dart';
@@ -240,8 +241,11 @@ class _ProvinceListPanel extends StatelessWidget {
               const Icon(Icons.location_city_rounded,
                   size: 14, color: Colors.cyanAccent),
               const SizedBox(width: 6),
+              // 81 il toplam (Türkiye idari taksimatı sabit).
+              // Payda her zaman 81 — bazı illerde son 168 saatte veri
+              // eksikse pay düşer ("79/81" gibi görünür, kullanıcı eksiği fark eder).
               Text(
-                'İller  ${provinces.length}/$allCount',
+                'İller  ${provinces.length}/81',
                 style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
@@ -563,6 +567,16 @@ class _ProvinceDetail extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _ProvinceRadarChart(province: p, score: score),
+          const SizedBox(height: 14),
+
+          // ── Faz 1: Kaynak × Pencere Skor Matrisi ─────────────────────────────
+          _SectionTitle(
+            title: 'Kaynak × Zaman Pencere Skorları',
+            subtitle:
+                'province_analysis tek kaynak tablosu — 3 kaynak × 4 pencere',
+          ),
+          const SizedBox(height: 8),
+          _FazBirScoreMatrix(vm: vm),
           const SizedBox(height: 14),
 
           // ── Haritada görüntüle ───────────────────────────────────────────────
@@ -1058,4 +1072,215 @@ Color _scoreColor(double score) {
   if (score >= 70) return Colors.greenAccent;
   if (score >= 45) return Colors.orangeAccent;
   return Colors.redAccent;
+}
+
+// ── Faz 1: Kaynak × Pencere Skor Matrisi ─────────────────────────────────────
+//
+// `/analysis/province/{name}` yanıtını 3 satır (wind/solar/hydro) × 4 sütun
+// (1A/3A/6A/Yıl) tabloda gösterir. Renk tonu skora göre.
+
+class _FazBirScoreMatrix extends StatelessWidget {
+  final ReportViewModel vm;
+  const _FazBirScoreMatrix({required this.vm});
+
+  @override
+  Widget build(BuildContext context) {
+    if (vm.isLoadingProvinceAnalysis) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              color: Colors.purpleAccent,
+              strokeWidth: 2,
+            ),
+          ),
+        ),
+      );
+    }
+    if (vm.provinceAnalysisError != null) {
+      return Padding(
+        padding: const EdgeInsets.all(10),
+        child: Text(
+          'Analiz servisine ulaşılamadı.\n${vm.provinceAnalysisError}',
+          style: const TextStyle(color: Colors.orangeAccent, fontSize: 11),
+        ),
+      );
+    }
+    final detail = vm.provinceAnalysisDetail;
+    if (detail == null) {
+      return const Padding(
+        padding: EdgeInsets.all(10),
+        child: Text(
+          'Bu il için henüz analiz sonucu yok.',
+          style: TextStyle(color: Colors.white38, fontSize: 11),
+        ),
+      );
+    }
+
+    final rows = <(String, Color, ProvinceAnalysisItem?)>[
+      ('Rüzgar', Colors.redAccent, detail.wind),
+      ('Güneş', Colors.orangeAccent, detail.solar),
+      ('Hidro', Colors.lightBlueAccent, detail.hydro),
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        children: [
+          // Başlık satırı
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 10, vertical: 8),
+            child: Row(
+              children: const [
+                SizedBox(
+                  width: 70,
+                  child: Text(
+                    'Kaynak',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _HeaderCell(label: '1A'),
+                ),
+                Expanded(
+                  child: _HeaderCell(label: '3A'),
+                ),
+                Expanded(
+                  child: _HeaderCell(label: '6A'),
+                ),
+                Expanded(
+                  child: _HeaderCell(label: 'Yıl'),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Colors.white12),
+          ...rows.map((r) => _ScoreRow(
+                label: r.$1,
+                color: r.$2,
+                item: r.$3,
+              )),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderCell extends StatelessWidget {
+  final String label;
+  const _HeaderCell({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white54,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _ScoreRow extends StatelessWidget {
+  final String label;
+  final Color color;
+  final ProvinceAnalysisItem? item;
+
+  const _ScoreRow({
+    required this.label,
+    required this.color,
+    required this.item,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 70,
+            child: Row(
+              children: [
+                Container(
+                  width: 6,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: _ScoreCell(score: item?.score1m)),
+          Expanded(child: _ScoreCell(score: item?.score3m)),
+          Expanded(child: _ScoreCell(score: item?.score6m)),
+          Expanded(child: _ScoreCell(score: item?.scoreYearly)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScoreCell extends StatelessWidget {
+  final double? score;
+  const _ScoreCell({required this.score});
+
+  @override
+  Widget build(BuildContext context) {
+    if (score == null) {
+      return const Center(
+        child: Text(
+          '—',
+          style: TextStyle(color: Colors.white24, fontSize: 11),
+        ),
+      );
+    }
+    final col = _scoreColor(score!);
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: col.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          score!.toStringAsFixed(1),
+          style: TextStyle(
+            color: col,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
 }

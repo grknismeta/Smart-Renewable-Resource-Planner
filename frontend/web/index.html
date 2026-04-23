@@ -946,12 +946,25 @@
           }
         }
 
-        // 2. Seçim katmanı (il/ilçe/bölge)
+        // 2. Seçim katmanı (il/ilçe/bölge) + fallback layer
+        // Hem ana hit layer (srrp-sel-hit) hem de ilçe modundaki province fallback
+        // layer (srrp-sel-hit-prov-fallback) kontrol edilir. Fallback öncelik almaz;
+        // ana hit bulunursa o döner. Aksi halde fallback kontrol edilir.
         if (map.getLayer('srrp-sel-hit')) {
           var selHits = map.queryRenderedFeatures(point, { layers: ['srrp-sel-hit'] });
           if (selHits.length > 0) {
             var selProps = selHits[0].properties;
             return JSON.stringify({ type: 'selection', properties: selProps });
+          }
+        }
+        if (map.getLayer('srrp-sel-hit-prov-fallback')) {
+          var fbHits = map.queryRenderedFeatures(point, { layers: ['srrp-sel-hit-prov-fallback'] });
+          if (fbHits.length > 0) {
+            var fbProps = fbHits[0].properties || {};
+            // Fallback il layer'ı — NAME_1 + REGION var. Dart `_handleSelectionClick`
+            // initial-mode aware işler: İl modu → selectProvince(NAME_1);
+            // Bölge modu district level → region değiştiyse selectRegion + selectProvince.
+            return JSON.stringify({ type: 'selection', properties: fbProps });
           }
         }
 
@@ -1353,7 +1366,14 @@
       // Canvas'ı harita container'ının içine ekle (body yerine)
       // Bu sayede Flutter'ın platform view z-order'ı bozulmaz
       // Mobil ve masaüstünde aynı şekilde çalışır
-      canvas.style.cssText = 'position:absolute;pointer-events:none;z-index:9999;'
+      // z-index BELİRTME — auto kalsın.
+      // Platform view slot (flt-platform-view-slot) position:absolute ama z-index:auto,
+      // yani stacking context açmıyor. İçerideki z-index:N değeri root stacking'e
+      // "yayılıyor" ve Flutter overlay canvas'ı (UI widget'ları) ile çakışıyor.
+      // z-index yokken canvas DOM sıralamasında map canvas'tan sonra eklendiği için
+      // doğal olarak map üstünde, ama Flutter overlay DOM'da platform view slot'tan
+      // sonra olduğu için UI widget'ları wind canvas'ın üstünde kalır.
+      canvas.style.cssText = 'position:absolute;pointer-events:none;'
         + 'top:0;left:0;width:100%;height:100%;';
       container.appendChild(canvas);
       const ctx = canvas.getContext('2d');
@@ -1606,6 +1626,8 @@
     var SEL_LAYERS = [
       'srrp-sel-unique', 'srrp-sel-hit', 'srrp-sel-hover', 'srrp-sel-extrusion',
       'srrp-sel-prov-border', 'srrp-sel-dist-border',
+      'srrp-sel-district-highlight',   // İlçe modu: seçili ilçe mavi çerçeve
+      'srrp-sel-hit-prov-fallback',    // İl modu drill-down: seçili il dışı tıklama için
     ];
 
     // Aktif event handler referansları — map.off() ile kaldırmak için saklanır.
@@ -1614,6 +1636,10 @@
     var _selMousemoveFn  = null;
     var _selMouseleaveFn = null;
     var _selClickFn      = null;
+    // Province fallback handler (İl modu drill-down'da seçili il dışı tıklama için)
+    var _selProvFallbackClickFn     = null;
+    var _selProvFallbackMousemoveFn = null;
+    var _selProvFallbackMouseleaveFn = null;
 
     // ── Benzersiz renk paleti (il/ilçe/bölge renklendirme) ────────────────────
     // Orijinal palet: Kırmızı #e74c3c, Yeşil #58D68D, Sarı #f4d03f,
@@ -1803,6 +1829,11 @@
       if (_selMouseleaveFn) { try { map.off('mouseleave', 'srrp-sel-hit', _selMouseleaveFn); } catch(_) {} }
       if (_selClickFn)      { try { map.off('click',      'srrp-sel-hit', _selClickFn);      } catch(_) {} }
       _selMousemoveFn = _selMouseleaveFn = _selClickFn = null;
+      // Fallback handler'ları kaldır
+      if (_selProvFallbackClickFn)     { try { map.off('click',      'srrp-sel-hit-prov-fallback', _selProvFallbackClickFn);     } catch(_) {} }
+      if (_selProvFallbackMousemoveFn) { try { map.off('mousemove',  'srrp-sel-hit-prov-fallback', _selProvFallbackMousemoveFn); } catch(_) {} }
+      if (_selProvFallbackMouseleaveFn){ try { map.off('mouseleave', 'srrp-sel-hit-prov-fallback', _selProvFallbackMouseleaveFn);} catch(_) {} }
+      _selProvFallbackClickFn = _selProvFallbackMousemoveFn = _selProvFallbackMouseleaveFn = null;
       SEL_LAYERS.forEach(function (id) {
         try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
       });
@@ -1822,7 +1853,14 @@
      *   Tanımlandığında hover = NAME_1__NAME_2 şeklinde birleşik değer, filtre ALL ile kurulur.
      *   click callback hoverProp2'nin değerini alır (ilçe adı).
      */
-    function _setupSelectionLayers(srcId, hoverProp, hitFilter, clickFn, srcName, hoverProp2, _retryCount) {
+    // Parametreler:
+    //   srcId, hoverProp, hitFilter, clickFn, srcName, hoverProp2, _retryCount, colorFilter
+    // colorFilter:
+    //   - undefined → colorFilter = hitFilter (varsayılan: hit ve color aynı filtreyi kullanır)
+    //   - set        → color ayrı filtrelenir (İl modunda: hit=tüm-Türkiye, color=seçili-il)
+    //                  Amaç: diğer illere tıklama kaydı düşsün (cross-province), ama sadece
+    //                  seçili ilin ilçeleri renklensin.
+    function _setupSelectionLayers(srcId, hoverProp, hitFilter, clickFn, srcName, hoverProp2, _retryCount, colorFilter) {
       // Önceki bekleyen retry'ı iptal et (yeni çağrı geldi)
       if (_selSetupTimerId) { clearTimeout(_selSetupTimerId); _selSetupTimerId = null; }
 
@@ -1836,6 +1874,12 @@
       SEL_LAYERS.forEach(function (id) {
         try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
       });
+      // Önceki fallback handler'larını da temizle (district→district, district→province
+      // mode geçişlerinde stale listener kalmasın).
+      if (_selProvFallbackClickFn)     { try { map.off('click',      'srrp-sel-hit-prov-fallback', _selProvFallbackClickFn);     } catch(_) {} }
+      if (_selProvFallbackMousemoveFn) { try { map.off('mousemove',  'srrp-sel-hit-prov-fallback', _selProvFallbackMousemoveFn); } catch(_) {} }
+      if (_selProvFallbackMouseleaveFn){ try { map.off('mouseleave', 'srrp-sel-hit-prov-fallback', _selProvFallbackMouseleaveFn);} catch(_) {} }
+      _selProvFallbackClickFn = _selProvFallbackMousemoveFn = _selProvFallbackMouseleaveFn = null;
 
       // Source hazır değilse bekle (max 8 deneme = ~4.8 saniye)
       if (!map.getSource(srcId)) {
@@ -1846,7 +1890,7 @@
         console.warn('[SRRP] Kaynak hazır değil: ' + srcId + ', 600ms sonra tekrar denenecek (' + (retries+1) + '/8)');
         _selSetupTimerId = setTimeout(function () {
           _selSetupTimerId = null;
-          _setupSelectionLayers(srcId, hoverProp, hitFilter, clickFn, srcName, hoverProp2, retries + 1);
+          _setupSelectionLayers(srcId, hoverProp, hitFilter, clickFn, srcName, hoverProp2, retries + 1, colorFilter);
         }, 600);
         return;
       }
@@ -1962,7 +2006,16 @@
         } else {
           val = props[hoverProp] || '';
         }
-        if (val && clickFn) clickFn(val);
+        if (!val || !clickFn) return;
+        // Province modunda (hoverProp==='NAME_1' && !composite) ikinci argüman
+        // olarak REGION bilgisini de aktarıyoruz → Dart tarafı cross-region
+        // click'leri handle edebilir.
+        var isProvinceMode = (hoverProp === 'NAME_1' && !composite);
+        if (isProvinceMode) {
+          clickFn(val, props.REGION || null);
+        } else {
+          clickFn(val);
+        }
       };
 
       // Mousemove — hover + extrusion filtrele
@@ -1972,8 +2025,10 @@
       map.on('click',      'srrp-sel-hit', _selClickFn);
 
       // Benzersiz renk katmanı — ilçe modunda NAME_2 ile, diğerlerinde hoverProp ile
+      // colorFilter opsiyonel: verilmezse hitFilter kullanılır (geriye dönük uyumlu).
       var colorProp = composite ? hoverProp2 : hoverProp;
-      _addUniqueColorLayer(srcId, colorProp, hitFilter);
+      var effectiveColorFilter = (colorFilter !== undefined) ? colorFilter : hitFilter;
+      _addUniqueColorLayer(srcId, colorProp, effectiveColorFilter);
 
       console.log('[SRRP] Seçim modu aktif: ' + srcName);
     }
@@ -1991,18 +2046,24 @@
 
     /**
      * İl seçim modunu başlat.
-     * @param {string|null} regionFilter — yalnızca bu bölgenin illeri (null = hepsi)
+     * @param {string|null} regionFilter — görsel olarak vurgulanacak bölgenin illeri
+     *   (null = hepsi vurgulu). HIT filter null; kullanıcı başka bölgedeki ile
+     *   tıklarsa Dart `_handleProvinceClickJs(name, region)` region'ı günceller
+     *   ("Hala tıklama ile diğer bölgelere geçebilirim" spec'i).
      */
     window.srrpSetupProvinceMode = function (regionFilter) {
-      var hitFilter = regionFilter
+      var colorFilter = regionFilter
         ? ['==', ['get', 'REGION'], regionFilter]
         : null;
       _setupSelectionLayers(
         'srrp-borders-provinces',
         'NAME_1',
-        hitFilter,
+        null,                          // hitFilter = null → tüm iller clickable
         window._srrpProvinceClickFn,
-        'İl' + (regionFilter ? ' (' + regionFilter + ')' : '')
+        'İl' + (regionFilter ? ' (' + regionFilter + ', cross-region aktif)' : ''),
+        undefined,                     // hoverProp2 (non-composite)
+        0,                             // retries
+        colorFilter                    // color yalnızca seçili bölgenin illerine
       );
     };
 
@@ -2013,18 +2074,90 @@
      * @param {string|null} provinceName — ilçeleri gösterilecek il (NAME_1), null = Tüm Türkiye
      */
     window.srrpSetupDistrictMode = function (provinceName) {
-      var hitFilter = (provinceName && provinceName.length > 0)
-        ? ['==', ['get', 'NAME_1'], provinceName]
-        : null;
+      var hasProv = (provinceName && provinceName.length > 0);
+      // İl modu drill-down (hasProv=true):
+      //   - hit (ilçe click/hover): SADECE seçili ilin ilçeleri → Dart
+      //     `_handleDistrictClickJs` ilçe seçimi yapar.
+      //   - color (görsel fill): sadece seçili ilin ilçeleri renklenir.
+      //   - province fallback hit: seçili il DIŞINDAKİ iller → Dart
+      //     `_handleProvinceClickJs` → `selectProvince(newProvince)` → drill-down
+      //     yeni ile geçer. Kullanıcı spec: "il dışı tıklama = yeni il (ilçe değil)"
+      // İlçe modu (provinceName=null): hit=color=filtresiz, tüm Türkiye renklenir,
+      // fallback yok (ilçe modu kendi başına tüm ilçeleri tıklatır).
+      var filter = hasProv ? ['==', ['get', 'NAME_1'], provinceName] : null;
       _setupSelectionLayers(
         'srrp-borders-districts',
         'NAME_1',          // birincil: il adı (composite filter için)
-        hitFilter,
+        filter,            // hitFilter = colorFilter (sadece seçili il)
         window._srrpDistrictClickFn,
-        provinceName ? ('İlçe (' + provinceName + ')') : 'İlçe (Tüm Türkiye)',
-        'NAME_2'           // ikincil: ilçe adı → bileşik hover + click değeri
+        hasProv ? ('İlçe (' + provinceName + ')') : 'İlçe (Tüm Türkiye)',
+        'NAME_2',          // ikincil: ilçe adı → bileşik hover + click değeri
+        0                  // _retryCount (ilk çağrı)
+        // colorFilter undefined → hitFilter kullanılır (ikisi de aynı)
       );
+
+      // İl modu drill-down: seçili il dışına tıklamayı yakalayan "fallback" katmanı.
+      if (hasProv) {
+        _setupProvinceFallbackLayer(provinceName);
+      }
     };
+
+    /**
+     * İl modu drill-down'da seçili il DIŞINDAKİ illere click atmayı sağlayan
+     * şeffaf fallback hit katmanı. srrp-borders-provinces üstüne kurulur.
+     * Tıklandığında `_srrpProvinceClickFn(provinceName)` çağrılır → Dart tarafı
+     * yeni il için drill-down başlatır.
+     */
+    function _setupProvinceFallbackLayer(selectedProvince) {
+      var map = window._srrpMap;
+      if (!map) return;
+      if (!map.getSource('srrp-borders-provinces')) {
+        // Source henüz hazır değil — kısa retry
+        setTimeout(function () { _setupProvinceFallbackLayer(selectedProvince); }, 400);
+        return;
+      }
+
+      // Eski katman/handler'ı temizle (idempotent)
+      try { if (map.getLayer('srrp-sel-hit-prov-fallback')) map.removeLayer('srrp-sel-hit-prov-fallback'); } catch(_) {}
+      if (_selProvFallbackClickFn)     { try { map.off('click',      'srrp-sel-hit-prov-fallback', _selProvFallbackClickFn);     } catch(_) {} }
+      if (_selProvFallbackMousemoveFn) { try { map.off('mousemove',  'srrp-sel-hit-prov-fallback', _selProvFallbackMousemoveFn); } catch(_) {} }
+      if (_selProvFallbackMouseleaveFn){ try { map.off('mouseleave', 'srrp-sel-hit-prov-fallback', _selProvFallbackMouseleaveFn);} catch(_) {} }
+
+      // Şeffaf fill — seçili il HARİÇ tüm iller tıklanabilir
+      var beforeId = map.getLayer('srrp-sel-hit') ? 'srrp-sel-hit' : undefined;
+      map.addLayer({
+        id: 'srrp-sel-hit-prov-fallback',
+        type: 'fill',
+        source: 'srrp-borders-provinces',
+        paint: { 'fill-color': 'rgba(0,0,0,0)', 'fill-opacity': 0.001 },
+        filter: ['!=', ['get', 'NAME_1'], selectedProvince],
+      }, beforeId);
+
+      _selProvFallbackClickFn = function (e) {
+        if (window._srrpClickGuard) return;
+        if (!e.features || !e.features.length) return;
+        var props = e.features[0].properties || {};
+        var nm = props.NAME_1;
+        if (!nm) return;
+        var reg = props.REGION || null;
+        console.log('[SRRP] Province fallback click → ' + nm + ' (prev=' + selectedProvince + ', region=' + reg + ')');
+        // Region bilgisini de aktar → Dart `_handleProvinceClickJs(name, region)`
+        // Bölge modunda farklı bölgenin iline tıklanırsa region'ı günceller.
+        if (window._srrpProvinceClickFn) window._srrpProvinceClickFn(nm, reg);
+      };
+      _selProvFallbackMousemoveFn = function () {
+        map.getCanvas().style.cursor = 'pointer';
+      };
+      _selProvFallbackMouseleaveFn = function () {
+        map.getCanvas().style.cursor = 'default';
+      };
+
+      map.on('click',      'srrp-sel-hit-prov-fallback', _selProvFallbackClickFn);
+      map.on('mousemove',  'srrp-sel-hit-prov-fallback', _selProvFallbackMousemoveFn);
+      map.on('mouseleave', 'srrp-sel-hit-prov-fallback', _selProvFallbackMouseleaveFn);
+
+      console.log('[SRRP] İl modu fallback hit kuruldu (seçili: ' + selectedProvince + ')');
+    }
 
     /**
      * İl modunda seçili ili mavi sınırla vurgula + ilçelerini mavi çiz.
@@ -2074,6 +2207,42 @@
       }
 
       console.log('[SRRP] İl vurgulama: ' + provinceName);
+    };
+
+    /**
+     * İlçe modunda (veya herhangi bir modda) seçili ilçeyi mavi çerçeve ile vurgula.
+     * @param {string|null} provinceName — ilçenin bağlı olduğu il (NAME_1). null = temizle
+     * @param {string|null} districtName — seçili ilçe adı (NAME_2)
+     */
+    window.srrpHighlightDistrict = function (provinceName, districtName) {
+      var map = window._srrpMap;
+      if (!map) return;
+
+      // Önceki vurgulamayı kaldır
+      try { if (map.getLayer('srrp-sel-district-highlight')) map.removeLayer('srrp-sel-district-highlight'); } catch(_) {}
+
+      if (!provinceName || !districtName) return;
+      if (!map.getSource('srrp-borders-districts')) return;
+
+      // hit layer üstünde görünsün ki kullanıcı vurgulanan sınırı rahat görsün
+      var before = map.getLayer('srrp-pins-shadow') ? 'srrp-pins-shadow' : undefined;
+
+      map.addLayer({
+        id: 'srrp-sel-district-highlight',
+        type: 'line',
+        source: 'srrp-borders-districts',
+        paint: {
+          'line-color': '#2196F3',
+          'line-width': 3,
+          'line-opacity': 0.95,
+        },
+        filter: ['all',
+          ['==', ['get', 'NAME_1'], provinceName],
+          ['==', ['get', 'NAME_2'], districtName],
+        ],
+      }, before);
+
+      console.log('[SRRP] İlçe vurgulama: ' + provinceName + ' / ' + districtName);
     };
 
     // ── Geriye dönük uyumluluk sarmalayıcısı ─────────────────────────────────
