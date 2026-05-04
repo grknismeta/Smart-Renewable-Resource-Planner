@@ -10,16 +10,20 @@ import 'package:frontend/features/reports/viewmodels/report_viewmodel.dart';
 /// Rapor sayfası Harita sekmesi — MapLibre ile bölge puanlarını görselleştirir.
 class ReportMapView extends StatefulWidget {
   final ValueChanged<RegionalSite>? onSiteFocused;
+  /// Aşama 2: Sağ il listesinden seçilen site — değişince haritada flyTo yapar.
+  final RegionalSite? focusedSite;
 
-  const ReportMapView({super.key, this.onSiteFocused});
+  const ReportMapView({super.key, this.onSiteFocused, this.focusedSite});
 
   @override
   State<ReportMapView> createState() => _ReportMapViewState();
 }
 
 class _ReportMapViewState extends State<ReportMapView> {
+  ml.MapController? _mapController;
   ml.StyleController? _styleController;
   bool _mapReady = false;
+  RegionalSite? _lastFocused;
 
   String _styleUrl(bool isDark) => isDark
       ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
@@ -42,11 +46,17 @@ class _ReportMapViewState extends State<ReportMapView> {
             maxZoom: 12,
             minZoom: 4,
           ),
-          onMapCreated: (_) {},
+          onMapCreated: (controller) {
+            _mapController = controller;
+          },
           onStyleLoaded: (style) {
             _styleController = style;
             setState(() => _mapReady = true);
             _addMarkerSource(style, items);
+            // Hazır olunca pending focus varsa uygula
+            if (widget.focusedSite != null) {
+              _flyToSite(widget.focusedSite!);
+            }
           },
         ),
         // Veri yoksa bilgi
@@ -167,6 +177,27 @@ class _ReportMapViewState extends State<ReportMapView> {
     super.didUpdateWidget(oldWidget);
     if (_mapReady && _styleController != null) {
       _refreshMarkers();
+    }
+    // İl listesi tıklamasıyla focusedSite değiştiyse haritayı zoom et
+    if (widget.focusedSite != null &&
+        widget.focusedSite != _lastFocused &&
+        _mapReady) {
+      _flyToSite(widget.focusedSite!);
+    }
+  }
+
+  Future<void> _flyToSite(RegionalSite site) async {
+    _lastFocused = site;
+    final controller = _mapController;
+    if (controller == null) return;
+    try {
+      controller.animateCamera(
+        center: ml.Position(site.longitude, site.latitude),
+        zoom: 8.0,
+        nativeDuration: const Duration(milliseconds: 800),
+      );
+    } catch (e) {
+      debugPrint('[ReportMapView] flyTo hatası: $e');
     }
   }
 

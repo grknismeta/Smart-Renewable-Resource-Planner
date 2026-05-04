@@ -6,7 +6,7 @@ import 'package:frontend/features/map/widgets/wind_rose_widget.dart';
 import 'charts/wind_speed_chart.dart';
 import 'charts/energy_potential_chart.dart';
 import 'charts/weather_forecast_strip.dart';
-import 'charts/ml_projection_placeholder.dart';
+import 'charts/ml_projection_card.dart';
 
 /// Seçili şehrin detay kartı — grafikler ve istatistikler.
 class CityDetailCard extends StatelessWidget {
@@ -182,8 +182,8 @@ class CityDetailCard extends StatelessWidget {
           ),
         ],
 
-        // ML Placeholder
-        MlProjectionPlaceholder(theme: theme),
+        // Aşama 3.D — ML Projeksiyon kartı
+        MlProjectionCard(theme: theme, province: city.name),
         const SizedBox(height: 16),
       ],
     );

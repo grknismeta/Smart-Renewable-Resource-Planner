@@ -44,12 +44,17 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    # `.env` (proje kökü) — Compose otomatik okur, ${VAR} substitusyonu yapar.
+    # `.env` yoksa default'a düşer (chatbot kapalı kalır, hata olmaz).
     environment:
       - DATABASE_URL=postgresql://srrp_admin:srrp_secure_2026@db:5432/srrp_db
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f
       - ALGORITHM=HS256
       - ACCESS_TOKEN_EXPIRE_MINUTES=1440
+      # Aşama 3.C — AI Chatbot (Google Gemini); .env'den okunur
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash-exp}
     depends_on:
       db:
         condition: service_healthy

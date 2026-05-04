@@ -394,10 +394,23 @@
      * İlçe GeoJSON'unu Türkiye sınırları içinde filtrele.
      * Yunan adaları ve yanlış konumlanmış feature'ları eler.
      */
+    // Non-Türkiye karakter içeren NAME_2 tespiti (Greek, Cyrillic, Arabic…).
+    // Türkçe harfler Latin Extended-A içinde (≤U+024F) → Yunan/Kiril reddedilir.
+    function _hasNonTurkishChar(s) {
+      if (!s) return false;
+      for (var i = 0; i < s.length; i++) {
+        if (s.charCodeAt(i) > 0x024F) return true;
+      }
+      return false;
+    }
+
     function _filterDistrictGeoJson(geojson) {
       if (!geojson || !Array.isArray(geojson.features)) return geojson;
       var b = _TR_BOUNDS;
       geojson.features = geojson.features.filter(function(f) {
+        var props = f && f.properties ? f.properties : {};
+        // Yunan adaları gibi yanlış etiketli feature'lar: NAME_2 Yunanca/Kiril
+        if (_hasNonTurkishChar(props.NAME_2) || _hasNonTurkishChar(props.NAME_1)) return false;
         var c = _featureCentroid(f);
         if (!c) return false; // geometri yok → ele
         return c[0] >= b.minLon && c[0] <= b.maxLon &&
@@ -925,7 +938,9 @@
     // Dönen JSON: {type: 'pin'|'selection'|'none', properties: {...}}
     window.srrpQueryClick = function(lng, lat) {
       var map = window._srrpMap;
-      if (!map) return '{"type":"none"}';
+      // Defensive: map yoksa veya style yüklenmemişse (reload sırasında) erken çık.
+      if (!map || typeof map.getLayer !== 'function' || typeof map.queryRenderedFeatures !== 'function') return '{"type":"none"}';
+      if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) return '{"type":"none"}';
       if (window._srrpClickGuard) return '{"type":"none"}';
 
       try {
@@ -1865,7 +1880,20 @@
       if (_selSetupTimerId) { clearTimeout(_selSetupTimerId); _selSetupTimerId = null; }
 
       var map = window._srrpMap;
-      if (!map) return;
+      // Defensive: map yok / yüklenmedi / style yüklenmedi → erken çık.
+      // (Style reload sırasında map.getSource undefined patlatabilir, MapLibre 4.7
+      // internal state'te source cache stale olabilir.)
+      if (!map || typeof map.getSource !== 'function' || typeof map.isStyleLoaded !== 'function') return;
+      if (!map.isStyleLoaded()) {
+        // Stil henüz hazır değil — kısa retry kuyruğuna at
+        var rt0 = _retryCount || 0;
+        if (rt0 >= 8) return;
+        _selSetupTimerId = setTimeout(function () {
+          _selSetupTimerId = null;
+          _setupSelectionLayers(srcId, hoverProp, hitFilter, clickFn, srcName, hoverProp2, rt0 + 1, colorFilter);
+        }, 400);
+        return;
+      }
 
       var retries = _retryCount || 0;
       var composite = !!hoverProp2;   // ilçe modu → true
@@ -1882,7 +1910,10 @@
       _selProvFallbackClickFn = _selProvFallbackMousemoveFn = _selProvFallbackMouseleaveFn = null;
 
       // Source hazır değilse bekle (max 8 deneme = ~4.8 saniye)
-      if (!map.getSource(srcId)) {
+      // try/catch — getSource() bazı stale state'lerde TypeError fırlatır
+      var hasSource = false;
+      try { hasSource = !!map.getSource(srcId); } catch (e) { hasSource = false; }
+      if (!hasSource) {
         if (retries >= 8) {
           console.error('[SRRP] Kaynak yüklenemedi: ' + srcId + ' — ' + retries + ' denemeden sonra vazgeçildi.');
           return;

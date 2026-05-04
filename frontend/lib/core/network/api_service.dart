@@ -10,6 +10,7 @@ import 'package:frontend/core/network/scenario_service.dart';
 import 'package:frontend/core/network/weather_service.dart';
 import 'package:frontend/core/network/recommendation_service.dart';
 import 'package:frontend/core/network/wind_vector_service.dart';
+import 'package:frontend/core/network/chat_service.dart';
 
 export 'package:frontend/core/network/analysis_service.dart';
 export 'package:frontend/core/network/auth_service.dart';
@@ -22,6 +23,7 @@ export 'package:frontend/core/network/scenario_service.dart';
 export 'package:frontend/core/network/weather_service.dart';
 export 'package:frontend/core/network/recommendation_service.dart';
 export 'package:frontend/core/network/wind_vector_service.dart';
+export 'package:frontend/core/network/chat_service.dart';
 
 class ApiService {
   final SecureStorageService _storageService;
@@ -37,6 +39,7 @@ class ApiService {
   late final WeatherService weather;
   late final RecommendationService recommendation;
   late final WindVectorService windVector;
+  late final ChatService chat;
 
   ApiService(this._storageService) {
     analysis = AnalysisService(_storageService);
@@ -50,5 +53,6 @@ class ApiService {
     weather = WeatherService(_storageService);
     recommendation = RecommendationService(_storageService);
     windVector = WindVectorService(_storageService);
+    chat = ChatService(_storageService);
   }
 }

@@ -24,6 +24,8 @@ class _ScenarioCreateDialogState extends State<ScenarioCreateDialog> {
   late TextEditingController _nameController;
   late TextEditingController _descController;
   late List<int> _selectedPinIds;
+  // Senaryo açılırken bir kere silinmiş pin ID'lerini _selectedPinIds'ten ayıklamak için.
+  bool _didSyncStalePins = false;
   DateTime? _startDate;
   DateTime? _endDate;
   // Enerji depolama
@@ -82,6 +84,30 @@ class _ScenarioCreateDialogState extends State<ScenarioCreateDialog> {
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
     final pins = mapViewModel.pins;
     final theme = widget.theme;
+
+    // Senaryoda silinmiş pin referansları olabilir (backend 404 dönerdi).
+    // Mevcut pin'lerle kesişim alıp stale ID'leri ayıkla ve kullanıcıya bildir.
+    if (!_didSyncStalePins && widget.scenarioToEdit != null) {
+      _didSyncStalePins = true;
+      final validIds = pins.map((p) => p.id).toSet();
+      final removed = _selectedPinIds.where((id) => !validIds.contains(id)).toList();
+      if (removed.isNotEmpty) {
+        _selectedPinIds.removeWhere((id) => !validIds.contains(id));
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Bu senaryoda silinmiş ${removed.length} pin vardı '
+                '(${removed.join(", ")}). Seçimden çıkarıldı.',
+              ),
+              backgroundColor: Colors.orange.shade800,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        });
+      }
+    }
 
     return Dialog(
       backgroundColor: theme.cardColor,

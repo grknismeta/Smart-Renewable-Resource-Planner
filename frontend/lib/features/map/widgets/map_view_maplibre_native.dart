@@ -47,9 +47,8 @@ const _districtHighlightLayerId  = 'srrp-district-highlight-line';
 const _hillshadeSourceId  = 'srrp-hillshade-dem';
 const _hillshadeLayerId   = 'srrp-hillshade';
 
-const _animProvSourceId   = 'srrp-anim-provinces';
-const _animProvFillId     = 'srrp-anim-provinces-fill';
-const _animProvLineId     = 'srrp-anim-provinces-line';
+// 1.B (yeniden): animation province overlay constant'ları emekliye ayrıldı
+// — animasyon artık choropleth bridge'ten beslenir (`_syncChoropleth`).
 
 // ─── Heatmap Paint Tanımları ──────────────────────────────────────────────────
 
@@ -281,8 +280,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   bool _choroplethLayerActive = false;
 
   // Animation province polygon layer
-  bool _animProvActive = false;
-  int _lastAnimFrame = -1;
+  // 1.B (yeniden): _animProvActive / _lastAnimFrame state'i emekliye ayrıldı.
 
   MapViewModel? _vmRef;
 
@@ -360,12 +358,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     } catch (e) {
       debugPrint('[MapLibre-Native] _syncCloudLayer hata: $e');
     }
-    // Animasyon il polygon'ları
-    try {
-      await _syncAnimationProvinces(vm);
-    } catch (e) {
-      debugPrint('[MapLibre-Native] _syncAnimationProvinces hata: $e');
-    }
+    // 1.B (yeniden): _syncAnimationProvinces emekliye ayrıldı —
+    // animasyon ilçe choropleth path'inden beslenir (yukarıda _syncChoropleth).
     // İl/İlçe sınırları
     try {
       await _syncBorders(vm);
@@ -401,8 +395,6 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _lastChoropleth = ChoroplethMode.none;
         _choroplethSourceAdded = false;
         _choroplethLayerActive = false;
-        _animProvActive = false;
-        _lastAnimFrame = -1;
         _lastPins    = [];
         _lastSummary = [];
 
@@ -533,11 +525,27 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     return _parsedDistrictFeatures!;
   }
 
+  /// Türkçe harfler Latin Extended-A içinde (≤U+024F). Üzerindeki kod noktası
+  /// (Yunan, Kiril, Arap vs.) varsa NAME_* Türkiye'ye ait değildir.
+  static bool _hasNonTurkishChar(String? s) {
+    if (s == null || s.isEmpty) return false;
+    for (final cp in s.runes) {
+      if (cp > 0x024F) return true;
+    }
+    return false;
+  }
+
   /// Feature'ın centroid'inin Türkiye sınırları içinde olup olmadığını kontrol eder.
   /// Web tarafındaki _filterDistrictGeoJson() ile aynı mantık.
   static bool _isFeatureInTurkey(Map<String, dynamic> feature) {
     const minLon = 25.0, maxLon = 46.0, minLat = 35.0, maxLat = 43.0;
     try {
+      // Yunan adaları gibi yanlış etiketli feature'lar: NAME_2 Yunanca/Kiril
+      final props = feature['properties'] as Map<String, dynamic>? ?? const {};
+      if (_hasNonTurkishChar(props['NAME_2'] as String?) ||
+          _hasNonTurkishChar(props['NAME_1'] as String?)) {
+        return false;
+      }
       final geom = feature['geometry'] as Map<String, dynamic>?;
       if (geom == null) return false;
       final type = geom['type'] as String?;
@@ -2113,161 +2121,6 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     }
   }
 
-  // ─── Animation Province Polygon Sync ──────────────────────────────
-
-  Future<void> _syncAnimationProvinces(MapViewModel vm) async {
-    final style = _style;
-    if (style == null || !_styleLoaded) return;
-
-    // Animasyon kapandıysa layer'ı temizle
-    if (!vm.isAnimationMode || vm.animProvinceValues == null || vm.animProvinceValues!.isEmpty) {
-      if (_animProvActive) {
-        try { await style.removeLayer(_animProvLineId); } catch (_) {}
-        try { await style.removeLayer(_animProvFillId); } catch (_) {}
-        try { await style.removeSource(_animProvSourceId); } catch (_) {}
-        _animProvActive = false;
-        _lastAnimFrame = -1;
-      }
-      return;
-    }
-
-    // Aynı frame tekrar render edilmesin
-    if (vm.animCurrentFrame == _lastAnimFrame && _animProvActive) return;
-    _lastAnimFrame = vm.animCurrentFrame;
-
-    final values = vm.animProvinceValues!;
-    final metricMin = vm.animMetricMin;
-    final metricMax = vm.animMetricMax;
-    final range = metricMax - metricMin;
-
-    // Renk rampası (metriğe göre) — choropleth ile aynı ColorBrewer paletler
-    final metric = vm.animMetric;
-    final List<List<dynamic>> ramp;
-    if (metric == 'radiation') {
-      ramp = [[0.0,'#FFFFCC'],[0.1,'#FFEDA0'],[0.2,'#FED976'],[0.3,'#FEB24C'],
-        [0.4,'#FD8D3C'],[0.5,'#FC4E2A'],[0.6,'#E31A1C'],[0.75,'#BD0026'],
-        [0.9,'#800026'],[1.0,'#4D0014']];
-    } else if (metric == 'wind') {
-      ramp = [[0.0,'#F7FBFF'],[0.1,'#DEEBF7'],[0.2,'#C6DBEF'],[0.3,'#9ECAE1'],
-        [0.4,'#6BAED6'],[0.5,'#4292C6'],[0.6,'#2171B5'],[0.75,'#08519C'],
-        [0.9,'#083D7F'],[1.0,'#08306B']];
-    } else {
-      ramp = [[0.0,'#313695'],[0.1,'#4575B4'],[0.2,'#74ADD1'],[0.3,'#ABD9E9'],
-        [0.4,'#E0F3F8'],[0.5,'#FEE090'],[0.6,'#FDAE61'],[0.75,'#F46D43'],
-        [0.9,'#D73027'],[1.0,'#A50026']];
-    }
-
-    // İl GeoJSON'ını al ve renkleri hesapla
-    final features = await _getProvinceFeatures();
-    if (features.isEmpty) return;
-
-    final deepCopy = features.map((f) => jsonDecode(jsonEncode(f))).toList();
-    for (final f in deepCopy) {
-      final props = f['properties'] as Map<String, dynamic>? ?? {};
-      final name1 = (props['NAME_1'] ?? '').toString();
-      // City name ile eşleştir (Türkçe normalize)
-      final normName = _normalizeForMatch(name1);
-      double? val;
-      for (final e in values.entries) {
-        if (_normalizeForMatch(e.key) == normName) {
-          val = e.value;
-          break;
-        }
-      }
-
-      if (val == null) {
-        props['_anim_color'] = '#000000';
-        props['_anim_opacity'] = 0.0;
-      } else {
-        final t = range > 0.01 ? ((val - metricMin) / range).clamp(0.0, 1.0) : 0.5;
-        String color = ramp.last[1] as String;
-        for (int i = 0; i < ramp.length - 1; i++) {
-          final t0 = ramp[i][0] as double;
-          final t1 = ramp[i + 1][0] as double;
-          if (t >= t0 && t <= t1) {
-            color = (t - t0 <= t1 - t) ? ramp[i][1] as String : ramp[i + 1][1] as String;
-            break;
-          }
-        }
-        props['_anim_color'] = color;
-        props['_anim_opacity'] = 0.75;
-      }
-    }
-
-    final geojsonStr = jsonEncode({'type': 'FeatureCollection', 'features': deepCopy});
-
-    if (_animProvActive) {
-      // Sadece veriyi güncelle (source/layer zaten var)
-      try {
-        await style.updateGeoJsonSource(id: _animProvSourceId, data: geojsonStr);
-      } catch (e) {
-        debugPrint('[MapLibre-Native] Animasyon source güncelleme hatası: $e');
-      }
-    } else {
-      // İlk kez: source + layer ekle
-      try { await style.removeLayer(_animProvLineId); } catch (_) {}
-      try { await style.removeLayer(_animProvFillId); } catch (_) {}
-      try { await style.removeSource(_animProvSourceId); } catch (_) {}
-
-      await style.addSource(ml.GeoJsonSource(
-        id: _animProvSourceId,
-        data: geojsonStr,
-      ));
-
-      // Pin shadow layer yoksa belowLayerId hata verir → try-catch
-      try {
-        await style.addLayer(
-          ml.FillStyleLayer(
-            id: _animProvFillId,
-            sourceId: _animProvSourceId,
-            paint: <String, Object>{
-              'fill-color': ['get', '_anim_color'],
-              'fill-opacity': ['get', '_anim_opacity'],
-            },
-          ),
-          belowLayerId: _pinsShadowLayerId,
-        );
-      } catch (_) {
-        await style.addLayer(
-          ml.FillStyleLayer(
-            id: _animProvFillId,
-            sourceId: _animProvSourceId,
-            paint: <String, Object>{
-              'fill-color': ['get', '_anim_color'],
-              'fill-opacity': ['get', '_anim_opacity'],
-            },
-          ),
-        );
-      }
-
-      try {
-        await style.addLayer(
-          ml.LineStyleLayer(
-            id: _animProvLineId,
-            sourceId: _animProvSourceId,
-            paint: <String, Object>{
-              'line-color': 'rgba(255,255,255,0.3)',
-              'line-width': 0.8,
-            },
-          ),
-          belowLayerId: _pinsShadowLayerId,
-        );
-      } catch (_) {
-        await style.addLayer(
-          ml.LineStyleLayer(
-            id: _animProvLineId,
-            sourceId: _animProvSourceId,
-            paint: <String, Object>{
-              'line-color': 'rgba(255,255,255,0.3)',
-              'line-width': 0.8,
-            },
-          ),
-        );
-      }
-
-      _animProvActive = true;
-    }
-  }
 
   // ─── Build ────────────────────────────────────────────────────────
 

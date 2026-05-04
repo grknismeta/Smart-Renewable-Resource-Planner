@@ -645,8 +645,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   String? _lastProvinceName;
   String? _lastDistrictName;
 
-  // ─── Animasyon frame callback ──────────────────────────────────────
-  JSFunction? _animFrameJsCallback;
+  // 1.B (yeniden): _animFrameJsCallback emekliye ayrıldı.
+  // _animBridgeRegistered yalnızca initialization guard olarak kullanılıyor.
   bool _animBridgeRegistered = false;
 
   // ─── VM referansı — dispose'da context geçersiz olduğu için önceden saklanır ──
@@ -701,29 +701,11 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _jsSetDistrictClickFn(_districtClickJsCallback!);
         _selectionCallbacksRegistered = true;
       }
-      // Animasyon JS bridge'i ViewModel'e kaydet (bir kez)
-      if (!_animBridgeRegistered) {
-        _vmRef!.registerJsBridge(
-          loadFn: (json) {
-            if (kIsWeb) _jsLoadAnimationData(json);
-          },
-          playFn: (fps) {
-            if (kIsWeb) _jsAnimPlayRaw(1000.0 / fps.clamp(1, 60));
-          },
-          stopFn: () {
-            if (kIsWeb) _jsAnimStopRaw();
-          },
-          seekFn: (idx) {
-            if (kIsWeb) _jsAnimSeekRaw(idx);
-          },
-        );
-        // JS → Flutter frame değişim callback'i
-        if (kIsWeb) {
-          _animFrameJsCallback = _handleAnimFrameJs.toJS;
-          _jsSetAnimFrameCallback(_animFrameJsCallback!);
-        }
-        _animBridgeRegistered = true;
-      }
+      // 1.B (yeniden): Animation JS bridge emekliye ayrıldı —
+      // TimeSimulationController pure Dart Timer ile çalışır, choropleth
+      // bridge her frame'de polygon'ları yeniler. JS frame callback ve
+      // playRaw/seekRaw shim'leri kullanılmıyor.
+      _animBridgeRegistered = true;
     });
   }
 
@@ -899,13 +881,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     }
   }
 
-  /// JS animasyon frame callback → ViewModel.onAnimFrameChanged
-  void _handleAnimFrameJs(JSAny? indexArg, JSAny? tsArg) {
-    if (!mounted || _vmRef == null) return;
-    final index = (indexArg?.dartify() as num?)?.toInt() ?? 0;
-    final ts = tsArg?.dartify()?.toString() ?? '';
-    _vmRef!.onAnimFrameChanged(index, ts);
-  }
+  // 1.B (yeniden): _handleAnimFrameJs JS callback'i emekliye ayrıldı —
+  // TimeSimulationController kendi Dart Timer'ında frame ilerletir.
 
   // _syncAll devam ederken gelen VM değişiklikleri için "dirty" bayrağı.
   // _syncAll tamamlanınca bir kez daha çalıştırılır.
@@ -985,8 +962,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     if (vm.heatmapRadius != _lastRadius) return true;
     if (vm.heatmapIntensity != _lastIntensity) return true;
     if (vm.heatmapPalette != _lastPalette) return true;
-    // Animasyon modu aktifken her frame güncel veri gerekir
-    if (vm.isAnimationMode) return true;
+    // 1.B (yeniden): animasyon state'i artık MapViewModel'da değil —
+    // TimeSimulationController choropleth bridge üzerinden polygon'ları
+    // direkt günceller, _syncAll re-trigger'a gerek yok.
     // Harita görsel özellikleri
     if (vm.showGlobe != _lastGlobe) return true;
     if (vm.show3DTerrain != _lastTerrain) return true;
@@ -1062,29 +1040,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     } catch (e) {
       debugPrint('[MapLibre] _syncHeatmapData hata: $e');
     }
-    if (vm.isAnimationMode) {
-      // Animasyon: JS tabanlı heatmap layer kullan
-      try {
-        await _syncHeatmapGridData(vm.heatmapPoints);
-        await _syncHeatmapMode(
-          vm.mlHeatmapMode,
-          vm.heatmapRadius,
-          vm.heatmapIntensity,
-          vm.heatmapPalette,
-        );
-      } catch (e) {
-        debugPrint('[MapLibre] _syncHeatmapMode/Grid hata: $e');
-      }
-      // Varsa raster overlay'i kaldır
-      if (_rasterActive && kIsWeb) {
-        try {
-          _jsRemoveRasterOverlay();
-        } catch (_) {}
-        _rasterActive = false;
-        _lastRasterMode = MlHeatmapMode.none;
-        _lastRasterPtLen = -1;
-      }
-    } else {
+    // 1.B (yeniden): animasyon path'i artık choropleth bridge üzerinden
+    // (TimeSimulationController), JS heatmap consumer çağrılmıyor.
+    {
       // Statik görünüm
       if (vm.mlHeatmapMode != MlHeatmapMode.none) {
         // Kullanıcı bir heatmap modu seçmiş → density layer kullan

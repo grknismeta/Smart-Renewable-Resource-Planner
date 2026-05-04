@@ -4,17 +4,14 @@ import 'package:flutter/material.dart';
 class LandingWorldDataSection extends StatelessWidget {
   final bool isDark;
 
-  const LandingWorldDataSection({
-    super.key,
-    required this.isDark,
-  });
+  const LandingWorldDataSection({super.key, required this.isDark});
 
   // Ülke verileri (kaynak: IRENA, 2024 tahminleri)
   static const _countries = <_CountryData>[
     _CountryData('Çin', 1340, false),
     _CountryData('ABD', 420, false),
-    _CountryData('Almanya', 165, false),
     _CountryData('Hindistan', 180, false),
+    _CountryData('Almanya', 165, false),
     _CountryData('Türkiye', 115, true), // Vurgulu
     _CountryData('Brezilya', 95, false),
     _CountryData('İspanya', 75, false),
@@ -133,12 +130,17 @@ class LandingWorldDataSection extends StatelessWidget {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: c.isTurkey
-                              ? [const Color(0xFF22C55E), const Color(0xFF16A34A)]
+                              ? [
+                                  const Color(0xFF22C55E),
+                                  const Color(0xFF16A34A),
+                                ]
                               : [
-                                  const Color(0xFF3B82F6)
-                                      .withValues(alpha: 0.6),
-                                  const Color(0xFF3B82F6)
-                                      .withValues(alpha: 0.3),
+                                  const Color(
+                                    0xFF3B82F6,
+                                  ).withValues(alpha: 0.6),
+                                  const Color(
+                                    0xFF3B82F6,
+                                  ).withValues(alpha: 0.3),
                                 ],
                         ),
                         borderRadius: BorderRadius.circular(6),

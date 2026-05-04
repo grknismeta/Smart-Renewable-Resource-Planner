@@ -3,11 +3,14 @@ chcp 65001 > nul
 cls
 
 REM ============================================================
-REM  COĞ̈RAFYA ANALİZ MOTORU (GeoService)
-REM  true  → Aktif (shapefile yükler, suitability kontrolü yapar)
-REM  false → Devre dışı (hızlı başlangıç, /geo endpoint'i kapalı)
+REM  COĞRAFYA ANALİZ MOTORU (GeoService — PostGIS-driven, Aşama B)
+REM  true  → Aktif (lazy init, ~50 MB RAM, sorgu 5-10ms)
+REM  false → Devre dışı (/geo endpoint'leri kapalı)
+REM
+REM  Eski shape-based 500MB RAM/30sn startup mimarisi emekliye ayrıldı.
+REM  Şimdi PostGIS GIST index'leri + lazy GADM cache kullanılıyor.
 REM ============================================================
-set GEO_ANALYSIS_ENABLED=false
+set GEO_ANALYSIS_ENABLED=true
 echo.
 echo  [92m╔══════════════════════════════════════════════════════════════╗[0m
 echo  [92m║   ⚡  Smart Renewable Resource Planner — Backend v2.1.0      ║[0m

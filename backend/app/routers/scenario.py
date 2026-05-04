@@ -105,14 +105,33 @@ def update_scenario(
     ).first()
 
     if not db_scenario:
+        logger.warning(
+            "Senaryo {} PUT → 404: senaryo yok ya da owner uyumsuz (owner={})",
+            scenario_id, current_user.id,
+        )
         raise HTTPException(status_code=404, detail="Senaryo bulunamadı")
 
     # Pin sahipliği kontrolü
     for pin_id in scenario.pin_ids:
         db_pin = db.query(models.Pin).filter(models.Pin.id == pin_id).first()
         if not db_pin:
-             raise HTTPException(status_code=404, detail=f"Pin {pin_id} bulunamadı")
+             logger.warning(
+                 "Senaryo {} PUT → 404: Pin {} DB'de yok "
+                 "(muhtemelen silinmiş dangling referans; payload pin_ids={})",
+                 scenario_id, pin_id, scenario.pin_ids,
+             )
+             raise HTTPException(
+                 status_code=404,
+                 detail=(
+                     f"Pin {pin_id} artık mevcut değil (silinmiş olabilir). "
+                     "Senaryoyu düzenlerken bu pini seçimden çıkarın."
+                 ),
+             )
         if db_pin.owner_id != current_user.id:
+             logger.warning(
+                 "Senaryo {} PUT → 403: Pin {} owner={} ama current_user={}",
+                 scenario_id, pin_id, db_pin.owner_id, current_user.id,
+             )
              raise HTTPException(status_code=403, detail=f"Pin {pin_id}'e erişim yetkiniz yok")
 
     db_scenario.name = scenario.name # type: ignore
@@ -178,17 +197,18 @@ def calculate_scenario(
             continue
     pin_ids = pin_id_list
     if not pin_ids:
-        raise HTTPException(status_code=400, detail="Senaryoda pin yok")
-    
+        logger.warning(
+            "Senaryo {} /calculate → 400: pin listesi boş (owner={})",
+            scenario_id, current_user.id,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Bu senaryoda hesaplanacak pin yok. Lütfen senaryoya en az bir pin ekleyin.",
+        )
+
     start_date = db_scenario.start_date # type: ignore
     end_date = db_scenario.end_date # type: ignore
-    
-    if start_date is None or end_date is None:
-        raise HTTPException(status_code=400, detail="Senaryo tarih aralığı eksik")
-    
-    if start_date is None or end_date is None:
-        raise HTTPException(status_code=400, detail="Senaryo tarih aralığı eksik")
-    
+
     # Robust Date Parsing
     def parse_dt(d):
         if isinstance(d, datetime):
@@ -207,9 +227,20 @@ def calculate_scenario(
 
     start_date_obj = parse_dt(start_date)
     end_date_obj = parse_dt(end_date)
-    
-    if not start_date_obj or not end_date_obj:
-        raise HTTPException(status_code=400, detail="Geçersiz tarih formatı")
+
+    if start_date_obj is None or end_date_obj is None:
+        logger.warning(
+            "Senaryo {} /calculate → 400: tarih eksik/geçersiz "
+            "(start={!r}, end={!r})",
+            scenario_id, start_date, end_date,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Senaryonun tarih aralığı eksik veya geçersiz. "
+                "Senaryoyu düzenleyip Başlangıç ve Bitiş tarihlerini seçin."
+            ),
+        )
     
     start_date = start_date_obj
     end_date = end_date_obj
@@ -482,3 +513,104 @@ def add_pins_to_scenario(
         db_scenario.pin_ids = list(db_scenario.pin_ids or [])
 
     return db_scenario
+
+
+# ─── 3.A — Finansal Projeksiyon ─────────────────────────────────────────────
+
+@router.get("/{scenario_id}/financials")
+def get_scenario_financials(
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user),
+):
+    """Senaryonun finansal metriklerini hesaplar (Aşama 3.A).
+
+    Yanıt: ``FinancialMetrics`` (CAPEX, OPEX, LCOE, payback, NPV, IRR,
+    yıllık üretim, CO₂ avoidance, 25 yıllık nakit akışı).
+
+    Pin'ler senaryonun ``pin_ids`` listesinden okunur; her pin için
+    ``capacity_mw`` zorunlu, ``capacity_factor`` opsiyonel
+    (yoksa sektör fallback değeri kullanılır).
+
+    Varsayımlar `app/core/finance_constants.py` default'larından gelir;
+    Settings → varsayım override (3.A.6) ileride DB'ye taşınabilir.
+    """
+    from app.services.finance_service import (
+        compute_scenario_financials,
+        PinFinanceInput,
+    )
+
+    db_scenario = (
+        db.query(models.Scenario)
+        .filter(models.Scenario.id == scenario_id)
+        .first()
+    )
+    if not db_scenario:
+        raise HTTPException(status_code=404, detail="Senaryo bulunamadı")
+    if db_scenario.owner_id != current_user.id:  # type: ignore
+        raise HTTPException(status_code=403, detail="Yetkiniz yok")
+
+    # pin_ids JSON veya list olabilir; normalize et
+    raw_pin_ids = db_scenario.pin_ids
+    if isinstance(raw_pin_ids, str):
+        try:
+            raw_pin_ids = json.loads(raw_pin_ids)
+        except Exception:
+            raw_pin_ids = []
+    pin_ids: list[int] = list(raw_pin_ids or [])
+
+    # Pin'leri çek + capacity_factor için latest PinCalculationResult
+    pin_inputs: list[PinFinanceInput] = []
+    for pid in pin_ids:
+        db_pin = db.query(models.Pin).filter(models.Pin.id == pid).first()
+        if not db_pin:
+            logger.warning(
+                "Senaryo {} financials: pin {} DB'de yok (dangling) — atlanıyor",
+                scenario_id, pid,
+            )
+            continue
+
+        # capacity_factor: PinCalculationResult'tan latest (varsa)
+        cf: float | None = None
+        try:
+            from app.db.database import UserPinsSessionLocal
+            with UserPinsSessionLocal() as up_db:
+                latest_calc = (
+                    up_db.query(models.PinCalculationResult)
+                    .filter(models.PinCalculationResult.pin_id == pid)
+                    .order_by(models.PinCalculationResult.created_at.desc())
+                    .first()
+                )
+                if latest_calc and latest_calc.capacity_factor:  # type: ignore
+                    cf = float(latest_calc.capacity_factor)  # type: ignore
+        except Exception as e:
+            logger.debug("Pin {} capacity_factor okunamadı: {}", pid, e)
+
+        pin_inputs.append(PinFinanceInput(
+            pin_id=int(db_pin.id),  # type: ignore
+            pin_type=str(db_pin.type),  # type: ignore
+            capacity_mw=float(db_pin.capacity_mw or 1.0),  # type: ignore
+            capacity_factor=cf,
+        ))
+
+    metrics = compute_scenario_financials(pin_inputs)
+
+    # FinancialMetrics dataclass → dict
+    return {
+        "scenario_id": scenario_id,
+        "scenario_name": db_scenario.name,
+        "capex_total": metrics.capex_total,
+        "opex_yearly": metrics.opex_yearly,
+        "annual_revenue": metrics.annual_revenue,
+        "annual_production_kwh": metrics.annual_production_kwh,
+        "annual_co2_avoided_tons": metrics.annual_co2_avoided_tons,
+        "lcoe_usd_per_kwh": metrics.lcoe_usd_per_kwh,
+        "payback_period_years": metrics.payback_period_years,
+        "npv_usd": metrics.npv_usd,
+        "irr_pct": metrics.irr_pct,
+        "project_lifetime_years": metrics.project_lifetime_years,
+        "yearly_cashflows": metrics.yearly_cashflows,
+        "cumulative_cashflows": metrics.cumulative_cashflows,
+        "per_pin": metrics.per_pin,
+        "assumptions_used": metrics.assumptions_used,
+    }

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:frontend/data/models/system_data_models.dart';
 import 'package:frontend/core/network/api_client.dart';
@@ -32,21 +31,7 @@ class ReportService extends BaseService {
     throw Exception('Rapor verisi alınamadı');
   }
 
-  Future<List<Map<String, dynamic>>> fetchInterpolatedMap(String type) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/reports/interpolated-map?type=$type&resolution=0.1'),
-        headers: await getHeaders(),
-      );
-      
-      final data = processResponse(response);
-      if (data is List) {
-         return data.cast<Map<String, dynamic>>();
-      }
-      throw Exception('Interpolated map format failed');
-    } catch (e) {
-      debugPrint('Interpolated Map Error: $e');
-      return []; 
-    }
-  }
+  // 1.A2: fetchInterpolatedMap (IDW heatmap noktaları) emekliye ayrıldı —
+  // tek görsel dil ilçe choropleth (`WeatherService.fetchDistrictChoropleth`).
+  // Backend `/reports/interpolated-map` endpoint'i de aynı turda silindi.
 }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:maplibre/maplibre.dart' as ml;
 
+import 'package:frontend/core/network/api_service.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/features/map/models/map_models.dart' show ChoroplethModeExt;
 import 'package:frontend/core/theme/theme_view_model.dart';
@@ -19,11 +20,13 @@ import 'package:frontend/features/map/widgets/map_widgets.dart';
 import 'package:frontend/features/scenarios/widgets/scenario_side_panel.dart';
 import 'package:frontend/features/reports/report_screen.dart';
 import 'package:frontend/features/scenarios/widgets/scenario_mini_report_panel.dart';
-import 'package:frontend/features/map/widgets/panels/time_slider_panel.dart';
+import 'package:frontend/features/map/widgets/panels/time_simulation_panel.dart';
+import 'package:frontend/features/map/animation/time_simulation_controller.dart';
 import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:frontend/features/map/widgets/wind_particle_overlay.dart';
+import 'package:frontend/features/chatbot/widgets/chatbot_panel.dart';
 
 
 class MapScreen extends StatefulWidget {
@@ -36,6 +39,23 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   bool _showLayersPanel = false;
   bool _showScenariosPanel = false;
+  bool _showChatbotPanel = false;
+
+  // Aşama 1.B (yeniden) — Zaman simülasyonu controller'ı bu screen'in
+  // ömrüne bağlı; MapScreen kapanınca dispose edilir, choropleth restore olur.
+  TimeSimulationController? _timeSimController;
+  TimeSimulationController _ensureTimeSimController() {
+    if (_timeSimController != null) return _timeSimController!;
+    final api = Provider.of<ApiService>(context, listen: false);
+    final mapVM = Provider.of<MapViewModel>(context, listen: false);
+    _timeSimController = TimeSimulationController(
+      api: api,
+      applyToChoropleth: (metric, vals) =>
+          mapVM.applyAnimationFrameToChoropleth(metric: metric, vals: vals),
+      restoreChoropleth: mapVM.restoreChoroplethFromAnimation,
+    );
+    return _timeSimController!;
+  }
 
   // Pin ekleme koruması: aynı anda birden fazla dialog açılmasını önler
   bool _isProcessingGeoCheck = false;
@@ -56,15 +76,28 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   @override
+  void dispose() {
+    _timeSimController?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Provider.of<ThemeViewModel>(context);
     final authVM = Provider.of<AuthViewModel>(context);
     final isAuthenticated = authVM.isLoggedIn == true;
-    return Consumer2<MapViewModel, ScenarioViewModel>(
+    return ChangeNotifierProvider<TimeSimulationController>.value(
+      value: _ensureTimeSimController(),
+      child: Consumer2<MapViewModel, ScenarioViewModel>(
       builder: (context, mapViewModel, scenarioVM, child) {
         // Tema değişiminde harita stilini otomatik senkronize et
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) mapViewModel.syncBaseStyleWithTheme(theme.isDarkMode);
+        });
+        // Aşama 2: Senaryo göster/gizle — gizli senaryoların pin'lerini
+        // MapViewModel filter'ına ilet (filteredPins bunu kullanır).
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) mapViewModel.setHiddenScenarioPinIds(scenarioVM.hiddenPinIds);
         });
         return Scaffold(
           backgroundColor: Colors.transparent,
@@ -261,8 +294,8 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
 
-              // 6b. Zaman Simülasyonu Paneli
-              if (mapViewModel.isAnimationMode)
+              // 6b. Zaman Simülasyonu Paneli (1.B yeniden — modern controller)
+              if (context.watch<TimeSimulationController>().isOpen)
                 Positioned(
                   bottom: 12,
                   left: 20,
@@ -270,10 +303,7 @@ class _MapScreenState extends State<MapScreen> {
                   child: PointerInterceptor(
                     child: Align(
                       alignment: Alignment.bottomCenter,
-                      child: TimeSliderPanel(
-                        theme: theme,
-                        mapViewModel: mapViewModel,
-                      ),
+                      child: TimeSimulationPanel(theme: theme),
                     ),
                   ),
                 ),
@@ -285,7 +315,7 @@ class _MapScreenState extends State<MapScreen> {
                       mapViewModel.selectedDistrictName != null))
                 Positioned(
                   // Zaman simülasyonu açıksa panel (~220px) üstüne çıkar
-                  bottom: mapViewModel.isAnimationMode ? 260 : 100,
+                  bottom: context.watch<TimeSimulationController>().isOpen ? 260 : 100,
                   left: 20,
                   child: PointerInterceptor(child: ProvinceInfoCard(
                     provinceName: mapViewModel.selectedProvinceName ?? '',
@@ -362,11 +392,44 @@ class _MapScreenState extends State<MapScreen> {
                     setState(() => _showScenariosPanel = !_showScenariosPanel),
               ),
 
+              // 10. AI Chatbot FAB (sağ alt) + sliding panel (3.C)
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOutCubic,
+                top: 0,
+                bottom: 0,
+                right: _showChatbotPanel ? 0 : -380,
+                child: PointerInterceptor(
+                  child: ChatbotPanel(
+                    onClose: () => setState(() => _showChatbotPanel = false),
+                  ),
+                ),
+              ),
+              if (!_showChatbotPanel)
+                Positioned(
+                  bottom: 100,
+                  right: 16,
+                  child: PointerInterceptor(
+                    child: FloatingActionButton(
+                      heroTag: 'chatbot-fab',
+                      tooltip: 'AI Asistanı',
+                      backgroundColor: Colors.purpleAccent,
+                      onPressed: () =>
+                          setState(() => _showChatbotPanel = true),
+                      child: const Icon(
+                        Icons.auto_awesome_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+
               ], // if (isAuthenticated) sonu
             ],
           ),
         );
       },
+    ),
     );
   }
 
@@ -416,7 +479,8 @@ class _MapScreenState extends State<MapScreen> {
   List<Widget> _buildLegends(MapViewModel vm, ThemeViewModel theme) {
     final legends = <Widget>[];
     // Zaman simülasyonu açıksa legend'lar panelin üstüne çıksın
-    final legendBottom = vm.isAnimationMode ? 240.0 : 40.0;
+    final legendBottom =
+        (_timeSimController?.isOpen ?? false) ? 240.0 : 40.0;
 
     // Heatmap legends (sağ alt)
     Widget? heatLegend;

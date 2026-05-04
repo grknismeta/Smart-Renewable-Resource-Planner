@@ -131,13 +131,26 @@ def _hourly_fetch_and_recompute() -> None:
     """
     1) Open-Meteo hourly fetch (81 il)
     2) province_analysis recompute (tek kaynak tablosu)
+
+    Her iki adımın başlangıç/bitiş zamanı log'a yazılır — geç tetikleme veya
+    yavaş çalışma durumunda timestamp'lerden teşhis kolaylaştırılır.
     """
     # Geç import — circular import ve startup sırasını kırar
     from .collectors.hourly import update_hourly_data
     from . import analysis_service
 
+    logger.info("[scheduler] hourly fetch BAŞLADI")
+    t0 = time.monotonic()
     update_hourly_data()
+    logger.info("[scheduler] hourly fetch bitti (%.1fs)", time.monotonic() - t0)
+
+    logger.info("[scheduler] province_analysis recompute BAŞLADI")
+    t1 = time.monotonic()
     analysis_service.recompute_all_provinces()
+    logger.info(
+        "[scheduler] province_analysis recompute bitti (%.1fs)",
+        time.monotonic() - t1,
+    )
 
 
 # ───────────────────────── Public API ─────────────────────────
@@ -182,14 +195,22 @@ def start_scheduler(run_on_startup: bool = True) -> BackgroundScheduler:
     )
 
     if run_on_startup:
-        # İlk çalışma cron'u beklemesin — job'ı immediate tetikle.
+        # İlk çalışma cron'u beklemesin — job'ı **şimdi** tetikle.
         # BackgroundScheduler arka planda çalıştırır, startup'ı bloklamaz.
+        # `next_run_time` explicit verilmezse APScheduler trigger=None ile
+        # implicit DateTrigger kullanıyor ama wakeup loop'una bağlı —
+        # bazen dakikalarca gecikiyor. Explicit `now(UTC)` ile bu garanti.
         _scheduler.add_job(
             func=lambda: _run_tracked(JOB_HOURLY_FETCH, _hourly_fetch_and_recompute),
+            trigger="date",
+            run_date=datetime.now(timezone.utc),
             id=f"{JOB_HOURLY_FETCH}_startup",
             name="Startup'ta ilk calisma",
             max_instances=1,
             replace_existing=True,
+        )
+        logger.info(
+            "Startup ilk fetch job kaydedildi (run_date=now). Saatlik cron ayrica devam edecek."
         )
 
     return _scheduler

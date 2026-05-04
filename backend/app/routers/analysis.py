@@ -145,3 +145,47 @@ def choropleth(
         "max": max(valid) if valid else None,
         "scores": scores,
     }
+
+
+# ── Aşama 3.D: ML Projeksiyonu ──────────────────────────────────────────────
+
+@router.get("/projection")
+def projection(
+    province: str = Query(..., description="İl adı (Manisa, İzmir vb.)"),
+    metric: str = Query(
+        "wind_speed",
+        regex="^(wind_speed|shortwave_radiation|temperature)$",
+        description="wind_speed | shortwave_radiation | temperature",
+    ),
+    horizon_days: int = Query(
+        90, description="Tahmin penceresi: 30 | 90 | 180 | 365"
+    ),
+):
+    """Geçmiş günlük veriden seçili metrik için gelecek tahmini.
+
+    Yöntem: seasonal naive (DoY ortalaması) + lineer trend. Geçmiş 5+ yıllık
+    veri varsa yıllık trend hesaplanır; yoksa sadece mevsimsel ortalama.
+
+    Yanıt: günlük tahmin listesi + 95% güven aralığı + meta. UI eğri grafiği
+    olarak gösterir; varsayım ve sınırlar `disclaimer` alanında.
+    """
+    from app.services.ml_projection_service import (
+        project_province,
+        project_to_dict,
+        VALID_HORIZONS,
+    )
+
+    if horizon_days not in VALID_HORIZONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"horizon_days {sorted(VALID_HORIZONS)} arasında olmalı",
+        )
+    try:
+        proj = project_province(province, metric, horizon_days)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except RuntimeError as re:
+        raise HTTPException(status_code=503, detail=str(re))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Projeksiyon hatası: {e}")
+    return project_to_dict(proj)

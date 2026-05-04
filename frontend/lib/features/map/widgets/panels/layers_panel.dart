@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
+import 'package:provider/provider.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
+import 'package:frontend/features/map/viewmodels/weather_time_mode.dart';
+import 'package:frontend/features/map/animation/time_simulation_controller.dart';
 import 'package:frontend/features/map/models/map_models.dart';
 
 /// Katmanlar paneli — MapLibre harita kontrolleri.
@@ -130,9 +133,13 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
   // (mobil port, zoom limit mesajı, yağmur/normal ayrımı, legend).
   static const bool _cloudLayerEnabled = false;
 
-  // 3D efektler de demo için dondurdu — sprint sonrasında açılacak.
-  // `true` yapılırsa toggle'lar canlanır (3D türbinler / 3D arazi).
-  static const bool _threeDEffectsEnabled = false;
+  // Aşama 3.B: 3D efektler aktif edildi.
+  //   - 3D Türbinler: pin layer'ında genişletilmiş glow + halo stili
+  //     (`_syncPins(is3D)` parametresi)
+  //   - 3D Arazi (DEM): hillshade source (web+native) + gerçek terrain
+  //     extrusion (web JS `srrpSetTerrain` shim) + pitch 55° + sky
+  // İleri seviye glTF türbin modeli (custom WebGL layer) sonraki iterasyonda.
+  static const bool _threeDEffectsEnabled = true;
 
   bool _toolsExpanded      = true;
   bool _styleExpanded      = true;
@@ -204,12 +211,27 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
               }
             },
           ),
-          _toolButton(
-            'Zaman Simülasyonu',
-            Icons.play_circle_outline_rounded,
-            Colors.cyanAccent,
-            vm.isAnimationMode,
-            globeActive ? null : () => vm.toggleAnimationMode(),
+          // 1.B (yeniden) — TimeSimulationController toggle.
+          // Provider scope MapScreen'de açıldı; burada context.watch ile dinler.
+          Builder(
+            builder: (innerCtx) {
+              final timeCtrl = innerCtx.watch<TimeSimulationController>();
+              return _toolButton(
+                'Zaman Simülasyonu',
+                Icons.play_circle_outline_rounded,
+                Colors.cyanAccent,
+                timeCtrl.isOpen,
+                globeActive
+                    ? null
+                    : () {
+                        if (timeCtrl.isOpen) {
+                          timeCtrl.close();
+                        } else {
+                          timeCtrl.open();
+                        }
+                      },
+              );
+            },
           ),
         ],
 
@@ -290,6 +312,11 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                   onToggle: () => setState(() => _choroplethExpanded = !_choroplethExpanded),
                 ),
                 if (_choroplethExpanded) ...[
+                  const SizedBox(height: 6),
+                  // Zaman penceresi seçici — Anlık / Yıllık / Mevsim.
+                  // Değişince hem provider hem viewmodel güncellenir; choropleth
+                  // aktifse otomatik refetch olur.
+                  _WeatherTimeModeSelector(vm: vm, theme: theme),
                   const SizedBox(height: 6),
                   _choroplethOpt('Güneş Işınımı', ChoroplethMode.solar, Colors.orangeAccent, Icons.wb_sunny_outlined),
                   _choroplethOpt('Rüzgar Hızı', ChoroplethMode.wind, Colors.cyanAccent, Icons.air),
@@ -646,6 +673,239 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
           ]),
         ),
       ),
+    );
+  }
+}
+
+/// Tematik harita zaman penceresi seçici.
+///
+/// Tek dropdown 7 mod gösterir (Anlık / Hafta / Ay / 3 Ay / 6 Ay / Yıllık / Mevsim).
+/// `custom` mod buradan görünmez — animasyon panelinin kendi tarih seçicisi var.
+/// Mevsim seçilince altında 4 chip (Kış/İlkbahar/Yaz/Sonbahar) açılır.
+class _WeatherTimeModeSelector extends StatelessWidget {
+  final MapViewModel vm;
+  final ThemeViewModel theme;
+
+  const _WeatherTimeModeSelector({required this.vm, required this.theme});
+
+  // Dropdown'da gösterilecek modlar — sıralama kullanıcıya alışkın olduğu yönde:
+  // anlık → kısa vade → uzun vade → mevsim.
+  static const List<WeatherTimeWindow> _menuModes = [
+    WeatherTimeWindow.current,
+    WeatherTimeWindow.week,
+    WeatherTimeWindow.month,
+    WeatherTimeWindow.threeMonth,
+    WeatherTimeWindow.sixMonth,
+    WeatherTimeWindow.yearly,
+    WeatherTimeWindow.season,
+  ];
+
+  IconData _iconFor(WeatherTimeWindow w) {
+    switch (w) {
+      case WeatherTimeWindow.current:
+        return Icons.access_time;
+      case WeatherTimeWindow.week:
+      case WeatherTimeWindow.month:
+      case WeatherTimeWindow.threeMonth:
+      case WeatherTimeWindow.sixMonth:
+        return Icons.date_range_outlined;
+      case WeatherTimeWindow.yearly:
+        return Icons.calendar_today;
+      case WeatherTimeWindow.season:
+        return Icons.eco_outlined;
+      case WeatherTimeWindow.custom:
+        return Icons.edit_calendar;
+    }
+  }
+
+  String _subtitleFor(WeatherTimeWindow w) {
+    switch (w) {
+      case WeatherTimeWindow.current:
+        return 'son 1 saat';
+      case WeatherTimeWindow.week:
+        return 'son 7 gün';
+      case WeatherTimeWindow.month:
+        return 'son 30 gün';
+      case WeatherTimeWindow.threeMonth:
+        return 'son 90 gün';
+      case WeatherTimeWindow.sixMonth:
+        return 'son 180 gün';
+      case WeatherTimeWindow.yearly:
+        return 'son 365 gün';
+      case WeatherTimeWindow.season:
+        return '365 g + mevsim';
+      case WeatherTimeWindow.custom:
+        return 'manuel aralık';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<WeatherTimeModeProvider>(
+      builder: (context, mode, _) {
+        final selectedWindow = mode.window;
+        final isSeasonMode = selectedWindow == WeatherTimeWindow.season;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Dropdown trigger — selected mode + label + chevron
+            PopupMenuButton<WeatherTimeWindow>(
+              tooltip: 'Zaman penceresi seç',
+              position: PopupMenuPosition.under,
+              color: theme.cardColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(
+                  color: Colors.blueAccent.withValues(alpha: 0.3),
+                  width: 0.6,
+                ),
+              ),
+              onSelected: (w) {
+                mode.setWindow(w);
+                // mode.apiMode null olabilir (custom) ama menu'de custom yok →
+                // güvenli cast.
+                vm.setWeatherTimeMode(
+                  mode.apiMode ?? 'current',
+                  mode.apiSeason,
+                );
+              },
+              itemBuilder: (_) => _menuModes.map((w) {
+                final selected = w == selectedWindow;
+                return PopupMenuItem<WeatherTimeWindow>(
+                  value: w,
+                  height: 36,
+                  child: Row(
+                    children: [
+                      Icon(
+                        _iconFor(w),
+                        size: 14,
+                        color: selected
+                            ? Colors.blueAccent
+                            : theme.secondaryTextColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        w.displayName,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: selected
+                              ? Colors.blueAccent
+                              : theme.textColor,
+                          fontWeight:
+                              selected ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _subtitleFor(w),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: theme.secondaryTextColor
+                              .withValues(alpha: 0.7),
+                        ),
+                      ),
+                      if (selected) ...[
+                        const Spacer(),
+                        const Icon(Icons.check, size: 14, color: Colors.blueAccent),
+                      ],
+                    ],
+                  ),
+                );
+              }).toList(),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 7, horizontal: 10),
+                decoration: BoxDecoration(
+                  color: Colors.blueAccent.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.blueAccent.withValues(alpha: 0.55),
+                    width: 0.8,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _iconFor(selectedWindow),
+                      size: 13,
+                      color: Colors.blueAccent,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      mode.displayLabel,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.blueAccent,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '· ${_subtitleFor(selectedWindow)}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: theme.secondaryTextColor,
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 16,
+                      color: Colors.blueAccent.withValues(alpha: 0.85),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (isSeasonMode) ...[
+              const SizedBox(height: 5),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: WeatherSeason.values.map((s) {
+                  final selected = mode.season == s;
+                  return GestureDetector(
+                    onTap: () {
+                      mode.setSeason(s);
+                      vm.setWeatherTimeMode('season', s.apiValue);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Colors.greenAccent.withValues(alpha: 0.22)
+                            : theme.cardColor.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: selected
+                              ? Colors.greenAccent.withValues(alpha: 0.7)
+                              : theme.secondaryTextColor.withValues(alpha: 0.25),
+                          width: selected ? 1 : 0.6,
+                        ),
+                      ),
+                      child: Text(
+                        s.displayName,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: selected
+                              ? Colors.greenAccent
+                              : theme.secondaryTextColor,
+                          fontWeight:
+                              selected ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }

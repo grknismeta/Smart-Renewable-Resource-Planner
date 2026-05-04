@@ -1,3 +1,16 @@
+# 1.A2.c-fix5: .env dosyasını startup'ta yükle. Lokal venv'de çalışırken
+# `os.environ` doğrudan boş; aksi halde `chatbot_service` modül-yükleme
+# sırasında GOOGLE_API_KEY'i göremez ve "kapalı" olarak başlar.
+# Docker'da `env_file:` veya `environment:` ile geldiği için bu çağrı no-op.
+from pathlib import Path as _Path
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _ENV_PATH = _Path(__file__).resolve().parent.parent.parent / ".env"
+    if _ENV_PATH.exists():
+        _load_dotenv(_ENV_PATH, override=False)
+except Exception:
+    pass
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -86,7 +99,7 @@ def print_banner():
     _safe_print(f"  {_c('gray', 'Baslangiç:')}  {_c('white', now)}")
 
 # ─── ROUTERLARI IMPORT ET ─────────────────────────────────────────────────────
-from .routers import pins, users, equipments, optimization, weather, reports, scenario, tiles, recommendations, wind_vectors, borders, analysis, system
+from .routers import pins, users, equipments, optimization, weather, reports, scenario, tiles, recommendations, wind_vectors, borders, analysis, system, chat
 
 # Coğrafya analiz motoru
 _GEO_ENABLED = os.getenv("GEO_ANALYSIS_ENABLED", "false").lower() == "true"
@@ -97,6 +110,17 @@ if _GEO_ENABLED:
 models.SystemBase.metadata.create_all(bind=SystemEngine)
 models.UserBase.metadata.create_all(bind=UserEngine)
 models.UserPinsBase.metadata.create_all(bind=UserPinsEngine)
+
+# 1.D: Performans index'leri (idempotent — IF NOT EXISTS).
+# Mevcut tablolara create_all ile yeni index eklenemez, bu yüzden DDL elle.
+try:
+    from .db.indexes import ensure_performance_indexes
+    ensure_performance_indexes()
+except Exception as _idx_err:
+    import logging
+    logging.getLogger(__name__).warning(
+        "[startup] Performans index'leri oluşturulamadı: %s", _idx_err,
+    )
 
 
 # ─── ONE-TIME MIGRATIONS ─────────────────────────────────────────────────────
@@ -325,6 +349,7 @@ app.include_router(wind_vectors.router)                                         
 app.include_router(borders.router)                                                # GADM il/ilçe sınırları
 app.include_router(analysis.router)                                               # Faz 1 — Tek kaynak (prefix: /analysis)
 app.include_router(system.router)                                                 # Faz 1 — Scheduler status (prefix: /system)
+app.include_router(chat.router)                                                   # Aşama 3.C — AI Chatbot (prefix: /chat)
 
 if _GEO_ENABLED:
     app.include_router(geo.router, prefix="/geo", tags=["🗺️ Geo Analysis"])

@@ -38,6 +38,23 @@ enum MapLayerType {
         return "Yok";
     }
   }
+
+  /// Karşılık gelen ChoroplethMode — tematik harita köprüsü.
+  ///
+  /// 1.A2 itibarıyla görsel dil tek: ilçe choropleth. Heatmap fetcher zinciri
+  /// devre dışı. setLayer() çağrıldığında bu getter ile choropleth tetiklenir.
+  ChoroplethMode get toChoropleth {
+    switch (this) {
+      case MapLayerType.wind:
+        return ChoroplethMode.wind;
+      case MapLayerType.temp:
+        return ChoroplethMode.temperature;
+      case MapLayerType.irradiance:
+        return ChoroplethMode.solar;
+      case MapLayerType.none:
+        return ChoroplethMode.none;
+    }
+  }
 }
 
 // ─── Isolate Input / Output ────────────────────────────────────────────────────

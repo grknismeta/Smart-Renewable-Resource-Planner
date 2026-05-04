@@ -29,18 +29,17 @@ mixin MapLayerMixin on BaseViewModel {
 
   MapLayerType _currentLayer = MapLayerType.none;
   List<Map<String, dynamic>> _interpolatedData = [];
-  bool _isHeatmapLoading = false;
+  // 1.A2: heatmap loading state silindi (fetcher no-op).
 
   // heatmapPoints cache — _interpolatedData değişince yenilenir,
   // aksi hâlde aynı List referansı döner → MapLayerWidget gereksiz
   // yeniden hesaplama yapmaz (didUpdateWidget: data != oldData = false).
   List<HeatmapPoint>? _heatmapPointsCache;
 
-  // Katman verisi önbelleği: her layer türü için {data, fetchTime}
-  // 5 dakika içinde aynı layer tekrar açılırsa API'ye gidilmez.
-  final Map<MapLayerType, List<Map<String, dynamic>>> _layerDataCache = {};
-  final Map<MapLayerType, DateTime> _layerCacheTime = {};
-  static const Duration _layerCacheTtl = Duration(minutes: 5);
+  // 1.A2: heatmap layer cache (eski IDW point veri seti) emekliye ayrıldı —
+  // tek görsel dil ilçe choropleth (`_choroplethData` + `_choroplethCacheTime`).
+  // Cache field'ları (`_layerDataCache`, `_layerCacheTime`, `_layerCacheTtl`)
+  // silindi; setWeatherTimeMode bunlara ihtiyaç duymuyor artık.
 
   // ─── Rüzgar Parçacık + Yükseklik Katmanı State ──────────────────────────
   bool _showWindParticles = false;
@@ -61,7 +60,6 @@ mixin MapLayerMixin on BaseViewModel {
   // ──────────────────────────────────────────────────────────────────────────
 
   MapLayerType get currentLayer => _currentLayer;
-  bool get isHeatmapLoading => _isHeatmapLoading;
 
   // --- HEATMAP İÇİN VERİ DÖNÜŞÜMÜ ---
   /// Cache'li getter: _interpolatedData değişmediği sürece
@@ -82,32 +80,41 @@ mixin MapLayerMixin on BaseViewModel {
     )).toList();
   }
 
-  /// Animasyon motoru tarafından doğrudan çağrılır (standard harita).
-  /// [pts] listesi: her eleman [lat, lon, rawValue] triple'ı.
-  /// Değerler [min, max] aralığına göre 0–1'e normalize edilir.
+  /// Animasyon motoru tarafından çağrılır (standard harita).
+  ///
+  /// **1.A2 itibarıyla davranış:** Heatmap (IDW point) render'ı emekliye
+  /// ayrıldı. Bu metot artık `_interpolatedData`'yı doldurmaz — sadece
+  /// `_currentLayer` state'ini günceller (legend / overlay'lerin animasyon
+  /// metric'inden haberdar olması için). Animasyon görüntüsü il-key'li
+  /// choropleth path'inden gelir (`_animProvinceValues` map_viewmodel'da).
+  ///
+  /// 1.A2.c kapsamında animasyon backend payload'ı ilçe-key'e taşındığında
+  /// burası tamamen kaldırılacak.
   void setAnimFrameData(
     List<dynamic> pts,
     MapLayerType layerType,
     double metricMin,
     double metricMax,
   ) {
-    final range = metricMax - metricMin;
-    _interpolatedData = pts.map((pt) {
-      final lat = (pt[0] as num).toDouble();
-      final lon = (pt[1] as num).toDouble();
-      final raw = (pt[2] as num).toDouble();
-      final normalized = range > 0 ? ((raw - metricMin) / range).clamp(0.0, 1.0) : 0.5;
-      return <String, dynamic>{'lat': lat, 'lon': lon, 'value': normalized};
-    }).toList();
+    if (_interpolatedData.isNotEmpty) {
+      _interpolatedData = [];
+      _rebuildHeatmapCache();
+    }
     _currentLayer = layerType;
-    _rebuildHeatmapCache();
     // notifyListeners() caller'ın sorumluluğunda (safeNotify ile çağrılır)
   }
 
+  /// Katman seçimi — 1.A2 itibarıyla **choropleth bridge**.
+  ///
+  /// Eski heatmap fetch zinciri (IDW noktalı) emekliye ayrıldı; aynı seçim
+  /// artık ilçe tematik haritasını tetikler. `MapLayerType` state'i animasyon
+  /// engine + legend gibi yerlerin geri uyumluluğu için korunur ama görsel dil
+  /// tek: choropleth.
   void setLayer(MapLayerType layer) {
     if (_currentLayer == layer) return;
     _currentLayer = layer;
-    fetchHeatmapDataForLayer(layer);
+    // Heatmap fetcher artık no-op (aşağıda açıklamalı). Görsel: choropleth.
+    setChoroplethMode(layer.toChoropleth);
     safeNotify();
   }
 
@@ -128,46 +135,22 @@ mixin MapLayerMixin on BaseViewModel {
     }
   }
 
-  Future<void> fetchHeatmapDataForLayer(MapLayerType layer, {bool forceRefresh = false}) async {
-    if (layer == MapLayerType.none) {
+  /// **DEPRECATED (1.A2)** — Heatmap (IDW interpolated point) fetcher artık no-op.
+  ///
+  /// Tek görsel dil olarak ilçe choropleth seçildi (`setLayer` → `setChoroplethMode`
+  /// köprüsü). Bu metot signature geri uyumluluk için korunur; çağrıldığında
+  /// sadece state'i temiz tutar (`_interpolatedData = []`) ve heatmap render
+  /// path'lerinin boş veri görmesini sağlar.
+  ///
+  /// 1.A2.b kapsamında kullanan yerler temizlenince bu metot ve ilgili
+  /// (`_interpolatedData`, `_layerDataCache`, `MapLayerWidget`) silinecek.
+  Future<void> fetchHeatmapDataForLayer(
+    MapLayerType layer, {
+    bool forceRefresh = false,
+  }) async {
+    if (_interpolatedData.isNotEmpty) {
       _interpolatedData = [];
       _rebuildHeatmapCache();
-      safeNotify();
-      return;
-    }
-
-    // Önbellek kontrolü: 5 dakika içinde yüklendiyse API'ye gitme
-    final cached = _layerDataCache[layer];
-    final cacheTime = _layerCacheTime[layer];
-    final cacheValid = cached != null &&
-        cacheTime != null &&
-        DateTime.now().difference(cacheTime) < _layerCacheTtl;
-
-    if (!forceRefresh && cacheValid) {
-      _interpolatedData = cached;
-      _rebuildHeatmapCache();
-      safeNotify();
-      return;
-    }
-
-    // Mevcut veriyi koruyoruz (User Experience)
-    _isHeatmapLoading = true;
-    safeNotify();
-
-    try {
-      final apiType = layer.apiName;
-      if (apiType != null) {
-        final data = await apiService.report.fetchInterpolatedMap(apiType);
-        _interpolatedData = data;
-        // Önbelleğe kaydet
-        _layerDataCache[layer] = data;
-        _layerCacheTime[layer] = DateTime.now();
-        _rebuildHeatmapCache();
-      }
-    } catch (e) {
-      debugPrint('Heatmap loading error: $e');
-    } finally {
-      _isHeatmapLoading = false;
       safeNotify();
     }
   }
@@ -219,7 +202,10 @@ mixin MapLayerMixin on BaseViewModel {
     _windDataEmpty = false;
     safeNotify();
     try {
-      final data = await apiService.windVector.fetchWindVectors();
+      final data = await apiService.windVector.fetchWindVectors(
+        mode: _apiMode,
+        season: _apiSeason,
+      );
       _windVectors = data.map((d) => WindVector.fromJson(d)).toList();
       _windDataEmpty = _windVectors.isEmpty;
     } catch (e) {
@@ -238,6 +224,24 @@ mixin MapLayerMixin on BaseViewModel {
   DateTime? _choroplethCacheTime;
   bool _isChoroplethLoading = false;
   static const Duration _choroplethCacheTtl = Duration(minutes: 10);
+
+  // ─── Animation → Choropleth bridge (1.A2.c) ──────────────────────────────
+  // Zaman simülasyonu kullanıcının seçtiği metric için ilçe choropleth'ini
+  // her frame'de override eder. Animasyon kapanınca `_animChoroplethBackup`
+  // restore edilir (kullanıcı animation öncesi choropleth durumuna döner).
+  Map<String, dynamic>? _animChoroplethBackup;
+  ChoroplethMode? _animChoroplethModeBackup;
+  bool _animationOverridesChoropleth = false;
+  bool get isAnimationOverridingChoropleth => _animationOverridesChoropleth;
+
+  // Tematik katmanın zaman penceresi modu — WeatherTimeModeProvider tarafından
+  // yönetilir; UI panel seçiciyi değiştirdiğinde `setWeatherTimeMode()` çağrılır
+  // ve choropleth verisi yeni mode/season ile refetch edilir.
+  String _apiMode = 'current';
+  String? _apiSeason;
+
+  String get apiMode => _apiMode;
+  String? get apiSeason => _apiSeason;
 
   ChoroplethMode get choroplethMode => _choroplethMode;
   bool get isChoroplethLoading => _isChoroplethLoading;
@@ -353,6 +357,37 @@ mixin MapLayerMixin on BaseViewModel {
     await setChoroplethMode(prev);
   }
 
+  /// Tematik harita zaman modu değiştiğinde UI tarafından çağrılır.
+  /// Aynı mod tekrar gelirse no-op.
+  ///
+  /// Yeni mode tüm hava-türevi katmanları etkiler:
+  /// - Choropleth (ilçe tematik harita) — aktifse otomatik refetch
+  /// - Heatmap (Rüzgar/Sıcaklık/Işınım katmanı) — aktifse otomatik refetch
+  /// - Rüzgar partikülleri — aktifse otomatik refetch
+  ///
+  /// Tüm ilgili cache'ler invalidate edilir, çünkü farklı mod farklı veri demek.
+  Future<void> setWeatherTimeMode(String mode, String? season) async {
+    if (_apiMode == mode && _apiSeason == season) return;
+    _apiMode = mode;
+    _apiSeason = season;
+    // İlgili cache'leri invalidate et — yeni mode yeni veri demek
+    _choroplethCacheTime = null;
+    safeNotify();
+
+    final futures = <Future<void>>[];
+    if (_choroplethMode != ChoroplethMode.none) {
+      futures.add(_fetchChoroplethData());
+    }
+    // Heatmap fetcher (1.A2 itibarıyla no-op) artık çağrılmıyor —
+    // `_currentLayer` choropleth bridge ile zaten `_choroplethMode` set etti.
+    if (_showWindParticles) {
+      futures.add(_fetchWindVectors());
+    }
+    if (futures.isNotEmpty) {
+      await Future.wait(futures);
+    }
+  }
+
   Future<void> setChoroplethMode(ChoroplethMode mode) async {
     if (_choroplethMode == mode) return;
     _choroplethMode = mode;
@@ -377,10 +412,13 @@ mixin MapLayerMixin on BaseViewModel {
     _isChoroplethLoading = true;
     safeNotify();
     try {
-      // En güncel saatin verilerini al — anlık sıcaklık/rüzgar doğruluğu.
-      // Solar gece=0 sorunu backend daylight fallback ile çözülüyor.
+      // Kullanıcının seçtiği zaman modunu gönder:
+      //  - current (default): her ilçenin son saati — anlık
+      //  - yearly: 365 gün ortalaması — iklimsel GES potansiyeli
+      //  - season: 365 gün + mevsim ay filtresi
       final data = await apiService.weather.fetchDistrictChoropleth(
-        mode: 'latest',
+        mode: _apiMode,
+        season: _apiSeason,
       );
       if (data.isNotEmpty) {
         _choroplethData = data;
@@ -392,5 +430,78 @@ mixin MapLayerMixin on BaseViewModel {
       _isChoroplethLoading = false;
       safeNotify();
     }
+  }
+
+  // ─── Animation → Choropleth bridge metodları ─────────────────────────────
+
+  /// `wind|temperature|radiation` → ChoroplethMode + data field key.
+  static (ChoroplethMode, String) _animMetricToChoropleth(String metric) {
+    switch (metric) {
+      case 'wind':
+        return (ChoroplethMode.wind, 'wind');
+      case 'temperature':
+        return (ChoroplethMode.temperature, 'temp');
+      case 'radiation':
+      default:
+        return (ChoroplethMode.solar, 'solar');
+    }
+  }
+
+  /// Animasyon başlatıldığında orijinal choropleth state'i yedekle.
+  /// `applyAnimationFrameToChoropleth` ilk çağrıda otomatik tetiklenir.
+  void _backupChoroplethForAnimation() {
+    if (_animationOverridesChoropleth) return; // zaten yedekli
+    _animChoroplethBackup = _choroplethData;
+    _animChoroplethModeBackup = _choroplethMode;
+    _animationOverridesChoropleth = true;
+  }
+
+  /// Animasyonun her frame'inde çağrılır. `vals` map'i (`"İl|İlçe": rawValue`)
+  /// choropleth `_choroplethData`'sına metric-key'iyle yazılır; render path'i
+  /// (web + native) `_choroplethData` değişimini izleyip polygon renklerini
+  /// yeniler.
+  void applyAnimationFrameToChoropleth({
+    required String metric,
+    required Map<String, double> vals,
+  }) {
+    if (vals.isEmpty) return;
+    _backupChoroplethForAnimation();
+
+    final (mode, dataKey) = _animMetricToChoropleth(metric);
+    if (_choroplethMode != mode) {
+      _choroplethMode = mode;
+    }
+
+    // {"İl|İlçe": {"wind": v, "solar": null, "temp": null}}
+    final next = <String, dynamic>{};
+    vals.forEach((key, v) {
+      next[key] = <String, dynamic>{
+        'wind': dataKey == 'wind' ? v : null,
+        'solar': dataKey == 'solar' ? v : null,
+        'temp': dataKey == 'temp' ? v : null,
+      };
+    });
+    // Frame timestamp meta — render path'inin "veri taze" görmesi için
+    next['_meta'] = <String, dynamic>{
+      'data_timestamp': DateTime.now().toIso8601String(),
+      'animation': true,
+      'metric': metric,
+    };
+    _choroplethData = next;
+    safeNotify();
+  }
+
+  /// Animasyon kapandığında orijinal choropleth state'i geri yükler.
+  /// Restore sonrası backup temizlenir.
+  void restoreChoroplethFromAnimation() {
+    if (!_animationOverridesChoropleth) return;
+    _choroplethData = _animChoroplethBackup;
+    if (_animChoroplethModeBackup != null) {
+      _choroplethMode = _animChoroplethModeBackup!;
+    }
+    _animChoroplethBackup = null;
+    _animChoroplethModeBackup = null;
+    _animationOverridesChoropleth = false;
+    safeNotify();
   }
 }

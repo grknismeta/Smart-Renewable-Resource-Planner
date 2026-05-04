@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 
+import 'package:frontend/core/network/api_service.dart';
 import 'package:frontend/core/utils/format_utils.dart';
 import 'package:frontend/data/models/scenario_model.dart';
 import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
+import 'package:frontend/features/scenarios/dialogs/financial_dialog.dart';
 import 'package:frontend/core/theme/app_theme.dart';
 
 class ScenarioDetailDialog extends StatefulWidget {
@@ -99,6 +101,27 @@ class _ScenarioDetailDialogState extends State<ScenarioDetailDialog> {
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Kapat'),
+        ),
+        // Aşama 3.A — Finansal Projeksiyon (LCOE/Payback/NPV/CO₂)
+        ElevatedButton.icon(
+          icon: const Icon(Icons.payments_outlined, size: 16),
+          label: const Text('Finansal'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.amberAccent,
+            foregroundColor: Colors.black87,
+          ),
+          onPressed: () {
+            final api = Provider.of<ApiService>(context, listen: false);
+            showDialog(
+              context: context,
+              builder: (_) => FinancialProjectionDialog(
+                scenarioId: scenario.id,
+                scenarioName: scenario.name,
+                theme: widget.theme,
+                apiService: api,
+              ),
+            );
+          },
         ),
         if (scenario.startDate != null && scenario.endDate != null)
           ElevatedButton(

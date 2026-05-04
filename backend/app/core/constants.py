@@ -788,7 +788,6 @@ TURKEY_CITIES = [
     {"name": "Kula", "province": "Manisa", "district": "Kula", "lat": 38.5469, "lon": 28.6474},
     {"name": "Köprübaşı", "province": "Manisa", "district": "Köprübaşı", "lat": 38.748, "lon": 28.403},
     {"name": "Kırkağaç", "province": "Manisa", "district": "Kırkağaç", "lat": 39.1155, "lon": 27.686},
-    {"name": "Manisa", "province": "Manisa", "district": None, "lat": 38.6191, "lon": 27.4289},
     {"name": "Salihli", "province": "Manisa", "district": "Salihli", "lat": 38.4829, "lon": 28.1309},
     {"name": "Saruhanlı", "province": "Manisa", "district": "Saruhanlı", "lat": 38.7327, "lon": 27.5774},
     {"name": "Sarıgöl", "province": "Manisa", "district": "Sarıgöl", "lat": 38.2382, "lon": 28.6966},
@@ -797,6 +796,9 @@ TURKEY_CITIES = [
     {"name": "Turgutlu", "province": "Manisa", "district": "Turgutlu", "lat": 38.5, "lon": 27.7084},
     {"name": "Yunusemre", "province": "Manisa", "district": "Yunusemre", "lat": 38.5785, "lon": 27.4270},
     {"name": "Şehzadeler", "province": "Manisa", "district": "Şehzadeler", "lat": 38.6191, "lon": 27.4289},
+    # Merkez, aynı koordinattaki Şehzadeler'den SONRA gelmeli — ON CONFLICT (lat,lon,ts)
+    # DO UPDATE last-write-wins mantığında Merkez kaydının son yazılmasını sağlar.
+    {"name": "Manisa", "province": "Manisa", "district": None, "lat": 38.6191, "lon": 27.4289},
 
     # MARDIN
     {"name": "Artuklu", "province": "Mardin", "district": "Artuklu", "lat": 37.3212, "lon": 40.7245},
@@ -1019,10 +1021,11 @@ TURKEY_CITIES = [
     {"name": "Hayrabolu", "province": "Tekirdag", "district": "Hayrabolu", "lat": 41.2147, "lon": 27.1082},
     {"name": "Malkara", "province": "Tekirdag", "district": "Malkara", "lat": 40.8931, "lon": 26.9024},
     {"name": "Marmaraereğlisi", "province": "Tekirdag", "district": "Marmaraereğlisi", "lat": 40.9694, "lon": 27.955},
-    {"name": "Tekirdag", "province": "Tekirdag", "district": None, "lat": 40.9833, "lon": 27.5167},
     {"name": "Muratlı", "province": "Tekirdag", "district": "Muratlı", "lat": 41.1723, "lon": 27.5015},
     {"name": "Saray", "province": "Tekirdag", "district": "Saray", "lat": 41.4427, "lon": 27.9214},
     {"name": "Süleymanpaşa", "province": "Tekirdag", "district": "Süleymanpaşa", "lat": 40.9833, "lon": 27.5167},
+    # Merkez, aynı koordinattaki Süleymanpaşa'dan SONRA gelmeli (Manisa/Şehzadeler ile aynı gerekçe).
+    {"name": "Tekirdag", "province": "Tekirdag", "district": None, "lat": 40.9833, "lon": 27.5167},
     {"name": "Çerkezköy", "province": "Tekirdag", "district": "Çerkezköy", "lat": 41.2862, "lon": 27.9995},
     {"name": "Çorlu", "province": "Tekirdag", "district": "Çorlu", "lat": 41.1591, "lon": 27.8041},
     {"name": "Şarköy", "province": "Tekirdag", "district": "Şarköy", "lat": 40.6149, "lon": 27.1122},

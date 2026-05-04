@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
@@ -12,6 +11,7 @@ import 'package:frontend/data/models/system_data_models.dart';
 import 'package:frontend/data/models/weather_model.dart';
 import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:frontend/features/map/viewmodels/map_layer_mixin.dart';
+// ignore: unused_import — export için gerekli (MapLayerType caller'lara)
 import 'package:frontend/features/map/layers/map_layers_system.dart';
 import 'package:frontend/features/map/models/map_models.dart';
 import 'package:frontend/data/models/recommendation_model.dart';
@@ -133,12 +133,34 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   List<Pin> get pins => _pins;
 
+  // Aşama 2: ScenarioViewModel'in gizli senaryo pin'leri set'inden senkronlanır.
+  // MapScreen, Consumer<ScenarioViewModel> içinde `setHiddenPinIds` çağırır;
+  // `filteredPins` bu seti pin filtresine ekler — gizli senaryo pin'leri haritada
+  // çizilmez.
+  Set<int> _hiddenScenarioPinIds = const {};
+
+  /// MapScreen tarafından scenarioVM.hiddenPinIds ile sync edilir.
+  void setHiddenScenarioPinIds(Set<int> ids) {
+    // Set eşitliği: aynıysa notify atlama (gereksiz rebuild yok)
+    if (_hiddenScenarioPinIds.length == ids.length &&
+        _hiddenScenarioPinIds.containsAll(ids)) {
+      return;
+    }
+    _hiddenScenarioPinIds = ids;
+    safeNotify();
+  }
+
   /// Pin filtresi uygulanmış pin listesi (haritada gösterilecek)
   List<Pin> get filteredPins {
-    if (_pinTypeFilter.isEmpty && _pinMinCapacityMw == null) return _pins;
+    if (_pinTypeFilter.isEmpty &&
+        _pinMinCapacityMw == null &&
+        _hiddenScenarioPinIds.isEmpty) {
+      return _pins;
+    }
     return _pins.where((p) {
       if (_pinTypeFilter.isNotEmpty && !_pinTypeFilter.contains(p.type)) return false;
       if (_pinMinCapacityMw != null && p.capacityMw < _pinMinCapacityMw!) return false;
+      if (_hiddenScenarioPinIds.contains(p.id)) return false;
       return true;
     }).toList();
   }
@@ -349,9 +371,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   void setPeriod(MapTimePeriod period) {
     if (_selectedPeriod == period) return;
     _selectedPeriod = period;
-    if (currentLayer != MapLayerType.none) {
-      fetchHeatmapDataForLayer(currentLayer);
-    }
+    // 1.A2: heatmap fetcher emekliye ayrıldı — periyot değişimi tematik
+    // haritayı (choropleth) etkilemez (choropleth kendi mode/season'ından
+    // beslenir; period MapTimePeriod yan-panel saat penceresi içindir).
     safeNotify();
   }
 
@@ -448,7 +470,10 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         'provinceModeActive': _isProvinceModeActive,
         'turbines': _show3DTurbines,
         'choroplethMode': choroplethMode,
-        'animationMode': _isAnimationMode,
+        // 1.B (yeniden): animation state artık TimeSimulationController'da
+        // (MapScreen ömrüne bağlı). Globe state save/restore animation'a
+        // dokunmaz; kullanıcı globe'a geçerse ve dönerse animation paneli
+        // zaten kapanır (controller close edilir).
         'recommendationsOpen': _isRecommendationsPanelOpen,
       };
       // Türkiye'ye özgü özellikleri kapat
@@ -463,7 +488,6 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       if (choroplethMode != ChoroplethMode.none) {
         setChoroplethMode(ChoroplethMode.none);
       }
-      if (_isAnimationMode) toggleAnimationMode();
       if (_isRecommendationsPanelOpen) {
         _isRecommendationsPanelOpen = false;
       }
@@ -486,10 +510,7 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         if (savedChoro != null && savedChoro != ChoroplethMode.none) {
           setChoroplethMode(savedChoro);
         }
-        // Animasyon geri yükle
-        if (s['animationMode'] == true && !_isAnimationMode) {
-          toggleAnimationMode();
-        }
+        // 1.B (yeniden): animasyon state Globe state'inde tutulmuyor artık.
         // Öneriler panelini geri yükle
         if (s['recommendationsOpen'] == true) {
           _isRecommendationsPanelOpen = true;
@@ -741,6 +762,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     try {
       _provinceSummaries = await _apiService.weather.fetchProvinceSummary(
         hours: hours,
+        // 1.C: tematik panel zaman seçimini takip et
+        mode: apiMode == 'current' ? null : apiMode,
+        season: apiSeason,
       );
     } catch (e) {
       debugPrint('[MapViewModel.loadProvinceSummaries] Hata: $e');
@@ -759,6 +783,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       _districtSummaries = await _apiService.weather.fetchDistrictSummary(
         province: province,
         hours: hours,
+        mode: apiMode == 'current' ? null : apiMode,
+        season: apiSeason,
       );
     } catch (e) {
       debugPrint('[MapViewModel.loadDistrictSummaries] Hata: $e');
@@ -776,6 +802,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     try {
       _regionSummaries = await _apiService.weather.fetchRegionSummary(
         hours: hours,
+        mode: apiMode == 'current' ? null : apiMode,
+        season: apiSeason,
       );
     } catch (e) {
       debugPrint('[MapViewModel.loadRegionSummaries] Hata: $e');
@@ -833,12 +861,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       await _loadWeatherSummarySafe();
 
       // 3) Aktif choropleth varsa yeniden yükle
+      // (1.A2: heatmap layer fetcher emekliye ayrıldı — choropleth tek görsel dil)
       await forceRefreshChoropleth();
-
-      // 4) Aktif heatmap varsa yeniden yükle
-      if (currentLayer != MapLayerType.none) {
-        await fetchHeatmapDataForLayer(currentLayer, forceRefresh: true);
-      }
     } catch (e) {
       debugPrint('[MapVM] refreshAllWeatherData error: $e');
     } finally {
@@ -1075,8 +1099,6 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   @override
   void dispose() {
     _disposed = true;
-    _animTimer?.cancel();
-    _animTimer = null;
     _authViewModel.removeListener(_handleAuthChange);
     super.dispose();
   }
@@ -1274,10 +1296,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         truncatedTime,
       );
 
-      // EĞER HARİTA KATMANI AÇIKSA, ONU DA GÜNCELLE — await ile tamamlanmasını bekle
-      if (currentLayer != MapLayerType.none) {
-        await fetchHeatmapDataForLayer(currentLayer);
-      }
+      // 1.A2: katman aktifse choropleth zaten kendi mode'undan refetch yapar;
+      // eski heatmap fetcher (`fetchHeatmapDataForLayer`) emekliye ayrıldı.
     } catch (e) {
       debugPrint('Hava durumu yüklenirken hata: $e');
       _weatherData = [];
@@ -1623,365 +1643,4 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     _analysisTopError = null;
     notifyListeners();
   }
-
-  // ─── Zaman Simülasyonu (Animasyon) State ───────────────────────────────────
-
-  bool _isAnimationMode   = false;
-  bool _animIsPlaying     = false;
-  bool _animIsLoading     = false;
-  int  _animCurrentFrame  = 0;
-  int  _animTotalFrames   = 0;
-  String _animCurrentTimestamp = '';
-  String _animMetric      = 'wind';       // wind | temperature | radiation
-  String _animInterval    = 'daily';      // daily | hourly
-  double _animSpeedFps    = 5.0;
-  // Varsayılan: son 1 ay (bugünden geriye)
-  DateTime _animStartDate = DateTime.now().subtract(const Duration(days: 30));
-  DateTime _animEndDate   = DateTime.now();
-  String? _animError;
-  String _animRangeInfo   = '';  // "Günlük: 2015–2024 · Saatlik: 2024–2025" gibi
-
-  // Standard harita için frame verisi + timer
-  List<dynamic>? _animFrames;       // frames[i] = {"ts": "...", "pts": [[lat,lon,val,city], ...]}
-  double _animMetricMin = 0.0;
-  double _animMetricMax = 1.0;
-  Timer? _animTimer;
-
-  // İl bazlı polygon animasyon state'i — her frame için il→değer haritası
-  Map<String, double>? _animProvinceValues; // city_name → raw metric value
-  int _animProvinceFrameIdx = -1;           // son render edilen frame
-
-  bool   get isAnimationMode        => _isAnimationMode;
-  bool   get animIsPlaying          => _animIsPlaying;
-  bool   get animIsLoading          => _animIsLoading;
-  int    get animCurrentFrame       => _animCurrentFrame;
-  int    get animTotalFrames        => _animTotalFrames;
-  String get animCurrentTimestamp   => _animCurrentTimestamp;
-  String get animMetric             => _animMetric;
-  String get animInterval           => _animInterval;
-  double get animSpeedFps           => _animSpeedFps;
-  DateTime get animStartDate        => _animStartDate;
-  DateTime get animEndDate          => _animEndDate;
-  String? get animError             => _animError;
-  String get animRangeInfo          => _animRangeInfo;
-  Map<String, double>? get animProvinceValues => _animProvinceValues;
-  double get animMetricMin          => _animMetricMin;
-  double get animMetricMax          => _animMetricMax;
-
-  /// Animasyon modunu aç/kapat.
-  void toggleAnimationMode() {
-    if (_isAnimationMode) {
-      // Kapat: animasyonu durdur, polygon verilerini sıfırla
-      _animTimer?.cancel();
-      _animTimer = null;
-      _jsAnimStop();
-      _isAnimationMode  = false;
-      _animIsPlaying    = false;
-      _animCurrentFrame = 0;
-      _animTotalFrames  = 0;
-      _animCurrentTimestamp = '';
-      _animError        = null;
-      _animFrames       = null;
-      _animProvinceValues = null;
-      _animProvinceFrameIdx = -1;
-    } else {
-      _isAnimationMode = true;
-      // Açılışta mevcut veri aralığını arka planda çek
-      _fetchAnimationRange();
-    }
-    safeNotify();
-  }
-
-  /// Backend'den kullanılabilir tarih aralığını çekip `_animRangeInfo`'ya yaz.
-  /// Ayrıca varsayılan tarih aralığı veritabanı aralığının dışındaysa
-  /// (örn. "bugün" 2026-04 ama veri 2024-12'de bitiyor) son 30 güne çeker.
-  Future<void> _fetchAnimationRange() async {
-    try {
-      final data = await _apiService.weather.fetchAnimationRange();
-      final dMin = (data['daily_min'] ?? '').toString();
-      final dMax = (data['daily_max'] ?? '').toString();
-      final hMin = (data['hourly_min'] ?? '').toString();
-      final hMax = (data['hourly_max'] ?? '').toString();
-      // Yıl kısmını kısalt: "2015-12-31" → "2015"
-      String yr(String s) => s.length >= 4 ? s.substring(0, 4) : s;
-      _animRangeInfo = 'Günlük: ${yr(dMin.isEmpty ? "?" : dMin)}–${yr(dMax.isEmpty ? "?" : dMax)}'
-          '  ·  Saatlik: ${yr(hMin.isEmpty ? "?" : hMin)}–${yr(hMax.isEmpty ? "?" : hMax)}';
-
-      // Varsayılan tarih aralığını veri aralığına göre ayarla.
-      // Kullanıcı henüz manuel değiştirmediyse ve mevcut end date veritabanı
-      // aralığının dışındaysa, sonu veri_max'a, başı veri_max-30gün'e çek.
-      final activeMax = _animInterval == 'hourly'
-          ? (hMax.isNotEmpty ? hMax : dMax)
-          : dMax;
-      if (activeMax.isNotEmpty) {
-        try {
-          final maxDate = DateTime.parse(activeMax);
-          // Kullanıcı default'ta DateTime.now() kullanıyor; endDate maxDate'ten
-          // ileri ise bilgilendirici şekilde geri çek.
-          if (_animEndDate.isAfter(maxDate)) {
-            _animEndDate = maxDate;
-            final newStart = maxDate.subtract(const Duration(days: 30));
-            if (_animStartDate.isBefore(newStart) || _animStartDate.isAfter(maxDate)) {
-              _animStartDate = newStart;
-            }
-            _clampAnimEndDate();
-          }
-        } catch (_) {
-          // parse başarısız → ignore
-        }
-      }
-    } catch (e) {
-      _animRangeInfo = '';
-      debugPrint('[MapViewModel._fetchAnimationRange] $e');
-    }
-    safeNotify();
-  }
-
-  /// Frame verisini backend'den çekip standard harita + MapLibre için hazırlar.
-  Future<void> loadAnimationData() async {
-    if (_animIsLoading) return;
-    _animTimer?.cancel();
-    _animTimer = null;
-    _animIsLoading = true;
-    _animError     = null;
-    _animIsPlaying = false;
-    _animCurrentFrame     = 0;
-    _animTotalFrames      = 0;
-    _animCurrentTimestamp = '';
-    _animFrames           = null;
-    _jsAnimStop();
-    safeNotify();
-
-    try {
-      final start = '${_animStartDate.year.toString().padLeft(4, '0')}'
-          '-${_animStartDate.month.toString().padLeft(2, '0')}'
-          '-${_animStartDate.day.toString().padLeft(2, '0')}';
-      final end = '${_animEndDate.year.toString().padLeft(4, '0')}'
-          '-${_animEndDate.month.toString().padLeft(2, '0')}'
-          '-${_animEndDate.day.toString().padLeft(2, '0')}';
-
-      final data = await _apiService.weather.fetchAnimationData(
-        start: start,
-        end: end,
-        metric: _animMetric,
-        interval: _animInterval,
-      );
-
-      _animTotalFrames = (data['total_frames'] as num?)?.toInt() ?? 0;
-      if (_animTotalFrames == 0) {
-        _animError = 'Seçilen tarih aralığında veri bulunamadı.';
-      } else {
-        // Metriğe göre MapLibre heatmap modunu ayarla
-        final targetMode = _animMetric == 'wind'
-            ? MlHeatmapMode.wind
-            : _animMetric == 'temperature'
-                ? MlHeatmapMode.temperature
-                : MlHeatmapMode.solar;
-        setMlHeatmapMode(targetMode);
-
-        // MapLibre için JS'e tam JSON gönder
-        _jsLoadAnimationData(jsonEncode(data));
-
-        // Frame verisi (JS animasyonu için yedek)
-        _animFrames    = data['frames'] as List?;
-        _animMetricMin = (data['metric_min'] as num?)?.toDouble() ?? 0.0;
-        _animMetricMax = (data['metric_max'] as num?)?.toDouble() ?? 1.0;
-
-        // İlk frame'i hemen render et (her iki haritada)
-        if (_animFrames != null && _animFrames!.isNotEmpty) {
-          _animCurrentTimestamp = (_animFrames![0] as Map)['ts'] ?? '';
-          _renderStandardMapFrame(0);
-        }
-      }
-    } catch (e) {
-      // processResponse zaten FastAPI detail mesajını Exception içine koyuyor
-      final raw = e.toString().replaceFirst('Exception: ', '');
-      final lower = raw.toLowerCase();
-
-      // Kullanıcıya ham hata yerine okunabilir mesaj göster.
-      // Önce en spesifik hatalar (timeout / ağ) — sonra genel fallback.
-      if (lower.contains('timeoutexception') || lower.contains('timed out')) {
-        _animError =
-            'İstek zaman aşımına uğradı (60 sn). Daha kısa bir tarih aralığı seçin.';
-      } else if (lower.contains('socketexception') ||
-          lower.contains('clientexception') ||
-          lower.contains('failed to fetch') ||
-          lower.contains('connection refused') ||
-          lower.contains('connection closed') ||
-          lower.contains('network is unreachable')) {
-        _animError =
-            'Sunucuya bağlanılamadı. Backend çalışıyor mu? (URL: ${_apiService.weather.baseUrl})';
-      } else if (lower.contains('404') || lower.contains('bulunamadı')) {
-        _animError = 'Seçilen tarih aralığında veri bulunamadı.';
-      } else if (lower.contains('500') || lower.contains('internal server')) {
-        _animError = 'Sunucu hatası (500). Tarih aralığını daraltın.';
-      } else if (raw.isNotEmpty && raw.length < 120) {
-        // Backend'in döndürdüğü "detail" mesajı anlamlıysa direkt göster
-        _animError = 'Hata: $raw';
-      } else {
-        _animError = 'Veri yüklenirken hata oluştu. Farklı bir tarih aralığı deneyin.';
-      }
-      debugPrint('[MapViewModel.loadAnimationData] URL=${_apiService.weather.baseUrl}/weather/animation '
-          'metric=$_animMetric interval=$_animInterval err=$e');
-    } finally {
-      _animIsLoading = false;
-      safeNotify();
-    }
-  }
-
-  /// Belirtilen frame'i il polygon'larına yazar.
-  /// Backend artık her noktada [lat, lon, val, city_name] döndürür.
-  void _renderStandardMapFrame(int frame) {
-    if (_animFrames == null || frame < 0 || frame >= _animFrames!.length) return;
-    if (frame == _animProvinceFrameIdx) return; // Aynı frame tekrar render edilmesin
-    _animProvinceFrameIdx = frame;
-
-    final frameData = _animFrames![frame] as Map;
-    final pts = frameData['pts'] as List? ?? [];
-
-    // İl bazlı değer haritası oluştur
-    final provinceValues = <String, double>{};
-    for (final pt in pts) {
-      if (pt is! List || pt.length < 3) continue;
-      final val = (pt[2] as num).toDouble();
-      // Backend city_name gönderiyorsa (4. eleman) onu kullan
-      final city = pt.length > 3 ? pt[3].toString() : '';
-      if (city.isNotEmpty) {
-        provinceValues[city] = val;
-      }
-    }
-    _animProvinceValues = provinceValues;
-
-    // Eski heatmap tabanlı render'ı da koru (web JS hâlâ kullanabilir)
-    final layerType = _animMetric == 'wind'
-        ? MapLayerType.wind
-        : _animMetric == 'temperature'
-            ? MapLayerType.temp
-            : MapLayerType.irradiance;
-    setAnimFrameData(pts, layerType, _animMetricMin, _animMetricMax);
-  }
-
-  /// Animasyonu oynat — MapLibre JS timer.
-  void playAnimation() {
-    if (_animTotalFrames == 0) return;
-    _animIsPlaying = true;
-    _jsAnimPlay(_animSpeedFps);
-    safeNotify();
-  }
-
-  /// Animasyonu durdur.
-  void pauseAnimation() {
-    _animIsPlaying = false;
-    _animTimer?.cancel();
-    _animTimer = null;
-    _jsAnimStop();
-    safeNotify();
-  }
-
-  /// Belirli frame indeksine atla.
-  void seekAnimation(int frame) {
-    if (_animTotalFrames == 0) return;
-    _animCurrentFrame = frame.clamp(0, _animTotalFrames - 1);
-    _jsAnimSeek(_animCurrentFrame);
-    if (_animFrames != null) {
-      _animCurrentTimestamp = (_animCurrentFrame < _animFrames!.length)
-          ? ((_animFrames![_animCurrentFrame] as Map)['ts'] ?? '')
-          : '';
-      _renderStandardMapFrame(_animCurrentFrame);
-    }
-    safeNotify();
-  }
-
-  /// Metrik değiştir (wind | temperature | radiation).
-  void setAnimMetric(String m) {
-    if (_animMetric == m) return;
-    _animMetric = m;
-    safeNotify();
-  }
-
-  /// Aralık değiştir (daily | hourly).
-  /// Saatlik moda geçince end date otomatik olarak 30 günle sınırlanır.
-  void setAnimInterval(String i) {
-    if (_animInterval == i) return;
-    _animInterval = i;
-    _clampAnimEndDate();
-    safeNotify();
-  }
-
-  /// FPS hızını değiştir.
-  void setAnimSpeed(double fps) {
-    _animSpeedFps = fps.clamp(1.0, 20.0);
-    if (_animIsPlaying) {
-      _jsAnimStop();
-      _jsAnimPlay(_animSpeedFps);
-    }
-    safeNotify();
-  }
-
-  // ── Validasyon yardımcıları ───────────────────────────────────────────────
-
-  static const int _hourlyMaxDays = 30;
-  static const int _dailyMaxDays  = 365;
-
-  int get _animMaxDays => _animInterval == 'hourly' ? _hourlyMaxDays : _dailyMaxDays;
-
-  /// Seçilen aralık geçerliyse null, değilse kullanıcıya gösterilecek mesaj.
-  String? get animDateRangeError {
-    final diff = _animEndDate.difference(_animStartDate).inDays;
-    if (diff < 1) return 'En az 1 gün seçilmeli';
-    if (diff > _animMaxDays) {
-      return _animInterval == 'hourly'
-          ? 'Saatlik modda maksimum $_hourlyMaxDays gün seçilebilir'
-          : 'Günlük modda maksimum $_dailyMaxDays gün seçilebilir';
-    }
-    return null;
-  }
-
-  void _clampAnimEndDate() {
-    final maxEnd = _animStartDate.add(Duration(days: _animMaxDays));
-    if (_animEndDate.isAfter(maxEnd)) _animEndDate = maxEnd;
-  }
-
-  /// Tarih aralığını güncelle (end date otomatik kısıtlanır).
-  void setAnimDateRange(DateTime start, DateTime end) {
-    _animStartDate = start;
-    _animEndDate   = end;
-    _clampAnimEndDate();
-    safeNotify();
-  }
-
-  /// JS animasyon callback'inden çağrılır — frame index + timestamp günceller.
-  /// Aynı zamanda il polygon'larını günceller.
-  void onAnimFrameChanged(int index, String ts) {
-    _animCurrentFrame     = index;
-    _animCurrentTimestamp = ts;
-    // Il polygon'larını da güncelle
-    _renderStandardMapFrame(index);
-    safeNotify();
-  }
-
-  // ── JS bridge stub'ları — map_view_maplibre_web.dart set eder ──────────────
-  // map_view_maplibre_web.dart initState'de bu closure'ları doldurur.
-  // Bu şekilde ViewModel → JS bağımlılığı tersine çevrilmiş olur.
-  void Function(String json)? _jsLoadFn;
-  void Function(double fps)?  _jsPlayFn;
-  void Function()?            _jsStopFn;
-  void Function(int frame)?   _jsSeekFn;
-
-  void registerJsBridge({
-    required void Function(String json) loadFn,
-    required void Function(double fps)  playFn,
-    required void Function()            stopFn,
-    required void Function(int frame)   seekFn,
-  }) {
-    _jsLoadFn = loadFn;
-    _jsPlayFn = playFn;
-    _jsStopFn = stopFn;
-    _jsSeekFn = seekFn;
-  }
-
-  void _jsLoadAnimationData(String json)  => _jsLoadFn?.call(json);
-  void _jsAnimPlay(double fps)            => _jsPlayFn?.call(fps);
-  void _jsAnimStop()                      => _jsStopFn?.call();
-  void _jsAnimSeek(int frame)             => _jsSeekFn?.call(frame);
 }

@@ -204,7 +204,9 @@ class _ScenarioSidePanelState extends State<ScenarioSidePanel> {
           pins: mapVM.pins,
           theme: widget.theme,
           isActive: scenarioVM.isSelected(scenario.id),
+          isVisible: scenarioVM.isVisible(scenario.id),
           onToggle: () => scenarioVM.toggleScenario(scenario.id),
+          onToggleVisibility: () => scenarioVM.toggleScenarioVisibility(scenario.id),
           onEdit: () => _showEditDialog(context, scenario, mapVM),
           onUpdate: () => _handleUpdate(context, scenarioVM, scenario),
           onReport: () => Navigator.pushNamed(
@@ -289,7 +291,9 @@ class _ScenarioCard extends StatefulWidget {
   final List<Pin> pins;
   final ThemeViewModel theme;
   final bool isActive;
+  final bool isVisible;
   final VoidCallback onToggle;
+  final VoidCallback onToggleVisibility;
   final VoidCallback onEdit;
   final VoidCallback onUpdate;
   final VoidCallback onReport;
@@ -300,7 +304,9 @@ class _ScenarioCard extends StatefulWidget {
     required this.pins,
     required this.theme,
     required this.isActive,
+    required this.isVisible,
     required this.onToggle,
+    required this.onToggleVisibility,
     required this.onEdit,
     required this.onUpdate,
     required this.onReport,
@@ -401,6 +407,20 @@ class _ScenarioCardState extends State<_ScenarioCard> {
                   ),
 
                   // Aksiyon butonları
+                  // Haritada göster/gizle (Aşama 2)
+                  _SmallBtn(
+                    icon: widget.isVisible
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    color: widget.isVisible
+                        ? Colors.lightGreenAccent.withValues(alpha: 0.85)
+                        : widget.theme.secondaryTextColor.withValues(alpha: 0.5),
+                    tooltip: widget.isVisible
+                        ? 'Haritada Gizle'
+                        : 'Haritada Göster',
+                    onTap: widget.onToggleVisibility,
+                  ),
+                  const SizedBox(width: 4),
                   _SmallBtn(
                     icon: Icons.edit_outlined,
                     color: widget.theme.secondaryTextColor.withValues(alpha: 0.7),

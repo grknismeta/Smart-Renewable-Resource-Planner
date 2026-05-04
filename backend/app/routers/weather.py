@@ -8,7 +8,7 @@
 import unicodedata
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, select, text, or_
+from sqlalchemy import func, select, text, or_, extract
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone, date as date_type
 from collections import defaultdict
@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from app.db.database import SystemSessionLocal
 from app.db.models import HourlyWeatherData, WeatherData
 from app.core.constants import TURKEY_CITIES, CITY_TO_REGION, PROVINCE_GEO_TO_CODE, _PROVINCE_DB_CODES
+from app.core.time_window import resolve_time_window, MODE_REGEX, SEASON_REGEX
 from app.services.redis_cache import cache_get, cache_set
 
 router = APIRouter(
@@ -356,21 +357,47 @@ def get_province_summary(
     hours: int = Query(
         default=168,
         ge=1,
-        le=720,
-        description="Analiz penceresi (saat, varsayılan 7 gün = 168)",
-    )
+        le=8760,
+        description="Analiz penceresi (saat, varsayılan 7 gün = 168). mode verilirse görmezden gelinir.",
+    ),
+    mode: str | None = Query(
+        default=None,
+        regex=MODE_REGEX,
+        description=(
+            "Tematik zaman penceresi (1.A2): current|week|month|threeMonth|sixMonth|"
+            "yearly|season. Verilirse hours yok sayılır; pencere `resolve_time_window`'dan "
+            "alınır + season ay filtresi uygulanır."
+        ),
+    ),
+    season: str | None = Query(
+        default=None,
+        regex=SEASON_REGEX,
+        description="mode=season için zorunlu",
+    ),
 ):
     """İl (province) bazlı hava durumu özeti — city_name'e göre gruplanmış."""
+    # ── Zaman penceresi: mode varsa o, yoksa hours ───────────────────────────
+    if mode:
+        tw = resolve_time_window(mode, season)
+        cutoff = tw.start
+        end_ts = tw.end
+        months = tw.months
+        cache_key_window = f"mode={mode}:season={season or '-'}"
+    else:
+        cutoff = datetime.now() - timedelta(hours=hours)
+        end_ts = None
+        months = None
+        cache_key_window = f"hours={hours}"
+
     # ── Cache kontrolü (TTL: 30 dakika) ──────────────────────────────────────
-    cache_key = f"weather:province-summary:{hours}"
+    cache_key = f"weather:province-summary:{cache_key_window}"
     cached = cache_get(cache_key)
     if cached is not None:
         return [ProvinceSummary(**item) for item in cached]
 
     db = SystemSessionLocal()
     try:
-        cutoff = datetime.now() - timedelta(hours=hours)
-        results = db.query(
+        query = db.query(
             HourlyWeatherData.city_name,
             func.avg(HourlyWeatherData.wind_speed_100m).label("avg_wind"),
             func.avg(HourlyWeatherData.shortwave_radiation).label("avg_radiation"),
@@ -380,9 +407,12 @@ def get_province_summary(
             HourlyWeatherData.timestamp >= cutoff,
             HourlyWeatherData.city_name.isnot(None),
             or_(HourlyWeatherData.district_name.is_(None), HourlyWeatherData.district_name == "Merkez"),  # Sadece il merkezi kayıtları
-        ).group_by(
-            HourlyWeatherData.city_name
-        ).all()
+        )
+        if end_ts is not None:
+            query = query.filter(HourlyWeatherData.timestamp <= end_ts)
+        if months:
+            query = query.filter(extract("month", HourlyWeatherData.timestamp).in_(months))
+        results = query.group_by(HourlyWeatherData.city_name).all()
 
         result = [
             ProvinceSummary(
@@ -408,9 +438,11 @@ def get_district_summary(
     hours: int = Query(
         default=168,
         ge=1,
-        le=720,
-        description="Analiz penceresi (saat, varsayılan 7 gün = 168)",
+        le=8760,
+        description="Analiz penceresi (saat, varsayılan 7 gün). mode verilirse görmezden gelinir.",
     ),
+    mode: str | None = Query(default=None, regex=MODE_REGEX, description="Tematik zaman penceresi (1.A2)"),
+    season: str | None = Query(default=None, regex=SEASON_REGEX, description="mode=season için zorunlu"),
 ):
     """
     Belirli bir ile ait ilçe bazlı hava durumu özeti.
@@ -440,20 +472,31 @@ def get_district_summary(
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="province veya province_code gerekli")
 
+    # ── Zaman penceresi ──────────────────────────────────────────────────────
+    if mode:
+        tw = resolve_time_window(mode, season)
+        cutoff = tw.start
+        end_ts = tw.end
+        months = tw.months
+        cache_key_window = f"mode={mode}:season={season or '-'}"
+    else:
+        cutoff = datetime.now() - timedelta(hours=hours)
+        end_ts = None
+        months = None
+        cache_key_window = f"hours={hours}"
+
     # ── Cache kontrolü (TTL: 15 dakika) ──────────────────────────────────────
-    cache_key = f"weather:district-summary:{resolved_code}:{hours}"
+    cache_key = f"weather:district-summary:{resolved_code}:{cache_key_window}"
     cached = cache_get(cache_key)
     if cached is not None:
         return [DistrictSummary(**item) for item in cached]
 
     db = SystemSessionLocal()
     try:
-        cutoff = datetime.now() - timedelta(hours=hours)
-
         # Hem gerçek ilçeler (district_name IS NOT NULL) hem de il merkezi
         # (location_code = "{code}0", district_name IS NULL) dahil edilir.
         # Merkez kayıt "Merkez" district_name ile döndürülür.
-        results = db.query(
+        query = db.query(
             HourlyWeatherData.city_name,
             HourlyWeatherData.district_name,
             HourlyWeatherData.location_code,
@@ -466,7 +509,12 @@ def get_district_summary(
         ).filter(
             HourlyWeatherData.timestamp >= cutoff,
             HourlyWeatherData.location_code.like(f"{resolved_code}%"),
-        ).group_by(
+        )
+        if end_ts is not None:
+            query = query.filter(HourlyWeatherData.timestamp <= end_ts)
+        if months:
+            query = query.filter(extract("month", HourlyWeatherData.timestamp).in_(months))
+        results = query.group_by(
             HourlyWeatherData.city_name,
             HourlyWeatherData.district_name,
             HourlyWeatherData.location_code,
@@ -506,25 +554,38 @@ def get_region_summary(
     hours: int = Query(
         default=168,
         ge=1,
-        le=720,
-        description="Analiz penceresi (saat, varsayılan 7 gün = 168)",
+        le=8760,
+        description="Analiz penceresi (saat, varsayılan 7 gün). mode verilirse görmezden gelinir.",
     ),
+    mode: str | None = Query(default=None, regex=MODE_REGEX, description="Tematik zaman penceresi (1.A2)"),
+    season: str | None = Query(default=None, regex=SEASON_REGEX, description="mode=season için zorunlu"),
 ):
     """
     7 coğrafi bölge bazlı hava durumu özeti.
     İl ortalamalarını bölgeye göre gruplar.
     """
+    # ── Zaman penceresi ──────────────────────────────────────────────────────
+    if mode:
+        tw = resolve_time_window(mode, season)
+        cutoff = tw.start
+        end_ts = tw.end
+        months = tw.months
+        cache_key_window = f"mode={mode}:season={season or '-'}"
+    else:
+        cutoff = datetime.now() - timedelta(hours=hours)
+        end_ts = None
+        months = None
+        cache_key_window = f"hours={hours}"
+
     # ── Cache kontrolü (TTL: 30 dakika) ──────────────────────────────────────
-    cache_key = f"weather:region-summary:{hours}"
+    cache_key = f"weather:region-summary:{cache_key_window}"
     cached = cache_get(cache_key)
     if cached is not None:
         return [RegionSummary(**item) for item in cached]
 
     db = SystemSessionLocal()
     try:
-        cutoff = datetime.now() - timedelta(hours=hours)
-
-        province_results = db.query(
+        query = db.query(
             HourlyWeatherData.city_name,
             func.avg(HourlyWeatherData.wind_speed_100m).label("avg_wind"),
             func.avg(HourlyWeatherData.shortwave_radiation).label("avg_radiation"),
@@ -533,9 +594,12 @@ def get_region_summary(
             HourlyWeatherData.timestamp >= cutoff,
             HourlyWeatherData.city_name.isnot(None),
             or_(HourlyWeatherData.district_name.is_(None), HourlyWeatherData.district_name == "Merkez"),
-        ).group_by(
-            HourlyWeatherData.city_name
-        ).all()
+        )
+        if end_ts is not None:
+            query = query.filter(HourlyWeatherData.timestamp <= end_ts)
+        if months:
+            query = query.filter(extract("month", HourlyWeatherData.timestamp).in_(months))
+        province_results = query.group_by(HourlyWeatherData.city_name).all()
 
         region_buckets: dict = defaultdict(lambda: {
             "winds": [], "rads": [], "temps": [], "provinces": set()
@@ -617,6 +681,53 @@ _HOURLY_METRIC_COL = {
     "radiation":   HourlyWeatherData.shortwave_radiation,
 }
 
+# Daily animation tablosu (`WeatherData`) ilçe seviyesinde değil — sadece il
+# merkezi kayıtlarını tutar (district_name NULL veya 'Merkez'). Animation
+# `format=districts` payload'ı için il değerini ilin tüm ilçelerine yaymak
+# gerek; aksi halde choropleth polygon eşleşmesi olmaz, frame boş kalır.
+# `TURKEY_CITIES`'ten precompute: il → [ilçe, ...] (il merkezi 'None' satırları
+# hariç).
+_DISTRICTS_BY_PROVINCE: dict[str, list[str]] = {}
+for _c in TURKEY_CITIES:
+    _district = _c.get("district")
+    if _district:  # None ise il merkezi satırı, atla
+        _DISTRICTS_BY_PROVINCE.setdefault(_c["province"], []).append(_district)
+
+
+# 1.A2.c-fix3: Türkçe-normalize lookup — DB'deki province_name ile
+# TURKEY_CITIES province adı arasındaki encoding farklarını absorbe eder.
+# Örn: "Gümüshane" (DB, tek nokta) ≈ "Gümüşhane" (TURKEY_CITIES, iki nokta).
+def _tr_normalize(s: str) -> str:
+    """Türkçe karakterleri ASCII'ye düşür + küçük harf + trim."""
+    if not s:
+        return ""
+    table = str.maketrans({
+        "ç": "c", "Ç": "c",
+        "ğ": "g", "Ğ": "g",
+        "ı": "i", "İ": "i", "I": "i",
+        "ö": "o", "Ö": "o",
+        "ş": "s", "Ş": "s",
+        "ü": "u", "Ü": "u",
+    })
+    return s.translate(table).lower().strip()
+
+
+# Normalize → kanonik (TURKEY_CITIES) province adı
+_PROVINCE_CANONICAL: dict[str, str] = {
+    _tr_normalize(prov): prov for prov in _DISTRICTS_BY_PROVINCE
+}
+
+
+def _resolve_province_canonical(db_province_name: str) -> str:
+    """DB'den gelen ham province adını TURKEY_CITIES standardına çevirir.
+    Match yoksa orijinali döndürür (geri uyum)."""
+    if not db_province_name:
+        return db_province_name
+    if db_province_name in _DISTRICTS_BY_PROVINCE:
+        return db_province_name  # Direkt match — hızlı yol
+    canonical = _PROVINCE_CANONICAL.get(_tr_normalize(db_province_name))
+    return canonical or db_province_name
+
 
 @router.get("/animation")
 def get_animation_frames(
@@ -624,23 +735,43 @@ def get_animation_frames(
     end: str = Query(..., description="Bitiş tarihi (YYYY-MM-DD)"),
     metric: str = Query("wind", description="wind | temperature | radiation"),
     interval: str = Query("daily", description="daily | hourly"),
+    format: str = Query(
+        "districts",
+        regex="^(districts|points)$",
+        description=(
+            "districts (default, 1.A2): frame.vals = {\"İl|İlçe\": val} — "
+            "ilçe choropleth ile birebir uyumlu key formatı. "
+            "points (legacy): frame.pts = [[lat, lon, val, name]] — "
+            "eski IDW heatmap path için (deprecated, geri uyum)."
+        ),
+    ),
 ):
     """
     Hava durumu animasyonu için frame verisi döndürür.
 
-    Her frame bir zaman dilimine karşılık gelir; noktalar [lat, lon, değer]
-    üçlüleri olarak kompakt JSON array içinde döner.
+    **1.A2 itibarıyla** tek görsel dil ilçe choropleth — animasyon frame'leri
+    de aynı key formatında ilçe-bazlı dağılım döner. Polygon'lar zaman içinde
+    renk değiştirir; IDW noktası yok.
 
-    Yanıt yapısı:
-      {
-        "metric": "wind", "interval": "daily",
-        "total_frames": 365,
-        "metric_min": 0.8, "metric_max": 18.4,
-        "frames": [
-          {"ts": "2024-01-01", "pts": [[lat, lon, val], ...]},
-          ...
-        ]
-      }
+    Yanıt yapısı (default `format=districts`):
+
+    .. code-block:: json
+
+        {
+          "metric": "wind", "interval": "daily",
+          "total_frames": 365,
+          "metric_min": 0.8, "metric_max": 18.4,
+          "frames": [
+            {"ts": "2024-01-01", "vals": {"İstanbul|Kadıköy": 12.4, ...}},
+            ...
+          ]
+        }
+
+    Legacy yanıt (`format=points`, geri uyum, opsiyonel):
+
+    .. code-block:: json
+
+        {"frames": [{"ts": "...", "pts": [[lat, lon, val, name], ...]}]}
     """
     # --- Parametre doğrulama ---
     if metric not in ("wind", "temperature", "radiation"):
@@ -657,6 +788,20 @@ def get_animation_frames(
     if start_date > end_date:
         raise HTTPException(status_code=400, detail="start tarihi end'den büyük olamaz")
 
+    use_districts = format == "districts"
+
+    # 1.D: Daily mode için Redis cache (TTL 30 dk).
+    # Hourly mode'da payload 50K+ satır ve veri tazeliği kritik — cache atlanır.
+    # `:v5` suffix — GADM-driven payload (polygon match %100).
+    cache_key = (
+        f"weather:animation:v5:{start}:{end}:{metric}:{interval}:{format}"
+        if interval == "daily" else None
+    )
+    if cache_key:
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
+
     db = SystemSessionLocal()
     try:
         if interval == "daily":
@@ -670,42 +815,63 @@ def get_animation_frames(
 
             metric_col = _DAILY_METRIC_COL[metric]
 
-            # NOT: WeatherData tablosunda `city_name` yok — sadece `province_name`
-            # (merge/backfill ile doldurulur) ve `district_name`. Animasyon için
-            # il merkezlerini alıyoruz (district_name NULL veya 'Merkez').
-            rows = db.query(
-                WeatherData.latitude,
-                WeatherData.longitude,
-                WeatherData.date,
-                WeatherData.province_name,
-                metric_col.label("val"),
+            # `WeatherData` (daily) tablosunda büyükşehirlerin **'Merkez'
+            # ilçesi yok** (Adana → Çukurova/Sarıçam, İstanbul → Kadıköy/...).
+            # Eski filter `district_name IS NULL OR Merkez` 10 büyükşehri
+            # tamamen düşürüyordu (Adana, Ankara, Bursa, Gaziantep, İstanbul,
+            # İzmir, Kayseri, Konya, K.Maraş, Gümüşhane).
+            #
+            # 1.A2.c-fix2: Filter kaldırıldı, **il × tarih bazlı AVG** alınır.
+            # Her ilin günlük ortalaması ilçelere yayılır (TURKEY_CITIES'ten
+            # ilçe listesi). Büyükşehirler artık görünür.
+            base_query = db.query(
+                WeatherData.date.label("date"),
+                WeatherData.province_name.label("province_name"),
+                func.avg(metric_col).label("val"),
             ).filter(
                 WeatherData.date >= start_date,
                 WeatherData.date <= end_date,
                 metric_col.isnot(None),
-                or_(
-                    WeatherData.district_name.is_(None),
-                    WeatherData.district_name == "Merkez",
-                ),
-            ).order_by(WeatherData.date).all()
+                WeatherData.province_name.isnot(None),
+            ).group_by(WeatherData.date, WeatherData.province_name)
+            rows = base_query.order_by(WeatherData.date).all()
 
-            # Tarih → [(lat, lon, val, city)] gruplama
-            frames_dict = defaultdict(list)
+            frames_vals = defaultdict(dict)   # ts → {"İl|İlçe": val}
+            frames_pts = defaultdict(list)    # ts → [[lat, lon, val, name]]
             all_vals = []
             for row in rows:
                 v = round(float(row.val), 3)
-                frames_dict[row.date.isoformat()].append([
-                    round(row.latitude, 4),
-                    round(row.longitude, 4),
-                    v,
-                    row.province_name or "",
-                ])
+                ts_key = row.date.isoformat()
+                if use_districts:
+                    # 1.A2.c-fix4: GADM-driven payload — backend key'leri
+                    # frontend MapLibre polygon source'undaki ad ile birebir.
+                    # DB province → GADM kanonik il adı (Adiyaman → Adıyaman),
+                    # her GADM ilçesine il değeri yayılır.
+                    from app.services.gadm_lookup import (
+                        resolve_province as _gadm_resolve_province,
+                        get_districts as _gadm_get_districts,
+                    )
+                    gadm_prov = _gadm_resolve_province(row.province_name) or row.province_name
+                    gadm_districts = _gadm_get_districts(gadm_prov)
+                    if gadm_districts:
+                        for d in gadm_districts:
+                            frames_vals[ts_key][f"{gadm_prov}|{d}"] = v
+                    else:
+                        # GADM'de yoksa eski TURKEY_CITIES fallback'ini dene
+                        old_districts = _DISTRICTS_BY_PROVINCE.get(gadm_prov, [])
+                        if old_districts:
+                            for d in old_districts:
+                                frames_vals[ts_key][f"{gadm_prov}|{d}"] = v
+                        else:
+                            frames_vals[ts_key][f"{gadm_prov}|Merkez"] = v
+                else:
+                    # Legacy points format için lat/lon gerek; il merkezini
+                    # yaklaşık olarak vermek için ilk satırın koordinatını
+                    # bulmaya gerek yok — ham AVG yeterli (display amaçlı).
+                    frames_pts[ts_key].append([
+                        0.0, 0.0, v, row.province_name or "",
+                    ])
                 all_vals.append(v)
-
-            frames = [
-                {"ts": ts, "pts": pts}
-                for ts, pts in sorted(frames_dict.items())
-            ]
 
         else:  # hourly
             # Saatlik mod için gün sınırı kontrolü
@@ -722,51 +888,93 @@ def get_animation_frames(
 
             metric_col = _HOURLY_METRIC_COL[metric]
 
-            rows = db.query(
+            base_query = db.query(
                 HourlyWeatherData.latitude,
                 HourlyWeatherData.longitude,
                 HourlyWeatherData.timestamp,
                 HourlyWeatherData.city_name,
+                HourlyWeatherData.district_name,
                 metric_col.label("val"),
             ).filter(
                 HourlyWeatherData.timestamp >= start_ts,
                 HourlyWeatherData.timestamp <= end_ts,
                 metric_col.isnot(None),
-                or_(HourlyWeatherData.district_name.is_(None), HourlyWeatherData.district_name == "Merkez"),  # Sadece il merkezi
-            ).order_by(HourlyWeatherData.timestamp).all()
+            )
+            if use_districts:
+                base_query = base_query.filter(
+                    HourlyWeatherData.city_name.isnot(None),
+                    HourlyWeatherData.district_name.isnot(None),
+                )
+            else:
+                base_query = base_query.filter(
+                    or_(
+                        HourlyWeatherData.district_name.is_(None),
+                        HourlyWeatherData.district_name == "Merkez",
+                    )
+                )
+            rows = base_query.order_by(HourlyWeatherData.timestamp).all()
 
-            # Timestamp → [(lat, lon, val, city)] gruplama (saatlik hassasiyet)
-            frames_dict = defaultdict(list)
+            frames_vals = defaultdict(dict)
+            frames_pts = defaultdict(list)
             all_vals = []
+            # 1.A2.c-fix4: GADM-driven key çevrimi (hourly).
+            # DB'den gelen ham (city_name, district_name) GADM kanonik
+            # adlara çevrilir → frontend MapLibre polygon source ile birebir.
+            # Match olmayan satır atlanır (ör. DB'de var ama GADM'de yok).
+            from app.services.gadm_lookup import (
+                resolve_province as _gadm_resolve_province,
+                resolve_district as _gadm_resolve_district,
+            )
             for row in rows:
                 v = round(float(row.val), 3)
-                # Timestamp'ı ISO string olarak sakla (saniye hassasiyeti)
                 ts_key = row.timestamp.strftime("%Y-%m-%dT%H:%M")
-                frames_dict[ts_key].append([
-                    round(row.latitude, 4),
-                    round(row.longitude, 4),
-                    v,
-                    row.city_name or "",
-                ])
+                if use_districts:
+                    gadm_prov = _gadm_resolve_province(row.city_name)
+                    gadm_dist = _gadm_resolve_district(gadm_prov, row.district_name) if gadm_prov else None
+                    if gadm_prov and gadm_dist:
+                        key = f"{gadm_prov}|{gadm_dist}"
+                        frames_vals[ts_key][key] = v
+                    # else: GADM'de karşılığı yok — sessizce atla
+                    #       (ör. DB'de "Merkez" ama GADM'de yok)
+                else:
+                    frames_pts[ts_key].append([
+                        round(row.latitude, 4),
+                        round(row.longitude, 4),
+                        v,
+                        row.city_name or "",
+                    ])
                 all_vals.append(v)
 
+        # Frame listesini sırala + payload'a çevir
+        if use_districts:
+            frames = [
+                {"ts": ts, "vals": vals}
+                for ts, vals in sorted(frames_vals.items())
+            ]
+        else:
             frames = [
                 {"ts": ts, "pts": pts}
-                for ts, pts in sorted(frames_dict.items())
+                for ts, pts in sorted(frames_pts.items())
             ]
 
-        # Global min/max (JS tarafında normalize için)
+        # Global min/max (frontend tarafında normalize için)
         metric_min = round(min(all_vals), 3) if all_vals else 0.0
         metric_max = round(max(all_vals), 3) if all_vals else 1.0
 
-        return {
+        payload = {
             "metric": metric,
             "interval": interval,
+            "format": "districts" if use_districts else "points",
             "total_frames": len(frames),
             "metric_min": metric_min,
             "metric_max": metric_max,
             "frames": frames,
         }
+
+        if cache_key:
+            cache_set(cache_key, payload, ttl_seconds=1800)
+
+        return payload
 
     finally:
         db.close()
@@ -1112,12 +1320,23 @@ def get_district_choropleth(
         default=720,
         ge=1,
         le=8760,
-        description="Analiz penceresi (saat, varsayılan 30 gün = 720)",
+        description="Analiz penceresi (saat, sadece mode=average/legacy için)",
     ),
     mode: str = Query(
-        default="average",
-        regex="^(average|latest)$",
-        description="average: zaman aralığı ortalaması, latest: en güncel saatin verisi",
+        default="current",
+        regex="^(current|week|month|threeMonth|sixMonth|yearly|season|latest|average)$",
+        description=(
+            "current: her ilçenin en güncel saati (anlık snapshot). "
+            "week|month|threeMonth|sixMonth|yearly: ilgili gün penceresinde "
+            "ortalama (solar için günlük peak ortalaması). "
+            "season: 365 gün + mevsim ay filtresi. "
+            "latest/average: legacy (current ≡ latest)."
+        ),
+    ),
+    season: str | None = Query(
+        default=None,
+        regex="^(winter|spring|summer|autumn)$",
+        description="mode=season için zorunlu — meteorolojik mevsim (WMO).",
     ),
 ):
     """
@@ -1125,17 +1344,30 @@ def get_district_choropleth(
     ASCII normalize ile DB ↔ GeoJSON isim farklarını otomatik eşleştirir.
     Key formatı: "GeoJSON_NAME_1|GeoJSON_NAME_2" (frontend ile birebir uyumlu).
 
-    mode=latest: her ilçe için veritabanındaki en güncel tek saatin değerlerini döner.
-    mode=average: belirtilen saat penceresi içindeki ortalamaları döner (varsayılan).
+    - current/latest: her ilçe için en güncel saat; solar için global 24h peak penceresi
+    - yearly: son 365 gün; wind/temp saatlik ortalama, solar günlük peak ortalaması
+    - season: son 365 gün + mevsim ay filtresi (DJF/MAM/JJA/SON)
+    - average: legacy, `hours` parametresine göre ortalama
     """
-    cache_key = f"weather:district-choropleth:{hours}:{mode}"
+    # "current" sadece bir alias — kod yolunda "latest" olarak işlenir
+    effective_mode = "latest" if mode == "current" else mode
+
+    # mode=season için season zorunluluğunu erken kontrol et (cache key de tutarlı olsun)
+    if effective_mode == "season" and not season:
+        raise HTTPException(
+            status_code=400,
+            detail="mode=season için 'season' parametresi zorunludur "
+                   "(winter|spring|summer|autumn).",
+        )
+
+    cache_key = f"weather:district-choropleth:{hours}:{effective_mode}:{season or '-'}"
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
 
     db = SystemSessionLocal()
     try:
-        if mode == "latest":
+        if effective_mode == "latest":
             # ⚠️ Eskiden tek global max(timestamp) kullanılıyordu → Türkiye'nin
             # doğu-batı enlem farkı (~1h 20m) + fetch dalga geciktirmesi yüzünden
             # doğudaki ilçeler son saate sahip değilse haritadan düşüyordu
@@ -1188,53 +1420,134 @@ def get_district_choropleth(
             global_max_ts = max(_all_ts) if _all_ts else None
             global_min_ts = min(_all_ts) if _all_ts else None
 
-            # Solar: her ilçenin en son GÜNDÜZ saatini ayrıca getir
-            # (ilçe gece saatindeyse avg_radiation=0 olur; gündüz lookup'tan
-            # gelen değer yoksa 0 olarak kalır → lacivert floor doğru).
-            latest_solar_per_district = (
+            # Solar: GLOBAL 24 saatlik pencere — tüm ilçeler AYNI zaman dilimi.
+            # Eskiden her ilçe için ayrı "en son gündüz saati" alınıyordu; fakat
+            # ilçeler arası veri boşlukları farklı olduğundan İzmir bugün 14:00
+            # vs Erzurum 2 gün önce 12:00 gibi apples-to-oranges karşılaştırma
+            # ortaya çıkıyordu → harita "veri toplama zaman farkı" olarak
+            # renkleniyordu, güneşlenme farkı olarak değil.
+            #
+            # Yeni mantık: son 24 saatlik ortak pencere içinde her ilçenin
+            # öğle piki (MAX radiation). Bütün ilçeler aynı 24 saati tarar →
+            # öğle değeri karşılaştırılabilir olur. Pencerede gündüz saati
+            # yoksa (veri boşluğu) değer null → polygon transparan kalır.
+            global_latest_solar_ts = (
+                db.query(func.max(HourlyWeatherData.timestamp))
+                .filter(HourlyWeatherData.shortwave_radiation.isnot(None))
+                .scalar()
+            )
+
+            _solar_lookup: dict[str, float] = {}
+            global_solar_ts = global_latest_solar_ts
+            if global_latest_solar_ts is not None:
+                solar_cutoff = global_latest_solar_ts - timedelta(hours=24)
+                solar_rows = (
+                    db.query(
+                        HourlyWeatherData.city_name,
+                        HourlyWeatherData.district_name,
+                        func.max(HourlyWeatherData.shortwave_radiation).label("radiation"),
+                    )
+                    .filter(
+                        HourlyWeatherData.district_name.isnot(None),
+                        HourlyWeatherData.timestamp >= solar_cutoff,
+                        HourlyWeatherData.timestamp <= global_latest_solar_ts,
+                        HourlyWeatherData.shortwave_radiation.isnot(None),
+                    )
+                    .group_by(
+                        HourlyWeatherData.city_name,
+                        HourlyWeatherData.district_name,
+                    )
+                    .all()
+                )
+                for sr in solar_rows:
+                    if sr.city_name and sr.district_name and sr.radiation and sr.radiation > 0:
+                        _solar_lookup[f"{sr.city_name}|{sr.district_name}"] = float(sr.radiation)
+        elif effective_mode in ("week", "month", "threeMonth", "sixMonth", "yearly", "season"):
+            # ── Pencere-bazlı agregasyon: iklimsel/dönemsel potansiyel haritası ─────
+            # Wind/temp: saatlik değerlerin ortalaması (pencere boyunca).
+            # Solar: her ilçe için günlük peak'in ortalaması → güneşlenme
+            #   potansiyelinin doğru temsili (tek gün gürültüsünden bağımsız).
+            #
+            # week/month/3M/6M: kısa-orta vadeli ortalama (Önerilen Bölgeler aynı
+            # vokabüleri kullanır — tek "horizon" konsepti).
+            # yearly/season: uzun vadeli iklimsel pencere.
+            from sqlalchemy import extract
+            from app.core.time_window import resolve_time_window
+
+            tw = resolve_time_window(effective_mode, season)
+
+            # Ortak WHERE filtresi: tarih aralığı + ilçe doğrulaması + opsiyonel
+            # mevsim ay filtresi (DJF/MAM/JJA/SON)
+            base_filters = [
+                HourlyWeatherData.timestamp >= tw.start,
+                HourlyWeatherData.timestamp <= tw.end,
+                HourlyWeatherData.district_name.isnot(None),
+            ]
+            if tw.months:
+                base_filters.append(
+                    extract("month", HourlyWeatherData.timestamp).in_(tw.months)
+                )
+
+            # Wind + Temp: saatlik ortalama
+            rows = (
+                db.query(
+                    HourlyWeatherData.city_name,
+                    HourlyWeatherData.district_name,
+                    func.avg(HourlyWeatherData.wind_speed_100m).label("avg_wind"),
+                    # avg_radiation bu modda ignore edilir — solar lookup'tan gelir
+                    func.avg(HourlyWeatherData.shortwave_radiation).label("avg_radiation"),
+                    func.avg(HourlyWeatherData.temperature_2m).label("avg_temp"),
+                )
+                .filter(*base_filters)
+                .group_by(
+                    HourlyWeatherData.city_name,
+                    HourlyWeatherData.district_name,
+                )
+                .all()
+            )
+
+            # Solar: günlük peak → bu peak'lerin ortalaması.
+            # 1) Subquery: city/district/date için MAX(radiation)
+            # 2) Outer: AVG(daily_peak)
+            daily_peak_sq = (
                 db.query(
                     HourlyWeatherData.city_name.label("c"),
                     HourlyWeatherData.district_name.label("d"),
-                    func.max(HourlyWeatherData.timestamp).label("max_ts"),
+                    func.date(HourlyWeatherData.timestamp).label("day"),
+                    func.max(HourlyWeatherData.shortwave_radiation).label("peak"),
                 )
                 .filter(
-                    HourlyWeatherData.district_name.isnot(None),
+                    *base_filters,
+                    HourlyWeatherData.shortwave_radiation.isnot(None),
                     HourlyWeatherData.shortwave_radiation > 0,
                 )
                 .group_by(
                     HourlyWeatherData.city_name,
                     HourlyWeatherData.district_name,
+                    func.date(HourlyWeatherData.timestamp),
                 )
                 .subquery()
             )
-
             solar_rows = (
                 db.query(
-                    HourlyWeatherData.city_name,
-                    HourlyWeatherData.district_name,
-                    HourlyWeatherData.shortwave_radiation.label("radiation"),
-                    HourlyWeatherData.timestamp.label("ts"),
+                    daily_peak_sq.c.c,
+                    daily_peak_sq.c.d,
+                    func.avg(daily_peak_sq.c.peak).label("avg_peak"),
                 )
-                .join(
-                    latest_solar_per_district,
-                    and_(
-                        HourlyWeatherData.city_name == latest_solar_per_district.c.c,
-                        HourlyWeatherData.district_name == latest_solar_per_district.c.d,
-                        HourlyWeatherData.timestamp == latest_solar_per_district.c.max_ts,
-                    ),
-                )
+                .group_by(daily_peak_sq.c.c, daily_peak_sq.c.d)
                 .all()
             )
-
             _solar_lookup: dict[str, float] = {}
-            _solar_ts_list = []
             for sr in solar_rows:
-                if sr.city_name and sr.district_name and sr.radiation:
-                    _solar_lookup[f"{sr.city_name}|{sr.district_name}"] = float(sr.radiation)
-                    if sr.ts:
-                        _solar_ts_list.append(sr.ts)
-            global_solar_ts = max(_solar_ts_list) if _solar_ts_list else None
+                if sr.c and sr.d and sr.avg_peak and sr.avg_peak > 0:
+                    _solar_lookup[f"{sr.c}|{sr.d}"] = float(sr.avg_peak)
+
+            # Meta için solar timestamp yok → null kalır
+            global_max_ts = tw.end
+            global_min_ts = tw.start
+            global_solar_ts = None
         else:
+            # mode == "average" (legacy)
             cutoff = datetime.now() - timedelta(hours=hours)
 
             rows = db.query(
@@ -1283,9 +1596,14 @@ def get_district_choropleth(
             if not r.city_name or not r.district_name:
                 continue
 
-            # Solar: gece ise 0/null olur → gündüz lookup'tan al (mode=latest)
+            # Solar: yapısal olarak ayrı sorgudan gelir (latest/yearly/season için).
+            # - latest: global 24h peak
+            # - yearly/season: günlük peak'in ortalaması
+            # - average (legacy): lookup boş → r.avg_radiation kullanılır
             solar_key = f"{r.city_name}|{r.district_name}"
-            solar_val = _solar_lookup.get(solar_key) if mode == "latest" else None
+            solar_val = _solar_lookup.get(solar_key) if effective_mode in (
+                "latest", "week", "month", "threeMonth", "sixMonth", "yearly", "season"
+            ) else None
             # Gündüz verisi varsa onu kullan, yoksa mevcut satırın değerini
             raw_solar = solar_val if solar_val is not None else (
                 float(r.avg_radiation) if r.avg_radiation else None
@@ -1338,13 +1656,22 @@ def get_district_choropleth(
         # mode=latest artık per-district en son saati kullanıyor → tek ts yerine
         # [min, max] aralığı expose edilir. Frontend "en güncel" yazısı için
         # data_timestamp'i max olarak korur (geri uyumluluk).
-        meta: dict = {}
-        if mode == "latest" and global_max_ts:
+        meta: dict = {"mode": mode}
+        if season:
+            meta["season"] = season
+        if effective_mode == "latest" and global_max_ts:
             meta["data_timestamp"] = global_max_ts.isoformat()
             if global_min_ts:
                 meta["data_timestamp_min"] = global_min_ts.isoformat()
             if global_solar_ts:
                 meta["solar_timestamp"] = global_solar_ts.isoformat()
+        elif effective_mode in (
+            "week", "month", "threeMonth", "sixMonth", "yearly", "season"
+        ) and global_max_ts:
+            # Pencere-bazlı modlar için [start, end] expose et — UI "son N gün" yazar
+            meta["data_from"] = global_min_ts.isoformat() if global_min_ts else None
+            meta["data_to"] = global_max_ts.isoformat()
+            meta["window_days"] = (global_max_ts - global_min_ts).days if global_min_ts else None
         else:
             cutoff_ts = datetime.now() - timedelta(hours=hours)
             meta["data_from"] = cutoff_ts.isoformat()

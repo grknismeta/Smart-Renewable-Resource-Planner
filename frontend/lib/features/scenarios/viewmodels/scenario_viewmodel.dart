@@ -14,11 +14,17 @@ class ScenarioViewModel extends BaseViewModel {
   // Multi-select support
   final Set<int> _selectedScenarioIds = {};
 
+  // Aşama 2: Senaryo haritada göster/gizle — varsayılan olarak tüm senaryolar
+  // görünür (set boş). Kullanıcı göz ikonuna basınca id eklenir; map widget'ları
+  // `hiddenPinIds`'i okuyup pin listesinden filtreler.
+  final Set<int> _hiddenScenarioIds = {};
+
   List<Scenario> get scenarios => _scenarios;
   Scenario? get selectedScenario => _selectedScenario;
   Set<int> get selectedScenarioIds => _selectedScenarioIds;
   bool get hasSelection => _selectedScenarioIds.isNotEmpty;
   bool isSelected(int id) => _selectedScenarioIds.contains(id);
+  bool isVisible(int id) => !_hiddenScenarioIds.contains(id);
 
   /// Pin IDs from all currently selected scenarios
   Set<int> get selectedPinIds {
@@ -30,6 +36,30 @@ class ScenarioViewModel extends BaseViewModel {
       }
     }
     return result;
+  }
+
+  /// Gizli senaryoların birleşik pin ID'leri — map widget'larında pin
+  /// listesinden filtrelemek için tüketilir.
+  Set<int> get hiddenPinIds {
+    if (_hiddenScenarioIds.isEmpty) return const {};
+    final result = <int>{};
+    for (final s in _scenarios) {
+      if (_hiddenScenarioIds.contains(s.id)) {
+        result.addAll(s.pinIds);
+      }
+    }
+    return result;
+  }
+
+  /// Senaryoyu haritada göster/gizle — pin'ler filtrelenir, mini-report
+  /// seçimi ile karışmaz (toggleScenario `_selectedScenarioIds`'i yönetir).
+  void toggleScenarioVisibility(int id) {
+    if (_hiddenScenarioIds.contains(id)) {
+      _hiddenScenarioIds.remove(id);
+    } else {
+      _hiddenScenarioIds.add(id);
+    }
+    notifyListeners();
   }
 
   void toggleScenario(int id) {
@@ -105,7 +135,9 @@ class ScenarioViewModel extends BaseViewModel {
       }
     } catch (e) {
       debugPrint('Senaryo güncellenemedi: $e');
-      setError('Senaryo güncellenemedi');
+      // Sunucudan gelen detail mesajını (pin yetki, senaryo yok vb.) UI'a yansıt.
+      final raw = e.toString().replaceFirst('Exception: ', '');
+      setError(raw.isEmpty ? 'Senaryo güncellenemedi' : raw);
       rethrow;
     } finally {
       setBusy(false);
@@ -126,7 +158,10 @@ class ScenarioViewModel extends BaseViewModel {
       }
     } catch (e) {
       debugPrint('Senaryo hesaplanamadı: $e');
-      setError('Senaryo hesaplanamadı');
+      // Sunucudan gelen detail mesajını (tarih eksik, pin yok vb.)
+      // kullanıcıya aynen göster.
+      final raw = e.toString().replaceFirst('Exception: ', '');
+      setError(raw.isEmpty ? 'Senaryo hesaplanamadı' : raw);
       rethrow;
     } finally {
       setBusy(false);

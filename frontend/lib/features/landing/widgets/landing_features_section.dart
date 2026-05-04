@@ -28,7 +28,7 @@ class LandingFeaturesSection extends StatelessWidget {
       Icons.auto_awesome,
       Color(0xFF8B5CF6),
       'Akıllı Öneriler',
-      '8 kategoride en verimli bölgeleri Weibull k, ortalama hız ve ışınım bazında sıralama.',
+      '3 kategoride en verimli bölgeleri Weibull k, ortalama hız ve ışınım bazında sıralama.',
     ),
     _Feature(
       Icons.terrain_rounded,
@@ -84,16 +84,20 @@ class LandingFeaturesSection extends StatelessWidget {
               final cols = constraints.maxWidth > 1000
                   ? 3
                   : constraints.maxWidth > 600
-                      ? 2
-                      : 1;
-              final cardWidth =
-                  (constraints.maxWidth - (cols - 1) * 20) / cols;
+                  ? 2
+                  : 1;
+              final cardWidth = (constraints.maxWidth - (cols - 1) * 20) / cols;
               return Wrap(
                 spacing: 20,
                 runSpacing: 20,
                 children: _features
-                    .map((f) => _FeatureCard(
-                        feature: f, width: cardWidth, isDark: isDark))
+                    .map(
+                      (f) => _FeatureCard(
+                        feature: f,
+                        width: cardWidth,
+                        isDark: isDark,
+                      ),
+                    )
                     .toList(),
               );
             },
@@ -119,9 +123,7 @@ class LandingFeaturesSection extends StatelessWidget {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: _features
-              .map((f) => _buildChip(f))
-              .toList(),
+          children: _features.map((f) => _buildChip(f)).toList(),
         ),
       ],
     );
@@ -188,13 +190,16 @@ class _FeatureCardState extends State<_FeatureCard> {
         transform: Matrix4.identity()..scale(_hovering ? 1.04 : 1.0),
         transformAlignment: Alignment.center,
         decoration: BoxDecoration(
-          color: (isDark ? Colors.white : Colors.black)
-              .withValues(alpha: _hovering ? 0.08 : 0.04),
+          color: (isDark ? Colors.white : Colors.black).withValues(
+            alpha: _hovering ? 0.08 : 0.04,
+          ),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: _hovering
                 ? f.color.withValues(alpha: 0.3)
-                : (isDark ? Colors.white : Colors.black).withValues(alpha: 0.06),
+                : (isDark ? Colors.white : Colors.black).withValues(
+                    alpha: 0.06,
+                  ),
           ),
           boxShadow: _hovering
               ? [

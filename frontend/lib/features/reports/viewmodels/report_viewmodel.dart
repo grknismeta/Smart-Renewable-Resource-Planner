@@ -149,13 +149,24 @@ class ReportViewModel extends BaseViewModel {
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
-  Future<void> init() async {
+  /// Aşama 2: ReportViewModel singleton — `init()` ilk açılışta veri çeker,
+  /// sonraki ekran ziyaretlerinde state korunur (selectedType, selectedProvince,
+  /// selectedYear, scroll pozisyonu ViewModel'de saklı). Manuel refresh için
+  /// `forceReload: true` parametresi geçilir.
+  bool _initialized = false;
+
+  Future<void> init({bool forceReload = false}) async {
+    if (_initialized && !forceReload) return;
+    _initialized = true;
     await Future.wait([
       loadAvailableYears(),
       fetchReport(),
       _loadProvinceSummaries(),
     ]);
   }
+
+  /// Manuel "Yenile" butonu için — state'i koru, veriyi tazele.
+  Future<void> refresh() => init(forceReload: true);
 
   // ── Zaman aralığı metodları ───────────────────────────────────────────────
 

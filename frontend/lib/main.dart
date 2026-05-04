@@ -14,9 +14,11 @@ import 'package:frontend/core/config/backend_config.dart';
 // ViewModels
 import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
+import 'package:frontend/features/map/viewmodels/weather_time_mode.dart';
 import 'package:frontend/core/theme/app_theme.dart';
 import 'package:frontend/features/reports/viewmodels/report_viewmodel.dart';
 import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
+import 'package:frontend/features/chatbot/viewmodels/chat_viewmodel.dart';
 
 // Ekranlar
 import 'package:frontend/features/landing/screens/landing_screen.dart';
@@ -79,6 +81,11 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => ReportViewModel(apiService)),
         ChangeNotifierProvider(create: (_) => ScenarioViewModel(apiService)),
+        // Aşama 3.C — AI Chatbot konuşma state'i.
+        ChangeNotifierProvider(create: (_) => ChatViewModel(apiService)),
+        // Tematik harita katmanlarının zaman modu (anlık/yıllık/mevsim).
+        // Tüm hava-türevi fetcher'lar bu provider'ı okur.
+        ChangeNotifierProvider(create: (_) => WeatherTimeModeProvider()),
         ChangeNotifierProxyProvider<AuthViewModel, MapViewModel>(
           create: (context) => MapViewModel(
             apiService,

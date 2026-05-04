@@ -236,4 +236,97 @@ class AnalysisService extends BaseService {
       scores: scores,
     );
   }
+
+  /// Aşama 3.D — Geçmiş günlük veriden gelecek tahmini.
+  ///
+  /// [metric]: 'wind_speed' | 'shortwave_radiation' | 'temperature'
+  /// [horizonDays]: 30 | 90 | 180 | 365
+  Future<ProjectionResponse> fetchProjection({
+    required String province,
+    String metric = 'wind_speed',
+    int horizonDays = 90,
+  }) async {
+    final uri = Uri.parse('$baseUrl/analysis/projection').replace(
+      queryParameters: {
+        'province': province,
+        'metric': metric,
+        'horizon_days': '$horizonDays',
+      },
+    );
+    final response = await http.get(uri).timeout(const Duration(seconds: 30));
+    final data = processResponse(response);
+    if (data is! Map) {
+      throw Exception('Beklenmeyen yanıt: /analysis/projection');
+    }
+    return ProjectionResponse.fromJson(Map<String, dynamic>.from(data));
+  }
+}
+
+/// Tek bir tahmin noktası.
+class ProjectionPoint {
+  final DateTime date;
+  final double value;
+  final double lower;
+  final double upper;
+
+  const ProjectionPoint({
+    required this.date,
+    required this.value,
+    required this.lower,
+    required this.upper,
+  });
+
+  factory ProjectionPoint.fromJson(Map<String, dynamic> json) {
+    return ProjectionPoint(
+      date: DateTime.parse(json['date'] as String),
+      value: (json['value'] as num).toDouble(),
+      lower: (json['lower'] as num).toDouble(),
+      upper: (json['upper'] as num).toDouble(),
+    );
+  }
+}
+
+/// /analysis/projection yanıtı.
+class ProjectionResponse {
+  final String province;
+  final String metric;
+  final int horizonDays;
+  final int historyDays;
+  final int historyYears;
+  final String method;
+  final double? historicalAvg;
+  final double? annualTrendPct;
+  final List<ProjectionPoint> points;
+  final String disclaimer;
+
+  const ProjectionResponse({
+    required this.province,
+    required this.metric,
+    required this.horizonDays,
+    required this.historyDays,
+    required this.historyYears,
+    required this.method,
+    required this.historicalAvg,
+    required this.annualTrendPct,
+    required this.points,
+    required this.disclaimer,
+  });
+
+  factory ProjectionResponse.fromJson(Map<String, dynamic> json) {
+    final pts = (json['points'] as List? ?? const [])
+        .map((e) => ProjectionPoint.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+    return ProjectionResponse(
+      province: json['province']?.toString() ?? '',
+      metric: json['metric']?.toString() ?? '',
+      horizonDays: (json['horizon_days'] as num?)?.toInt() ?? 0,
+      historyDays: (json['history_days'] as num?)?.toInt() ?? 0,
+      historyYears: (json['history_years'] as num?)?.toInt() ?? 0,
+      method: json['method']?.toString() ?? '',
+      historicalAvg: (json['historical_avg'] as num?)?.toDouble(),
+      annualTrendPct: (json['annual_trend_pct'] as num?)?.toDouble(),
+      points: pts,
+      disclaimer: json['disclaimer']?.toString() ?? '',
+    );
+  }
 }

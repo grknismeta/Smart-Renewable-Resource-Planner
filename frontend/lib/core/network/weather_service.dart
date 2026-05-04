@@ -104,10 +104,17 @@ class WeatherService extends BaseService {
     );
   }
 
-  Future<List<ProvinceSummary>> fetchProvinceSummary({int hours = 168}) async {
+  Future<List<ProvinceSummary>> fetchProvinceSummary({
+    int hours = 168,
+    String? mode,
+    String? season,
+  }) async {
+    final params = <String, String>{'hours': '$hours'};
+    if (mode != null) params['mode'] = mode;
+    if (season != null) params['season'] = season;
     final uri = Uri.parse(
       '$baseUrl/weather/province-summary',
-    ).replace(queryParameters: {'hours': '$hours'});
+    ).replace(queryParameters: params);
     final response = await _cachedGet(uri);
     final data = processResponse(response);
     if (data is List) {
@@ -120,6 +127,8 @@ class WeatherService extends BaseService {
     String? province,
     String? provinceCode,
     int hours = 168,
+    String? mode,
+    String? season,
   }) async {
     final params = <String, String>{'hours': '$hours'};
     if (provinceCode != null) {
@@ -127,6 +136,8 @@ class WeatherService extends BaseService {
     } else if (province != null) {
       params['province'] = province;
     }
+    if (mode != null) params['mode'] = mode;
+    if (season != null) params['season'] = season;
     final uri = Uri.parse(
       '$baseUrl/weather/district-summary',
     ).replace(queryParameters: params);
@@ -138,10 +149,17 @@ class WeatherService extends BaseService {
     return [];
   }
 
-  Future<List<RegionSummary>> fetchRegionSummary({int hours = 168}) async {
+  Future<List<RegionSummary>> fetchRegionSummary({
+    int hours = 168,
+    String? mode,
+    String? season,
+  }) async {
+    final params = <String, String>{'hours': '$hours'};
+    if (mode != null) params['mode'] = mode;
+    if (season != null) params['season'] = season;
     final uri = Uri.parse(
       '$baseUrl/weather/region-summary',
-    ).replace(queryParameters: {'hours': '$hours'});
+    ).replace(queryParameters: params);
     final response = await _cachedGet(uri);
     final data = processResponse(response);
     if (data is List) {
@@ -185,6 +203,8 @@ class WeatherService extends BaseService {
   /// [start] / [end]: "YYYY-MM-DD"
   /// [metric]: "wind" | "temperature" | "radiation"
   /// [interval]: "daily" | "hourly"
+  /// [format]: "districts" (default, 1.A2 — frame.vals = {"İl|İlçe": val}) |
+  ///           "points" (legacy, frame.pts = [[lat, lon, val, name]])
   ///
   /// 60 sn timeout — saatlik mod + geniş tarih aralığı 10+ MB yanıt üretebilir.
   Future<Map<String, dynamic>> fetchAnimationData({
@@ -192,6 +212,7 @@ class WeatherService extends BaseService {
     required String end,
     required String metric,
     required String interval,
+    String format = 'districts',
   }) async {
     final uri = Uri.parse('$baseUrl/weather/animation').replace(
       queryParameters: {
@@ -199,6 +220,7 @@ class WeatherService extends BaseService {
         'end': end,
         'metric': metric,
         'interval': interval,
+        'format': format,
       },
     );
     final response =
@@ -312,18 +334,33 @@ class WeatherService extends BaseService {
 
   /// Choropleth harita verisi: tüm ilçeler için {wind, solar, temp} değerleri.
   /// key: "İl|İlçe" formatında composite key.
-  /// Choropleth ilçe verisi.
-  /// [mode]: 'latest' = en güncel saatin verisi, 'average' = belirtilen saat ortalaması.
+  ///
+  /// [mode]:
+  ///   - 'current' *(yeni, default)* — her ilçenin kendi son saati (anlık snapshot)
+  ///   - 'yearly'                   — 365 gün ortalaması; solar için günlük peak avg
+  ///   - 'season'                   — 365 gün + mevsim ay filtresi
+  ///   - 'latest' | 'average'       — legacy (current ≡ latest)
+  /// [season]: mode='season' ise zorunlu (winter|spring|summer|autumn).
   Future<Map<String, dynamic>> fetchDistrictChoropleth({
     int hours = 720,
-    String mode = 'latest',
+    String mode = 'current',
+    String? season,
   }) async {
+    final params = <String, String>{'hours': '$hours', 'mode': mode};
+    if (season != null) params['season'] = season;
     final uri = Uri.parse('$baseUrl/weather/district-choropleth')
-        .replace(queryParameters: {'hours': '$hours', 'mode': mode});
-    // latest mod: 5 dk cache (veri sık güncellenir), average mod: 10 dk
-    final ttl = mode == 'latest'
-        ? const Duration(minutes: 5)
-        : const Duration(minutes: 10);
+        .replace(queryParameters: params);
+    // current/latest: 5 dk cache (son saat sık güncellenir)
+    // yearly/season: 60 dk cache (uzun pencere, güncelleme frekansı düşük)
+    // average: 10 dk cache
+    final Duration ttl;
+    if (mode == 'current' || mode == 'latest') {
+      ttl = const Duration(minutes: 5);
+    } else if (mode == 'yearly' || mode == 'season') {
+      ttl = const Duration(minutes: 60);
+    } else {
+      ttl = const Duration(minutes: 10);
+    }
     final response = await _cachedGet(uri, ttl: ttl);
     if (response.statusCode == 200) {
       return Map<String, dynamic>.from(processResponse(response));

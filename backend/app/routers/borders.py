@@ -153,6 +153,18 @@ def _load_geojson(level: int, tolerance: float) -> str:
             gdf["REGION"] = gdf["NAME_1"].map(
                 lambda x: _PROVINCE_TO_REGION.get(_ascii_key(x), "Diğer")
             )
+            # OSM bazen Türkiye dışı ilçe/bölge relation'larını (örn. Yunan adaları
+            # "Περιφερειακή Ενότητα ...") admin_level=4 sonucuna karıştırır.
+            # Bilinen 81 il dışındakiler "Diğer"e düşer → hem İl Modu'nda hayalet
+            # poligon, hem Bölge Modu'nda sahte bir "Diğer" dissolve'u yaratır.
+            before = len(gdf)
+            gdf = gdf[gdf["REGION"] != "Diğer"].copy()
+            dropped = before - len(gdf)
+            if dropped:
+                logger.info(
+                    "Türkiye dışı %d il/relation filtrelendi (REGION=='Diğer')",
+                    dropped,
+                )
 
         # Geometri basitleştirme (OSM verisi zaten optimize — küçük tolerans yeterli)
         tol = tolerance * 0.5 if is_osm else tolerance
@@ -198,6 +210,16 @@ def _load_regions_geojson() -> str:
         gdf["REGION"] = gdf["NAME_1"].map(
             lambda x: _PROVINCE_TO_REGION.get(_ascii_key(x), "Diğer")
         )
+
+        # Türkiye dışı relation'lar "Diğer"e düşer → dissolve öncesi at,
+        # aksi halde Bölge Modu'nda Yunan adaları vb. "Diğer" bölgesi olarak çıkar.
+        before = len(gdf)
+        gdf = gdf[gdf["REGION"] != "Diğer"].copy()
+        dropped = before - len(gdf)
+        if dropped:
+            logger.info(
+                "Bölge dissolve öncesi Türkiye dışı %d relation atıldı", dropped,
+            )
 
         # Bölgeye göre dissolve et (union)
         regions_gdf = gdf.dissolve(by="REGION", as_index=False)[["REGION", "geometry"]]
