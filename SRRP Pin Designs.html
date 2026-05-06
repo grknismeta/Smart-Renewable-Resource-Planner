@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>SRRP — Pin Tasarım Keşifleri</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="tokens.css"/>
+  <style>
+    /* canvas-level chrome */
+    .dc-section-heading { color: var(--text) !important; }
+    @keyframes srrp-pulse {
+      0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.6; }
+      100% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
+    }
+    /* canvas sets some defaults; we override for dark mode */
+    body { background: #0B0E14; }
+  </style>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="shared.jsx"></script>
+  <script type="text/babel" src="markers.jsx"></script>
+  <script type="text/babel" src="add-flows.jsx"></script>
+  <script type="text/babel" src="detail-panels.jsx"></script>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    // --- Intro card (junior-designer thinking) ---
+    const Intro = () => (
+      <div style={{ width: 1100, padding: '28px 32px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 18, color: 'var(--text)', display: 'flex', gap: 28 }}>
+        <div style={{ flex: 1.4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, var(--solar), var(--wind))', display: 'grid', placeItems: 'center' }}>
+              <Icon name="pin" size={18} color="white"/>
+            </div>
+            <div>
+              <div style={{ font: '700 18px/1 var(--font)', letterSpacing: '-.01em' }}>SRRP · Pin Tasarım Keşifleri</div>
+              <div style={{ font: '500 12px/1.2 var(--font)', color: 'var(--text-3)', marginTop: 4 }}>Marker · Ekleme akışı · Görüntüleme · Düzenleme · Liste</div>
+            </div>
+          </div>
+          <p style={{ font: '500 13.5px/1.6 var(--font)', color: 'var(--text-2)', margin: '12px 0' }}>
+            Mevcut SRRP arayüzünden çıkarılan koyu tema, segmented kontrol kalıbı ve 3-renkli kaynak paleti
+            (güneş <span style={{color: 'var(--solar)'}}>●</span> rüzgar <span style={{color: 'var(--wind)'}}>●</span> hidro <span style={{color: 'var(--hydro)'}}>●</span>)
+            korunarak 5 ayrı boyutta keşif yapıldı. Her sırada en sağa gittikçe daha radikal/yeni
+            patternlere geçiyor — solda mevcut görsel diliyle uyumlu güvenli seçenekler var.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, marginTop: 14 }}>
+            {[
+              ['Marker', '6 stil'],
+              ['Ekleme', '5 akış'],
+              ['Görüntüleme', '3 düzen'],
+              ['Düzenleme', 'Inline + modal'],
+              ['Liste', 'Gruplu sidebar'],
+            ].map(([k, v], i) => (
+              <div key={i} style={{ padding: 12, background: 'rgba(0,0,0,.25)', borderRadius: 10, border: '1px solid var(--border-2)' }}>
+                <div style={{ font: '500 10px/1 var(--font)', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{k}</div>
+                <div style={{ font: '700 15px/1 var(--font)', color: 'var(--text)', marginTop: 6 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ flex: 1, padding: 16, background: 'rgba(20,184,166,.06)', border: '1px solid rgba(20,184,166,.25)', borderRadius: 12 }}>
+          <div style={{ font: '600 12px/1 var(--font)', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>Tasarım sistemi</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, font: '500 12px/1.5 var(--font)', color: 'var(--text-2)' }}>
+            <div><b style={{ color: 'var(--text)' }}>Tipografi:</b> Inter · 10px/uppercase etiketler, 22–28px tnum KPI'lar</div>
+            <div><b style={{ color: 'var(--text)' }}>Yüzeyler:</b> #1E232F card · #2A3040 elevated · 8/12/16 radii</div>
+            <div><b style={{ color: 'var(--text)' }}>Aksan:</b> Teal #14B8A6 (CTA) — kaynak rengi sadece veri</div>
+            <div><b style={{ color: 'var(--text)' }}>Etkileşim:</b> 200ms ease, hover scale 1.06–1.15, glow shadow</div>
+          </div>
+        </div>
+      </div>
+    );
+
+    // ----- canvas layout -----
+    const App = () => {
+      // tweaks for the canvas itself (light experimentation)
+      const [tweaks, setTweak] = useTweaks(/*EDITMODE-BEGIN*/{
+        "showGrid": true,
+        "accentColor": "#e43e07",
+        "compactCards": true
+      }/*EDITMODE-END*/);
+
+      return (
+        <>
+          <DesignCanvas title="SRRP · Pin Tasarım Keşifleri">
+            <DCSection id="intro" title="00 · Bağlam">
+              <DCArtboard id="intro-card" label="Tasarım brief'i" width={1100} height={260}>
+                <Intro/>
+              </DCArtboard>
+            </DCSection>
+
+            <DCSection id="markers" title="01 · Harita Üzerinde Marker (Pin Görünümü)">
+              <DCArtboard id="m1" label="V1 — Klasik teardrop" width={720} height={460}><MarkerVariantTeardrop/></DCArtboard>
+              <DCArtboard id="m2" label="V2 — Bilgili chip" width={720} height={460}><MarkerVariantChip/></DCArtboard>
+              <DCArtboard id="m3" label="V3 — Halka + CF göstergesi" width={720} height={460}><MarkerVariantRing/></DCArtboard>
+              <DCArtboard id="m4" label="V4 — 3D extruded sütun" width={720} height={460}><MarkerVariantExtruded/></DCArtboard>
+              <DCArtboard id="m5" label="V5 — Mini sparkline marker" width={720} height={460}><MarkerVariantSpark/></DCArtboard>
+              <DCArtboard id="m6" label="V6 — Minimal nokta + hover" width={720} height={460}><MarkerVariantPulse/></DCArtboard>
+            </DCSection>
+
+            <DCSection id="add" title="02 · Yeni Kaynak Ekleme Akışı">
+              <DCArtboard id="a1" label="V1 — 4-adım sihirbaz (modal)" width={880} height={620}><WizardAddFlow/></DCArtboard>
+              <DCArtboard id="a2" label="V2 — Pin'e yapışık floating form" width={880} height={620}><FloatingCardAddFlow/></DCArtboard>
+              <DCArtboard id="a3" label="V3 — Inline popover (tıklanan noktada)" width={880} height={620}><InlinePopoverAddFlow/></DCArtboard>
+              <DCArtboard id="a4" label="V4 — Sağ side panel + canlı tahmin" width={880} height={620}><SidePanelAddFlow/></DCArtboard>
+              <DCArtboard id="a5" label="V5 — Komut paleti (radikal · ⌘K)" width={880} height={620}><CommandPaletteAddFlow/></DCArtboard>
+            </DCSection>
+
+            <DCSection id="detail" title="03 · Pin Detay Görüntüleme">
+              <DCArtboard id="d1" label="V1 — Zengin dashboard panel" width={880} height={620}><DetailRichDashboard/></DCArtboard>
+              <DCArtboard id="d2" label="V2 — Floating bottom card" width={880} height={620}><DetailFloatingCard/></DCArtboard>
+              <DCArtboard id="d3" label="V3 — HUD overlay (sol rail)" width={880} height={620}><DetailHUD/></DCArtboard>
+            </DCSection>
+
+            <DCSection id="edit" title="04 · Düzenleme & Liste">
+              <DCArtboard id="e1" label="V4 — Inline edit modal" width={880} height={620}><DetailInlineEdit/></DCArtboard>
+              <DCArtboard id="e2" label="V5 — Gruplu pin listesi sidebar" width={880} height={620}><SidebarList/></DCArtboard>
+            </DCSection>
+          </DesignCanvas>
+
+          {tweaks && (
+            <TweaksPanel title="Tweaks">
+              <TweakSection title="Görünüm">
+                <TweakColor label="Aksan rengi" value={tweaks.accentColor} onChange={v => {
+                  setTweak('accentColor', v);
+                  document.documentElement.style.setProperty('--accent', v);
+                }}/>
+                <TweakToggle label="Harita grid'ini göster" value={tweaks.showGrid} onChange={v => setTweak('showGrid', v)}/>
+                <TweakToggle label="Kompakt kartlar" value={tweaks.compactCards} onChange={v => setTweak('compactCards', v)}/>
+              </TweakSection>
+              <TweakSection title="Notlar">
+                <div style={{ font: '500 11.5px/1.5 var(--font)', color: 'var(--text-3)' }}>
+                  Her artboard'ı çift tıklayarak tam ekran odakla. Sıraya göre soldan sağa doğru artan radikal seviye.
+                </div>
+              </TweakSection>
+            </TweaksPanel>
+          )}
+        </>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

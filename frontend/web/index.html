@@ -826,6 +826,167 @@
       try { if (map.getLayer(id)) map.removeLayer(id); } catch (e) {}
     };
 
+    // ── Aşama I: PostGIS MVT Vektör Katmanları ─────────────────────
+    //
+    // Backend tek tile endpoint'i 3 layer içerir:
+    //   /api/v1/tiles/{z}/{x}/{y}.pbf → "hydro" + "restricted" + "energy"
+    //
+    // Source bir kez eklenir; her toggle layer-level visibility değiştirir.
+    // Toggle'lar bağımsız — kullanıcı istediği kombinasyonu açabilir.
+
+    const MVT_SOURCE_ID = 'srrp-mvt-overlays';
+    const MVT_LAYER_HYDRO_FILL  = 'srrp-mvt-hydro-fill';
+    const MVT_LAYER_HYDRO_LINE  = 'srrp-mvt-hydro-line';
+    const MVT_LAYER_RESTRICTED  = 'srrp-mvt-restricted-fill';
+    const MVT_LAYER_ENERGY      = 'srrp-mvt-energy-line';
+
+    function _mvtTileUrl() {
+      // Backend'in yayın URL'ini tespit et — index.html'de zaten api host
+      // (window.SRRP_API_BASE) tanımlı olabilir, yoksa localhost:8000 default.
+      const base = (window.SRRP_API_BASE || 'http://localhost:8000').replace(/\/$/, '');
+      return `${base}/api/v1/tiles/{z}/{x}/{y}.pbf`;
+    }
+
+    function _ensureMvtSource() {
+      const map = window._srrpMap;
+      if (!map || typeof map.getSource !== 'function') return false;
+      try {
+        if (!map.getSource(MVT_SOURCE_ID)) {
+          map.addSource(MVT_SOURCE_ID, {
+            type: 'vector',
+            tiles: [_mvtTileUrl()],
+            minzoom: 6,
+            maxzoom: 18,
+          });
+        }
+        return true;
+      } catch (e) {
+        console.warn('[SRRP-MVT] addSource hata:', e);
+        return false;
+      }
+    }
+
+    /**
+     * Hidro katmanı: göl/baraj/nehir polygon'ları.
+     * Su türü `feature_type` ile renklendirilir:
+     *   riverbank → açık mavi (akarsu)
+     *   reservoir/water → koyu mavi (durağan)
+     *   wetland → yeşil-mavi (sulak)
+     *   glacier → beyaz
+     */
+    window.srrpToggleHydroLayer = function (visible) {
+      const map = window._srrpMap;
+      if (!_ensureMvtSource()) return;
+      try {
+        if (visible) {
+          if (!map.getLayer(MVT_LAYER_HYDRO_FILL)) {
+            map.addLayer({
+              id: MVT_LAYER_HYDRO_FILL,
+              type: 'fill',
+              source: MVT_SOURCE_ID,
+              'source-layer': 'hydro',
+              paint: {
+                'fill-color': [
+                  'match', ['get', 'feature_type'],
+                  'riverbank', '#3FA9F5',
+                  'water',     '#1E5BA8',
+                  'reservoir', '#16467F',
+                  'wetland',   '#5BA678',
+                  'glacier',   '#E8F1FA',
+                  'dock',      '#5C6B7C',
+                  /* default */ '#3D7AB3',
+                ],
+                'fill-opacity': 0.55,
+              },
+            });
+          }
+          if (!map.getLayer(MVT_LAYER_HYDRO_LINE)) {
+            map.addLayer({
+              id: MVT_LAYER_HYDRO_LINE,
+              type: 'line',
+              source: MVT_SOURCE_ID,
+              'source-layer': 'hydro',
+              paint: {
+                'line-color': '#9FD8FF',
+                'line-width': 0.6,
+                'line-opacity': 0.7,
+              },
+            });
+          }
+        } else {
+          if (map.getLayer(MVT_LAYER_HYDRO_FILL)) map.removeLayer(MVT_LAYER_HYDRO_FILL);
+          if (map.getLayer(MVT_LAYER_HYDRO_LINE)) map.removeLayer(MVT_LAYER_HYDRO_LINE);
+        }
+      } catch (e) {
+        console.warn('[SRRP-MVT] toggleHydroLayer hata:', e);
+      }
+    };
+
+    /**
+     * Yasaklı bölge katmanı (askeri / milli park / koruma alanı).
+     */
+    window.srrpToggleRestrictedLayer = function (visible) {
+      const map = window._srrpMap;
+      if (!_ensureMvtSource()) return;
+      try {
+        if (visible) {
+          if (!map.getLayer(MVT_LAYER_RESTRICTED)) {
+            map.addLayer({
+              id: MVT_LAYER_RESTRICTED,
+              type: 'fill',
+              source: MVT_SOURCE_ID,
+              'source-layer': 'restricted',
+              paint: {
+                'fill-color': [
+                  'match', ['get', 'feature_type'],
+                  'military',         '#D32F2F',  // kırmızı
+                  'national_park',    '#2E7D32',  // koyu yeşil
+                  'protected_area',   '#558B2F',
+                  'nature_reserve',   '#7CB342',
+                  /* default */       '#A0A0A0',
+                ],
+                'fill-opacity': 0.35,
+                'fill-outline-color': '#000',
+              },
+            });
+          }
+        } else {
+          if (map.getLayer(MVT_LAYER_RESTRICTED)) map.removeLayer(MVT_LAYER_RESTRICTED);
+        }
+      } catch (e) {
+        console.warn('[SRRP-MVT] toggleRestrictedLayer hata:', e);
+      }
+    };
+
+    /**
+     * İletim hatları (enerji koridorları) — line.
+     */
+    window.srrpToggleEnergyCorridorLayer = function (visible) {
+      const map = window._srrpMap;
+      if (!_ensureMvtSource()) return;
+      try {
+        if (visible) {
+          if (!map.getLayer(MVT_LAYER_ENERGY)) {
+            map.addLayer({
+              id: MVT_LAYER_ENERGY,
+              type: 'line',
+              source: MVT_SOURCE_ID,
+              'source-layer': 'energy',
+              paint: {
+                'line-color': '#FFD54F',
+                'line-width': 1.4,
+                'line-opacity': 0.85,
+              },
+            });
+          }
+        } else {
+          if (map.getLayer(MVT_LAYER_ENERGY)) map.removeLayer(MVT_LAYER_ENERGY);
+        }
+      } catch (e) {
+        console.warn('[SRRP-MVT] toggleEnergyCorridorLayer hata:', e);
+      }
+    };
+
     // ── 3D Terrain ─────────────────────────────────────────────────
     // MapLibre ^0.2.2 Flutter paketi setTerrain() sunmuyor; JS üzerinden çağrılır.
 

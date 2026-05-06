@@ -92,6 +92,15 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   bool _showCloudLayer = false;
   double _cloudOpacity = 0.70;
 
+  // Aşama I: PostGIS MVT vektör katmanları (haritada açılıp kapanan overlay'ler).
+  // Backend tek tile endpoint'inden 3 layer servis ediyor:
+  //   /api/v1/tiles/{z}/{x}/{y}.pbf → "hydro" + "restricted" + "energy"
+  // Her toggle bağımsız — kullanıcı istediği kombinasyonu açabilir.
+  // Çarşamba sonrası "Santral Kur" UX yenilenirken otomatik açılır/kapanır.
+  bool _showHydroLayer = false;       // 💧 Su kaynakları (göl/baraj/nehir)
+  bool _showEnergyCorridorLayer = false;  // ⚡ İletim hatları
+  bool _showRestrictedZoneLayer = false;  // 🚫 Yasaklı bölgeler (askeri/koruma)
+
   // Isı haritası parametreleri
   double _heatmapRadius = 40.0;
   double _heatmapIntensity = 1.0;
@@ -187,6 +196,47 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   bool get show3DTerrain => _show3DTerrain;
   bool get showCloudLayer => _showCloudLayer;
   double get cloudOpacity => _cloudOpacity;
+
+  // Aşama I: PostGIS MVT vektör katman getter'ları
+  bool get showHydroLayer => _showHydroLayer;
+  bool get showEnergyCorridorLayer => _showEnergyCorridorLayer;
+  bool get showRestrictedZoneLayer => _showRestrictedZoneLayer;
+
+  /// Bir veya daha fazla MVT layer'ı toggle. UI'da single-press veya
+  /// programmatik (santral tipi seçilince) çağrılır.
+  void toggleHydroLayer() {
+    _showHydroLayer = !_showHydroLayer;
+    safeNotify();
+  }
+
+  void toggleEnergyCorridorLayer() {
+    _showEnergyCorridorLayer = !_showEnergyCorridorLayer;
+    safeNotify();
+  }
+
+  void toggleRestrictedZoneLayer() {
+    _showRestrictedZoneLayer = !_showRestrictedZoneLayer;
+    safeNotify();
+  }
+
+  /// Birden fazla katmanı tek atışta set eder — santral tipi seçimi gibi
+  /// makro tetiklemelerde kullanılır (RES seçildi → restricted aç, vb).
+  void setMvtLayers({bool? hydro, bool? energy, bool? restricted}) {
+    var changed = false;
+    if (hydro != null && hydro != _showHydroLayer) {
+      _showHydroLayer = hydro;
+      changed = true;
+    }
+    if (energy != null && energy != _showEnergyCorridorLayer) {
+      _showEnergyCorridorLayer = energy;
+      changed = true;
+    }
+    if (restricted != null && restricted != _showRestrictedZoneLayer) {
+      _showRestrictedZoneLayer = restricted;
+      changed = true;
+    }
+    if (changed) safeNotify();
+  }
 
   // Isı haritası parametreleri getters
   double get heatmapRadius => _heatmapRadius;

@@ -262,6 +262,11 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   bool _windActive      = false;
   bool _hillshadeActive = false;
   bool _lastTerrain     = false;
+
+  // Aşama I: MVT vektör katmanları — native stub (Aşama 4 polish'te tam destek)
+  bool _lastHydroLayer = false;
+  bool _lastRestrictedLayer = false;
+  bool _lastEnergyCorridorLayer = false;
   bool _lastClustering  = false;
   bool _clusterLayersActive = false;
   bool _lastCloud       = false;
@@ -346,6 +351,12 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     } catch (e) {
       debugPrint('[MapLibre-Native] _syncTerrain hata: $e');
     }
+    // Aşama I: MVT vektör katmanları (hidro/yasaklı/iletim)
+    try {
+      await _syncMvtLayers(vm);
+    } catch (e) {
+      debugPrint('[MapLibre-Native] _syncMvtLayers hata: $e');
+    }
     // Choropleth
     try {
       await _syncChoropleth(vm);
@@ -382,6 +393,10 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _lastHeatmap  = MlHeatmapMode.none;
         _last3D       = false;
         _lastTerrain  = false;
+        // Aşama I: style reload — MVT toggle'ları stub (native MVT henüz desteksiz)
+        _lastHydroLayer = false;
+        _lastRestrictedLayer = false;
+        _lastEnergyCorridorLayer = false;
         _lastClustering = false;
         _clusterLayersActive = false;
         _lastCloud = false;
@@ -1709,6 +1724,34 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     if (added) {
       if (mode == MlHeatmapMode.solar) _solarActive = true;
       if (mode == MlHeatmapMode.wind)  _windActive  = true;
+    }
+  }
+
+  // ─── MVT Vector Layer Sync (Aşama I — PostGIS overlay'leri) ──────────
+  //
+  // **Native'de stub** — Flutter MapLibre paketi 0.2.2 layer-level
+  // `source-layer` özelliğini desteklemiyor; tek tile'dan birden çok
+  // source-layer (hydro/restricted/energy) çekme yolu eksik. Web'de tam
+  // çalışıyor (`map_view_maplibre_web.dart` JS shim üzerinden).
+  //
+  // Native MVT desteği için iki yol (Aşama 4 polish):
+  //   1. Her source-layer için ayrı `VectorSource` (3 source, aynı tile URL)
+  //   2. Custom platform channel ile native MapLibre SDK'ya doğrudan erişim
+  //
+  // Şimdilik state'i logla, no-op bırak — UI toggle'ları görünür kalır,
+  // mobil testte etki yok. Demo web odaklı.
+  Future<void> _syncMvtLayers(MapViewModel vm) async {
+    if (vm.showHydroLayer != _lastHydroLayer ||
+        vm.showRestrictedZoneLayer != _lastRestrictedLayer ||
+        vm.showEnergyCorridorLayer != _lastEnergyCorridorLayer) {
+      debugPrint(
+        '[MapLibre-Native] MVT toggle stub — '
+        'hydro=${vm.showHydroLayer} restricted=${vm.showRestrictedZoneLayer} '
+        'energy=${vm.showEnergyCorridorLayer} (Aşama 4: native MVT desteği)',
+      );
+      _lastHydroLayer = vm.showHydroLayer;
+      _lastRestrictedLayer = vm.showRestrictedZoneLayer;
+      _lastEnergyCorridorLayer = vm.showEnergyCorridorLayer;
     }
   }
 

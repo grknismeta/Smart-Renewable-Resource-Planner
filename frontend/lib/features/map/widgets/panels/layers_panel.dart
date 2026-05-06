@@ -233,6 +233,28 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
               );
             },
           ),
+          // Aşama I — PostGIS MVT vektör katmanları (3 toggle)
+          _toolButton(
+            'Su Kaynakları',
+            Icons.water_drop_rounded,
+            Colors.lightBlueAccent,
+            vm.showHydroLayer,
+            globeActive ? null : vm.toggleHydroLayer,
+          ),
+          _toolButton(
+            'Yasaklı Bölgeler',
+            Icons.block_rounded,
+            Colors.redAccent,
+            vm.showRestrictedZoneLayer,
+            globeActive ? null : vm.toggleRestrictedZoneLayer,
+          ),
+          _toolButton(
+            'İletim Hatları',
+            Icons.electrical_services_rounded,
+            Colors.amberAccent,
+            vm.showEnergyCorridorLayer,
+            globeActive ? null : vm.toggleEnergyCorridorLayer,
+          ),
         ],
 
         const SizedBox(height: 10),

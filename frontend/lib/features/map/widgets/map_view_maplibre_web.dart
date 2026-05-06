@@ -44,6 +44,16 @@ external bool _jsAddBuildings(String? beforeId);
 @JS('window.srrpRemoveBuildings')
 external void _jsRemoveBuildings();
 
+// Aşama I: PostGIS MVT vektör katman toggle'ları (hidro/yasaklı/iletim)
+@JS('window.srrpToggleHydroLayer')
+external void _jsToggleHydroLayer(bool visible);
+
+@JS('window.srrpToggleRestrictedLayer')
+external void _jsToggleRestrictedLayer(bool visible);
+
+@JS('window.srrpToggleEnergyCorridorLayer')
+external void _jsToggleEnergyCorridorLayer(bool visible);
+
 @JS('window.srrpStartWindParticles')
 external void _jsStartWindParticles(String geojsonStr);
 
@@ -606,6 +616,11 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   bool _lastCloud = false;
   double _lastCloudOpacity = 0.70;
 
+  // Aşama I: MVT vektör katman state'leri (visibility cache)
+  bool _lastHydroLayer = false;
+  bool _lastRestrictedLayer = false;
+  bool _lastEnergyCorridorLayer = false;
+
   // Neon veri noktaları
   bool _dataGlowActive = false;
   bool _dataDotsActive = false;
@@ -969,6 +984,10 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     if (vm.showGlobe != _lastGlobe) return true;
     if (vm.show3DTerrain != _lastTerrain) return true;
     if (vm.show3DBuildings != _lastBuildings) return true;
+    // Aşama I: MVT vektör katman toggle değişimleri
+    if (vm.showHydroLayer != _lastHydroLayer) return true;
+    if (vm.showRestrictedZoneLayer != _lastRestrictedLayer) return true;
+    if (vm.showEnergyCorridorLayer != _lastEnergyCorridorLayer) return true;
     // Neon veri noktaları (mode zaten _lastHeatmap ile kapsanıyor,
     // ama _lastDataMode ayrı tutulduğu için)
     if (vm.mlHeatmapMode != _lastDataMode) return true;
@@ -1094,6 +1113,12 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       await _syncBuildings(vm.show3DBuildings);
     } catch (e) {
       debugPrint('[MapLibre] _syncBuildings hata: $e');
+    }
+    // Aşama I: MVT vektör katman sync (lightweight — JS toggle çağrısı)
+    try {
+      _syncMvtLayers(vm);
+    } catch (e) {
+      debugPrint('[MapLibre] _syncMvtLayers hata: $e');
     }
     try {
       await _syncDataPoints(vm.mlHeatmapMode, vm.weatherSummary);
@@ -2249,6 +2274,25 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   //   (a) HillshadeStyleLayer — native Flutter maplibre paketi ile (görsel gölgeleme)
   //   (b) setTerrain — JS shim üzerinden (gerçek 3D yükseklik)
   // Her ikisi de etkinleştirilir; terrain+sky kombinasyonu en iyi 3D görünümü verir.
+
+  // ─── MVT Layer Sync (Aşama I) ─────────────────────────────────────
+  // Hidro / Yasaklı / İletim katmanlarını state cache ile diff'leyip
+  // değişen toggle'ları JS shim'lere iletir. Idempotent.
+  void _syncMvtLayers(MapViewModel vm) {
+    if (!kIsWeb || !_styleLoaded) return;
+    if (vm.showHydroLayer != _lastHydroLayer) {
+      _jsToggleHydroLayer(vm.showHydroLayer);
+      _lastHydroLayer = vm.showHydroLayer;
+    }
+    if (vm.showRestrictedZoneLayer != _lastRestrictedLayer) {
+      _jsToggleRestrictedLayer(vm.showRestrictedZoneLayer);
+      _lastRestrictedLayer = vm.showRestrictedZoneLayer;
+    }
+    if (vm.showEnergyCorridorLayer != _lastEnergyCorridorLayer) {
+      _jsToggleEnergyCorridorLayer(vm.showEnergyCorridorLayer);
+      _lastEnergyCorridorLayer = vm.showEnergyCorridorLayer;
+    }
+  }
 
   Future<void> _syncTerrain(bool show) async {
     final style = _style;
