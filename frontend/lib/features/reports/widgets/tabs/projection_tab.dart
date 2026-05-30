@@ -605,8 +605,9 @@ class _HorizonSlider extends StatelessWidget {
   }
 }
 
-// ── Chart Card ───────────────────────────────────────────────────────────────
+// ── Chart Card (DEPRECATED — _NeonProjectionChart ile değişti, 2026-05-28) ──
 
+// ignore: unused_element
 class _ChartCard extends StatelessWidget {
   final ProjectionViewModel vm;
   const _ChartCard({required this.vm});
@@ -2505,6 +2506,683 @@ class _CurrencyToggle extends StatelessWidget {
           fontSize: 9.5,
           fontWeight: active ? FontWeight.w700 : FontWeight.w500,
         )),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MISSION CONTROL REDESIGN (2026-05-28) — Glassmorphism + Neon ML projection
+// Kullanıcı talebi: yatırımcıya sunulacak "Zeka Paneli". Bileşenler:
+//   • _GlassPanel — BackdropFilter blur + ince parlak border + cam görünüm
+//   • _NeonProjectionChart — neon P50 + gradient P10/P90 confidence band
+//   • _AiKpiCard / _AiKpiSidebar — 3 dikey KPI kartı (degradation, kümülatif, güven)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Glassmorphism konteynır — BackdropFilter blur + yarı şeffaf zemin + parlak
+/// border. Mission Control panellerinin görsel iskeleti.
+class _GlassPanel extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final Color accent;
+  final double radius;
+  final double borderOpacity;
+
+  const _GlassPanel({
+    required this.child,
+    this.padding = const EdgeInsets.all(14),
+    this.accent = const Color(0xFF22D3EE),
+    // ignore: unused_element_parameter
+    this.radius = 14,
+    this.borderOpacity = 0.28,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withValues(alpha: 0.045),
+                Colors.white.withValues(alpha: 0.015),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+              color: accent.withValues(alpha: borderOpacity),
+              width: 0.8,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: 0.08),
+                blurRadius: 24,
+                spreadRadius: -4,
+              ),
+            ],
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// Neon ML projection chart — kalın parlak P50 + gradient CI band + grid.
+/// Yatırımcı sunumu kalitesi: shadow glow, smooth curve, futuristik tipografi.
+class _NeonProjectionChart extends StatelessWidget {
+  final ProjectionViewModel vm;
+  const _NeonProjectionChart({required this.vm});
+
+  static const _neon = Color(0xFF22D3EE);
+  static const _neonGlow = Color(0xFF67E8F9);
+  static const _muted = Color(0xFF94A3B8);
+
+  @override
+  Widget build(BuildContext context) {
+    return _GlassPanel(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+      accent: _neon,
+      borderOpacity: 0.35,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _header(),
+          const SizedBox(height: 10),
+          SizedBox(height: 320, child: _buildChart()),
+          const SizedBox(height: 10),
+          _legend(),
+        ],
+      ),
+    );
+  }
+
+  Widget _header() {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(
+            color: _neon.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(color: _neon.withValues(alpha: 0.45)),
+          ),
+          child: const Text('ML',
+              style: TextStyle(
+                color: _neon,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.4,
+              )),
+        ),
+        const SizedBox(width: 10),
+        const Expanded(
+          child: Text(
+            'PROJEKSİYON · BEKLENEN ÜRETİM',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.0,
+            ),
+          ),
+        ),
+        if (vm.forecastLoading)
+          const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: _neon,
+            ),
+          )
+        else
+          IconButton(
+            tooltip: 'Yenile',
+            icon: const Icon(Icons.refresh_rounded, size: 14, color: _muted),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+            onPressed: () => vm.refresh(),
+          ),
+      ],
+    );
+  }
+
+  Widget _legend() {
+    return Wrap(
+      spacing: 16,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _legendItem(_neon, 'P50 · Beklenen', solid: true),
+        _legendItem(_neon.withValues(alpha: 0.4),
+            'P10 – P90 · Güven aralığı', solid: false),
+      ],
+    );
+  }
+
+  Widget _legendItem(Color color, String label, {required bool solid}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 18,
+          height: solid ? 2.5 : 8,
+          decoration: BoxDecoration(
+            color: solid ? color : color.withValues(alpha: 0.25),
+            borderRadius: BorderRadius.circular(2),
+            border: solid
+                ? null
+                : Border.all(color: color.withValues(alpha: 0.55), width: 0.5),
+            boxShadow: solid
+                ? [BoxShadow(color: color.withValues(alpha: 0.7), blurRadius: 6)]
+                : null,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(label,
+            style: const TextStyle(
+              color: _muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            )),
+      ],
+    );
+  }
+
+  /// Yıllık aggregate spots — X 1-10 yıl, Y mode'a göre birim.
+  /// Pin modu: kWh → GWh (÷1e6). Province modu: birim olduğu gibi (örn. MJ/m²).
+  ({List<FlSpot> p50, List<FlSpot> p10, List<FlSpot> p90, String unit})
+      _aggregateYearly() {
+    final f = vm.forecast;
+    if (f == null || f.points.isEmpty) {
+      return (p50: const [], p10: const [], p90: const [], unit: 'GWh');
+    }
+    // Group monthly points by year
+    final Map<int, List<double>> p50ByYr = {};
+    final Map<int, List<double>> p10ByYr = {};
+    final Map<int, List<double>> p90ByYr = {};
+    for (final p in f.points) {
+      final y = p.date.year;
+      (p50ByYr[y] ??= []).add(p.value);
+      (p10ByYr[y] ??= []).add(p.lower);
+      (p90ByYr[y] ??= []).add(p.upper);
+    }
+    final years = p50ByYr.keys.toList()..sort();
+    final pin = vm.mode == ProjectionMode.pin;
+    final unit = pin ? 'GWh' : '';
+    final scale = pin ? 1e-6 : 1.0; // kWh → GWh
+    final p50 = <FlSpot>[];
+    final p10 = <FlSpot>[];
+    final p90 = <FlSpot>[];
+    for (var i = 0; i < years.length && i < 10; i++) {
+      final y = years[i];
+      double sum(List<double>? vs) =>
+          (vs ?? const []).fold<double>(0, (a, b) => a + b) * scale;
+      // X: 1..10 (1-indexed year offset)
+      p50.add(FlSpot((i + 1).toDouble(), sum(p50ByYr[y])));
+      p10.add(FlSpot((i + 1).toDouble(), sum(p10ByYr[y])));
+      p90.add(FlSpot((i + 1).toDouble(), sum(p90ByYr[y])));
+    }
+    return (p50: p50, p10: p10, p90: p90, unit: unit);
+  }
+
+  Widget _buildChart() {
+    if (vm.forecastError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            vm.forecastError!.replaceFirst('Exception: ', ''),
+            style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    final f = vm.forecast;
+    if (f == null) {
+      return Center(
+        child: Text(
+          vm.forecastLoading ? 'Sinyal alınıyor…' : 'Hedef seçilmedi',
+          style: const TextStyle(color: _muted, fontSize: 11),
+        ),
+      );
+    }
+
+    final agg = _aggregateYearly();
+    final p50 = agg.p50;
+    final p10 = agg.p10;
+    final p90 = agg.p90;
+    if (p50.isEmpty) {
+      return const Center(
+        child: Text('Veri yok',
+            style: TextStyle(color: _muted, fontSize: 11)),
+      );
+    }
+    final unit = agg.unit;
+
+    // Y aralık
+    final allY = <double>[
+      ...p50.map((s) => s.y),
+      ...p10.map((s) => s.y),
+      ...p90.map((s) => s.y),
+    ];
+    var minY = allY.reduce((a, b) => a < b ? a : b);
+    var maxY = allY.reduce((a, b) => a > b ? a : b);
+    if ((maxY - minY).abs() < 1e-3) maxY = minY + 1;
+    final padY = (maxY - minY) * 0.12;
+    minY = (minY - padY).clamp(0, double.infinity);
+    maxY += padY;
+    final yInt = ((maxY - minY) / 4).clamp(0.001, double.infinity);
+
+    return LineChart(
+      LineChartData(
+        minX: 1,
+        maxX: p50.length.toDouble(),
+        minY: minY,
+        maxY: maxY,
+        clipData: const FlClipData.all(),
+        gridData: FlGridData(
+          show: true,
+          drawHorizontalLine: true,
+          drawVerticalLine: true,
+          horizontalInterval: yInt,
+          verticalInterval: 1,
+          getDrawingHorizontalLine: (_) => FlLine(
+            color: _neon.withValues(alpha: 0.06),
+            strokeWidth: 0.6,
+          ),
+          getDrawingVerticalLine: (_) => FlLine(
+            color: _neon.withValues(alpha: 0.05),
+            strokeWidth: 0.5,
+            dashArray: const [3, 4],
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            axisNameWidget: Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                unit.isEmpty ? '' : unit,
+                style: const TextStyle(
+                  color: _neon,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+            axisNameSize: 18,
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 44,
+              interval: yInt,
+              getTitlesWidget: (v, _) => Text(
+                _fmtY(v),
+                style: const TextStyle(color: _muted, fontSize: 9),
+              ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            axisNameWidget: const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'YIL',
+                style: TextStyle(
+                  color: _neon,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.8,
+                ),
+              ),
+            ),
+            axisNameSize: 18,
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 18,
+              interval: 1,
+              getTitlesWidget: (v, _) {
+                final i = v.toInt();
+                if (i < 1 || i > p50.length) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '+$i',
+                    style: const TextStyle(color: _muted, fontSize: 9.5),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        lineTouchData: LineTouchData(
+          handleBuiltInTouches: true,
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => const Color(0xFF111B30),
+            tooltipBorder: BorderSide(
+                color: _neon.withValues(alpha: 0.5), width: 0.8),
+            tooltipRoundedRadius: 8,
+            tooltipPadding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            getTooltipItems: (touchedSpots) {
+              return touchedSpots.map((s) {
+                final isMain = s.barIndex == 2;
+                return LineTooltipItem(
+                  isMain
+                      ? '+${s.x.toInt()} yıl  ${_fmtY(s.y)} ${unit.isEmpty ? "" : unit}'
+                      : '',
+                  TextStyle(
+                    color: isMain ? _neon : Colors.transparent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                );
+              }).toList();
+            },
+          ),
+        ),
+        lineBarsData: [
+          // 0: Üst sınır (P90)
+          LineChartBarData(
+            spots: p90,
+            isCurved: true,
+            curveSmoothness: 0.35,
+            barWidth: 0,
+            color: Colors.transparent,
+            dotData: const FlDotData(show: false),
+          ),
+          // 1: Alt sınır (P10)
+          LineChartBarData(
+            spots: p10,
+            isCurved: true,
+            curveSmoothness: 0.35,
+            barWidth: 0,
+            color: Colors.transparent,
+            dotData: const FlDotData(show: false),
+          ),
+          // 2: P50 — kalın neon merkez çizgi
+          LineChartBarData(
+            spots: p50,
+            isCurved: true,
+            curveSmoothness: 0.35,
+            barWidth: 3.4,
+            color: _neon,
+            isStrokeCapRound: true,
+            shadow: Shadow(
+              color: _neonGlow.withValues(alpha: 0.7),
+              blurRadius: 16,
+            ),
+            dotData: FlDotData(
+              show: true,
+              getDotPainter: (spot, _, __, ___) => FlDotCirclePainter(
+                radius: 3.2,
+                color: const Color(0xFF0F172A),
+                strokeWidth: 2.0,
+                strokeColor: _neonGlow,
+              ),
+            ),
+            belowBarData: BarAreaData(show: false),
+          ),
+        ],
+        // P10—P90 arası gradient shaded confidence band
+        betweenBarsData: [
+          BetweenBarsData(
+            fromIndex: 0,
+            toIndex: 1,
+            color: _neon.withValues(alpha: 0.16),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fmtY(double v) {
+    if (v.abs() >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
+    if (v.abs() >= 100) return v.toStringAsFixed(0);
+    if (v.abs() >= 10) return v.toStringAsFixed(1);
+    return v.toStringAsFixed(2);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AI KPI Sidebar — 3 dikey kart: Degradation, Kümülatif, Güven Skoru
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _AiKpiSidebar extends StatelessWidget {
+  final ProjectionViewModel vm;
+  const _AiKpiSidebar({required this.vm});
+
+  @override
+  Widget build(BuildContext context) {
+    final f = vm.forecast;
+    final pin = vm.mode == ProjectionMode.pin;
+    final scale = pin ? 1e-6 : 1.0;
+    final unit = pin ? 'GWh' : '';
+
+    // Yıllık aggregate (X-axis ile birebir)
+    final Map<int, double> yearly = {};
+    if (f != null) {
+      for (final p in f.points) {
+        yearly[p.date.year] = (yearly[p.date.year] ?? 0) + p.value * scale;
+      }
+    }
+    final years = yearly.keys.toList()..sort();
+    double? degradationPct;
+    double? cumulative;
+    double? firstYr;
+    double? lastYr;
+    if (years.length >= 2) {
+      firstYr = yearly[years.first];
+      lastYr = yearly[years.last];
+      if (firstYr != null && firstYr > 0) {
+        degradationPct = (lastYr! - firstYr) / firstYr * 100;
+      }
+      cumulative = yearly.values.fold<double>(0, (a, b) => a + b);
+    } else if (years.length == 1) {
+      cumulative = yearly[years.first];
+    }
+
+    // AI confidence: MAPE → 1-MAPE (clamped). 0.05 MAPE → %95
+    double? confidence;
+    if (f?.mape != null) {
+      confidence = ((1.0 - f!.mape!) * 100).clamp(0.0, 100.0);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _AiKpiCard(
+          label: '${(years.length).clamp(1, 99)}. YIL ÜRETİM DÜŞÜŞÜ',
+          subtitle: 'DEGRADATION',
+          value: degradationPct == null
+              ? '—'
+              : '${degradationPct >= 0 ? '+' : ''}'
+                  '${degradationPct.toStringAsFixed(1)}%',
+          accent: degradationPct == null
+              ? _AiKpiCard.neutral
+              : (degradationPct >= 0
+                  ? _AiKpiCard.positive
+                  : _AiKpiCard.negative),
+          hint: (firstYr != null && lastYr != null)
+              ? 'Y1 ${_fmtKpi(firstYr)} → Y${years.length} ${_fmtKpi(lastYr)} $unit'
+              : 'Forecast bekleniyor',
+          icon: Icons.trending_down_rounded,
+        ),
+        const SizedBox(height: 12),
+        _AiKpiCard(
+          label: 'KÜMÜLATİF ÜRETİM',
+          subtitle: 'TOPLAM (${years.length} YIL)',
+          value: cumulative == null ? '—' : _fmtKpi(cumulative),
+          accent: _AiKpiCard.primary,
+          hint: unit.isEmpty ? 'birim · model çıktısı' : '$unit · model çıktısı',
+          icon: Icons.bolt_rounded,
+        ),
+        const SizedBox(height: 12),
+        _AiKpiCard(
+          label: 'AI TAHMİN GÜVEN SKORU',
+          subtitle: 'CONFIDENCE',
+          value: confidence == null
+              ? '—'
+              : '%${confidence.toStringAsFixed(0)}',
+          accent: confidence == null
+              ? _AiKpiCard.neutral
+              : (confidence >= 90
+                  ? _AiKpiCard.positive
+                  : (confidence >= 70
+                      ? _AiKpiCard.primary
+                      : _AiKpiCard.negative)),
+          hint: f == null
+              ? 'Model çalışmıyor'
+              : '${f.method} · MAPE ${(f.mape ?? 0) * 100 < 0.01 ? "<0.01" : ((f.mape ?? 0) * 100).toStringAsFixed(2)}%',
+          icon: Icons.psychology_rounded,
+          gauge: confidence,
+        ),
+      ],
+    );
+  }
+
+  String _fmtKpi(double v) {
+    if (v.abs() >= 1e6) return '${(v / 1e6).toStringAsFixed(2)}M';
+    if (v.abs() >= 1e3) return '${(v / 1e3).toStringAsFixed(1)}k';
+    if (v.abs() >= 100) return v.toStringAsFixed(0);
+    if (v.abs() >= 10) return v.toStringAsFixed(1);
+    return v.toStringAsFixed(2);
+  }
+}
+
+class _AiKpiCard extends StatelessWidget {
+  static const primary = Color(0xFF22D3EE);
+  static const positive = Color(0xFF10B981);
+  static const negative = Color(0xFFEF4444);
+  static const neutral = Color(0xFF94A3B8);
+
+  final String label;
+  final String subtitle;
+  final String value;
+  final String hint;
+  final IconData icon;
+  final Color accent;
+  /// Opsiyonel — 0-100 arası ince ilerleme çubuğu (güven skoru görseli için)
+  final double? gauge;
+
+  const _AiKpiCard({
+    required this.label,
+    required this.subtitle,
+    required this.value,
+    required this.hint,
+    required this.icon,
+    required this.accent,
+    this.gauge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _GlassPanel(
+      accent: accent,
+      borderOpacity: 0.35,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(
+                      color: accent.withValues(alpha: 0.45), width: 0.7),
+                ),
+                child: Icon(icon, color: accent, size: 14),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                        height: 1.15,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: accent.withValues(alpha: 0.85),
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1.4,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  height: 1.0,
+                  letterSpacing: -0.5,
+                  shadows: [
+                    Shadow(
+                      color: accent.withValues(alpha: 0.55),
+                      blurRadius: 14,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (gauge != null) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: (gauge! / 100).clamp(0.0, 1.0),
+                minHeight: 3,
+                backgroundColor: Colors.white.withValues(alpha: 0.06),
+                valueColor: AlwaysStoppedAnimation(accent),
+              ),
+            ),
+          ],
+          const SizedBox(height: 6),
+          Text(
+            hint,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.42),
+              fontSize: 9.5,
+              height: 1.35,
+            ),
+          ),
+        ],
       ),
     );
   }
