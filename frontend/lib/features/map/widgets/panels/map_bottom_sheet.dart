@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'dart:ui' as ui; // Import dart:ui
-import 'package:frontend/features/map/widgets/panels/sidebar/sidebar_widgets.dart'; // Barrel export for DataPanel, ScenarioButton etc.
-import 'package:frontend/features/map/widgets/panels/sidebar/report_button.dart'; // Explicit import if not in barrel? Checked: it's not in barrel list I saw (it had sidebar_header, footer, data, scenario, pins, launcher). Wait, sidebar_widgets.dart didn't list report_button.dart.
+import 'package:frontend/features/map/widgets/panels/sidebar/sidebar_widgets.dart'; // Barrel export for DataPanel etc.
 import 'package:frontend/features/map/viewmodels/map_view_model.dart';
 import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
+import 'package:frontend/features/reports/report_screen.dart';
+import 'package:frontend/shared/widgets/animated_gradient_button.dart';
 
 class MapBottomSheet extends StatefulWidget {
   final VoidCallback? onScenariosTap;
@@ -114,22 +115,46 @@ class _MapBottomSheetState extends State<MapBottomSheet>
                     ),
                     child: Column(
                       children: [
-                        // Top Buttons
+                        // 2026-05-08 Sprint 1.4 — Bottom sheet sadeleştirildi.
+                        // Pinlerim/Senaryolar segmented panel sol Kütüphane
+                        // panel'ine taşındı. Bottom sheet artık sadece:
+                        //   - Kütüphane'ye git butonu (Senaryolar paneli aç)
+                        //   - Rapor butonu
+                        //   - DataPanel (KPI'lar + tazelik)
+                        //   - Veri yenileme
+                        // 2026-05-09 — AnimatedGradientButton (Sprint 8)
+                        // Hover/tap-down anında shimmer sweep + mikro-ikon
+                        // animasyonları. Default'ta statik. Web mouse-over ile
+                        // sadece üzerine geldiğin butonun ikonları canlanır.
+                        // Bkz: shared/widgets/animated_gradient_button.dart
                         Row(
                           children: [
                             Expanded(
-                              child: ScenarioButton(
-                                theme: theme,
-                                isGuest: isGuest,
-                                isCollapsed: false,
-                                onTap: widget.onScenariosTap,
+                              child: AnimatedGradientButton(
+                                label: 'Kütüphane',
+                                icon: Icons.collections_bookmark_rounded,
+                                accentColor: Colors.blueAccent,
+                                onPressed: isGuest ? null : widget.onScenariosTap,
+                                microIcons: [
+                                  BuiltInMicroIcons.spinningSun(),
+                                  BuiltInMicroIcons.bouncingWaterDrop(),
+                                  BuiltInMicroIcons.spinningWind(),
+                                ],
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 10),
                             Expanded(
-                              child: ReportButton(
-                                theme: theme,
-                                isCollapsed: false,
+                              child: AnimatedGradientButton(
+                                label: 'Raporlar',
+                                icon: Icons.description_rounded,
+                                accentColor: Colors.greenAccent,
+                                onPressed: () =>
+                                    Navigator.push(context, createReportRoute()),
+                                microIcons: [
+                                  BuiltInMicroIcons.flippingCoin(),
+                                  BuiltInMicroIcons.pulsingBars(),
+                                  BuiltInMicroIcons.bouncingArrow(),
+                                ],
                               ),
                             ),
                           ],
@@ -137,12 +162,6 @@ class _MapBottomSheetState extends State<MapBottomSheet>
 
                         const SizedBox(height: 16),
                         DataPanel(
-                          theme: theme,
-                          mapViewModel: mapViewModel,
-                          isCollapsed: false,
-                        ),
-                        const SizedBox(height: 16),
-                        PinsPanel(
                           theme: theme,
                           mapViewModel: mapViewModel,
                           isCollapsed: false,

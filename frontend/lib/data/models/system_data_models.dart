@@ -29,11 +29,14 @@ class GridData {
 class Equipment {
   final int id;
   final String name;
-  final String type; // 'Solar' veya 'Wind'
+  final String type; // 'Solar' / 'Wind' / 'Hydro'
   final double ratedPowerKw;
   final double? efficiency;
   final double? costPerUnit;
   final Map<String, dynamic>? specs;
+  // 2026-05-17 Sprint A — owner_id null ise sistem ekipmanı, dolu ise
+  // kullanıcının kendi eklediği. UI 'Kendi modelim' rozeti gösterir.
+  final int? ownerId;
 
   Equipment({
     required this.id,
@@ -43,7 +46,10 @@ class Equipment {
     this.efficiency,
     this.costPerUnit,
     this.specs,
+    this.ownerId,
   });
+
+  bool get isUserOwned => ownerId != null;
 
   factory Equipment.fromJson(Map<String, dynamic> json) {
     return Equipment(
@@ -58,6 +64,7 @@ class Equipment {
           ? (json['cost_per_unit'] as num).toDouble()
           : null,
       specs: json['specs'],
+      ownerId: json['owner_id'] as int?,
     );
   }
 }

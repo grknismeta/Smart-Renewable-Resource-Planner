@@ -1,6 +1,6 @@
 ---
 tags: [index, home]
-updated: 2026-04-18
+updated: 2026-05-20
 ---
 
 # 🗺️ SRRP Knowledge Vault
@@ -11,7 +11,9 @@ Smart Renewable Resource Planner projesinin atomik bilgi tabanı. Büyük dosyal
 
 - [[PROJECT-OVERVIEW]] — 🌍 **Büyük resim** (yeni oturumda ilk bu)
 - [[INBOX]] — 📥 **İşlenmemiş sorunlar** (Claude her oturum başında buraya bakar)
-- [[PLAN-2026-04-19-to-23]] — 🎯 **Aktif sprint planı** (Perşembe 23 Nisan teslim)
+- [[ReportsV3]] — 📊 **Aktif: Raporlar v3 rework** (R0-R4 checkpoint — R1-R4 ✅, R0 veri %47)
+- [[BACKEND-PLAN-2026-05-17]] — 🛠️ Backend sprint planı (S1-S2 ✅, S3-S7 sırada)
+- [[PLAN-2026-04-19-to-23]] — 🎯 Eski sprint planı (Faz 1-3 tamamlandı)
 - [[SelectionModes]] — ⚠️ Bölge/İl/İlçe mantığı (en sık yanlış yapılan)
 - [[MapStackPositioned]] — ⚠️ Harita Stack'e Positioned olmayan widget ekleme hatası
 - [[PlatformConsistency]] — Web↔Mobil eşleme kuralları
@@ -24,6 +26,12 @@ Smart Renewable Resource Planner projesinin atomik bilgi tabanı. Büyük dosyal
 - [[GraphColoring]] — Komşu polygon renklendirme algoritması
 - [[ChoroplethScales]] — Fizik bazlı sabit renk skalaları
 - [[HoverThrottle]] — rAF ile mouse throttle
+- [[PinAddFlow]] — 🆕 Pin ekleme akışı (V3 popover → V2 floating form)
+- [[LibrarySidePanel]] — 🆕 Sol Kütüphane panel (Senaryolar | Pinlerim)
+- [[AdvancedSettings]] — 🆕 Pin gelişmiş ayarlar (GES/RES/HES teknik parametre)
+- [[SuitabilityChecks]] — 🆕 Tip-aware uygunluk (add/edit re-check + cache)
+- [[PinFlowController]] — 🆕 Pin lifecycle state machine (Strategic Reset)
+- [[ReportsV3]] — 🆕 Raporlar v3 — 6 tab, Landing-first hiyerarşi, mock-fallback
 
 ### `viewmodels/` — State yönetimi
 - [[MapViewModel]] — Harita state ana sınıfı
@@ -35,6 +43,9 @@ Smart Renewable Resource Planner projesinin atomik bilgi tabanı. Büyük dosyal
 - [[MapViewMaplibreWeb]] — Web MapLibre GL JS
 - [[MapScreen]] — Ana ekran, Stack yapısı
 - [[MapBottomSheet]] — Alt panel
+- [[AnimatedGradientButton]] — 🆕 Premium hover/tap reaktif buton + mikro-ikon
+- [[PinPanelShell]] — 🆕 AddPinDialog + PinDetailsDialog ortak kabuk (composition)
+- [[JustTheTooltipPattern]] — 🆕 Sohbet balonu pop-up pattern (just_the_tooltip)
 
 ### `backend/` — Python/FastAPI
 - [[WeatherRouter]] — Choropleth endpoint, global timestamp
@@ -42,6 +53,8 @@ Smart Renewable Resource Planner projesinin atomik bilgi tabanı. Büyük dosyal
 ### `pitfalls/` — Tuzaklar ve kurallar
 - [[MapStackPositioned]] — Stack'e Positioned ekleme kuralı
 - [[PrivateFieldAccess]] — ViewModel private alan erişimi
+- [[PinAnchorPerf]] — 🆕 Pin pop-up anchor için ValueNotifier decoupling (kasma fix)
+- [[PinFlowAudit]] — 🆕 Pin sistem refactor öncesi karmaşa fotoğrafı + spec
 
 ### `issues/` — Çözülmüş/aktif sorun takibi
 - [[INBOX]] — hızlı dump alanı (günlük)
@@ -81,4 +94,6 @@ Smart Renewable Resource Planner projesinin atomik bilgi tabanı. Büyük dosyal
 
 - **2026-04-18**: Vault kuruldu. Faz 0 bug fix/midfix bitti. İlk 5 not: SelectionModes, INDEX, MapViewModel, MapViewMaplibreNative, PlatformConsistency.
 - **2026-04-18** (devam): Kalan 10 not yazıldı — GraphColoring, ChoroplethScales, HoverThrottle, SelectionLevel, MapViewMaplibreWeb, MapScreen, MapBottomSheet, WeatherRouter, MapStackPositioned, PrivateFieldAccess. Toplam 15 not aktif. Kalan: MapLayerMixin.
+- **2026-05-08**: Pin UX yeniden yapılandırma sprintinde 3 yeni not — PinAddFlow (V3 popover → V2 floating form akışı), LibrarySidePanel (sol Kütüphane Senaryolar/Pinlerim segmented), AdvancedSettings (GES/RES/HES teknik parametre).
+- **2026-05-20**: Raporlar v3 rework — yeni not [[ReportsV3]] (6 tab Landing-first hiyerarşi, climatology mock-fallback mimarisi, R0-R4 sprint checkpoint). Reports ekranı baştan kuruldu: Genel Bakış/Bölge/İl/Senaryo/Santral/Export. Backend Migration 016 + 4 endpoint + 2 servis.
 - **ARCHITECTURE.md ilişkisi**: Eski dosya `frontend/ARCHITECTURE.md` referans olarak kalır ama tek kaynak artık bu vault'tur. Yeni bilgi oraya **yazılmaz**, buraya yazılır.

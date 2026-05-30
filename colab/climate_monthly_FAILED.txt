@@ -1,0 +1,1 @@
+Batch of 50 (Izmir/Çiğli ... Kastamonu/Taşköprü)	429 rate-limit (wait 80s)

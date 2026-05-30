@@ -13,12 +13,16 @@ Mimari:
     (güvenlik).
   * **Conversation history** — Redis 1 saat TTL ile per-user konuşma
     saklanır; uzun bağlamı koruyup aynı zamanda kota tüketmemek için.
-  * **Lazy import** — `google-generativeai` bağımlılığı yoksa servis hata
+  * **Lazy import** — `google-genai` bağımlılığı yoksa servis hata
     yerine "chatbot devre dışı" yanıtı verir (uygulama crash etmesin).
+
+2026-05-17 — `google-generativeai` → `google-genai` SDK migration.
+Eski SDK deprecated; yeni SDK `from google import genai` + `genai.Client`
++ `google.genai.types` namespace kullanır.
 
 Kullanıcının Yapacağı Kurulum
 -----------------------------
-1. ``pip install google-generativeai``
+1. ``pip install google-genai``
 2. ``.env`` dosyasına: ``GOOGLE_API_KEY=...``
 3. Backend restart.
 
@@ -26,7 +30,6 @@ Detay: ``app/routers/chat.py``.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -36,17 +39,19 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# ─── Gemini SDK lazy import ──────────────────────────────────────────────────
+# ─── Gemini SDK lazy import (yeni: google-genai) ─────────────────────────────
 _GEMINI_AVAILABLE = False
 _GEMINI_IMPORT_ERROR: Optional[str] = None
 try:
-    import google.generativeai as genai  # type: ignore
+    from google import genai  # type: ignore
+    from google.genai import types as genai_types  # type: ignore
     _GEMINI_AVAILABLE = True
 except Exception as e:
     genai = None  # type: ignore
+    genai_types = None  # type: ignore
     _GEMINI_IMPORT_ERROR = str(e)
     logger.warning(
-        "[chatbot] google-generativeai import edilemedi: %s — chatbot devre dışı",
+        "[chatbot] google-genai import edilemedi: %s — chatbot devre dışı",
         _GEMINI_IMPORT_ERROR,
     )
 
@@ -54,6 +59,9 @@ except Exception as e:
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "").strip()
 DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
 HISTORY_TTL_SECONDS = 3600  # 1 saat
+
+# Module-level client singleton (yeni SDK Client-based)
+_client: Optional[Any] = None
 
 
 SYSTEM_PROMPT = """Sen SRRP'nin (Smart Renewable Resource Planner) yardımcı AI asistanısın.
@@ -149,8 +157,8 @@ def is_chatbot_available() -> tuple[bool, str]:
     """
     if not _GEMINI_AVAILABLE:
         return False, (
-            "google-generativeai paketi yüklü değil. "
-            "Backend ortamında 'pip install google-generativeai' çalıştırın."
+            "google-genai paketi yüklü değil. "
+            "Backend ortamında 'pip install google-genai' çalıştırın."
         )
     if not GOOGLE_API_KEY:
         return False, (
@@ -160,15 +168,22 @@ def is_chatbot_available() -> tuple[bool, str]:
     return True, ""
 
 
-def _ensure_configured() -> None:
-    """Gemini SDK'yı API key ile yapılandır — yalnızca bir kez."""
+def _get_client():
+    """Gemini Client singleton — yeni SDK pattern.
+
+    Yeni SDK `genai.configure()` yerine `genai.Client(api_key=...)` kullanır.
+    Client thread-safe; tek instance yeterli.
+    """
+    global _client
     if not _GEMINI_AVAILABLE or not GOOGLE_API_KEY:
-        return
-    # Idempotent: aynı key ile defalarca çağrılabilir
-    try:
-        genai.configure(api_key=GOOGLE_API_KEY)  # type: ignore
-    except Exception as e:
-        logger.warning("[chatbot] genai.configure hatası: %s", e)
+        return None
+    if _client is None:
+        try:
+            _client = genai.Client(api_key=GOOGLE_API_KEY)  # type: ignore
+        except Exception as e:
+            logger.warning("[chatbot] genai.Client init hatası: %s", e)
+            return None
+    return _client
 
 
 def new_session_id() -> str:
@@ -177,14 +192,37 @@ def new_session_id() -> str:
 
 
 # ─── Tool registry ───────────────────────────────────────────────────────────
-# Gerçek implementasyonlar `app/services/chatbot_tools.py`'de (3.C.2'de eklenir).
-# Bu dosyada sadece skeleton tutuluyor — circular import'ı engelle.
+# Gerçek implementasyonlar `app/services/chatbot_tools.py`'de.
+
+def _safe_response_text(response: Any) -> str:
+    """Gemini response.text güvenli accessor.
+
+    `response.text` shortcut'u response'da function_call part'ı olduğunda
+    `ValueError: could not convert 'part.function_call' to text` fırlatır
+    (özellikle ikinci tur tool response). Bu fonksiyon `.text` çağrısını
+    try-except ile sarar, hata olursa `parts` listesini manuel gezip
+    text olanları toplar — function_call parçaları atlanır.
+    """
+    try:
+        t = response.text  # may raise if non-text parts exist
+        return (t or "").strip()
+    except Exception:
+        pass
+    out: list[str] = []
+    try:
+        for part in response.candidates[0].content.parts:
+            t = getattr(part, "text", None)
+            if t:
+                out.append(t)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[chatbot] response parts parse hata: %s", e)
+    return "\n".join(out).strip()
+
 
 def _execute_tool(name: str, args: dict, current_user_id: Optional[int]) -> Any:
     """Tool dispatcher — chatbot bir fonksiyon çağırınca buraya düşer.
 
-    3.C.2'de gerçek tool fonksiyonları implementasyonu eklenir.
-    Şimdilik stub — "henüz implement edilmedi" döner.
+    Tool fonksiyonları `app/services/chatbot_tools.py`'de.
     """
     try:
         from app.services import chatbot_tools  # type: ignore
@@ -193,9 +231,8 @@ def _execute_tool(name: str, args: dict, current_user_id: Optional[int]) -> Any:
             return {"error": f"Tool '{name}' tanımlı değil"}
         return fn(args, current_user_id)
     except ImportError:
-        # 3.C.2 henüz eklenmedi
         return {
-            "error": f"Tool '{name}' henüz implement edilmedi (3.C.2 sırada)",
+            "error": f"Tool '{name}' modülü import edilemedi",
             "args_received": args,
         }
     except Exception as e:
@@ -203,7 +240,7 @@ def _execute_tool(name: str, args: dict, current_user_id: Optional[int]) -> Any:
         return {"error": str(e)}
 
 
-# ─── Ana chat endpoint mantığı ──────────────────────────────────────────────
+# ─── Ana chat endpoint mantığı (google-genai SDK) ───────────────────────────
 
 def chat(
     user_message: str,
@@ -230,62 +267,79 @@ def chat(
     history = _load_history(sid)
     history.append(ChatMessage(role="user", content=user_message))
 
-    _ensure_configured()
-
-    try:
-        # Tool definitions 3.C.2'de gelecek; şu an boş — chatbot pure-text yanıt verir.
-        from app.services.chatbot_tools import GEMINI_TOOL_DECLARATIONS  # type: ignore
-        tool_defs = GEMINI_TOOL_DECLARATIONS
-    except ImportError:
-        tool_defs = None
-
-    try:
-        model = genai.GenerativeModel(  # type: ignore
-            model_name=DEFAULT_MODEL,
-            system_instruction=SYSTEM_PROMPT,
-            tools=tool_defs,
+    client = _get_client()
+    if client is None:
+        return ChatResponse(
+            session_id=sid,
+            message="",
+            error="Gemini client başlatılamadı (GOOGLE_API_KEY veya SDK sorunu).",
         )
-        # Konuşma geçmişini Gemini formatına çevir
-        gemini_history: list[dict] = []
+
+    try:
+        # Tool tanımları (chatbot_tools.py yeni SDK ile uyumlu)
+        try:
+            from app.services.chatbot_tools import GEMINI_TOOL_DECLARATIONS  # type: ignore
+            tool_defs = GEMINI_TOOL_DECLARATIONS
+        except ImportError:
+            tool_defs = None
+
+        # Yeni SDK: GenerateContentConfig içinde system_instruction + tools
+        config_kwargs: dict = {
+            "system_instruction": SYSTEM_PROMPT,
+        }
+        if tool_defs:
+            config_kwargs["tools"] = tool_defs
+
+        config = genai_types.GenerateContentConfig(**config_kwargs)  # type: ignore
+
+        # Konuşma geçmişini Gemini Content[] formatına çevir
+        gemini_history: list = []
         for m in history[:-1]:  # son user mesajı dışında
             if m.role in ("user", "model"):
-                gemini_history.append({
-                    "role": m.role,
-                    "parts": [{"text": m.content}],
-                })
+                gemini_history.append(
+                    genai_types.Content(  # type: ignore
+                        role=m.role,
+                        parts=[genai_types.Part(text=m.content)],  # type: ignore
+                    )
+                )
 
-        chat_session = model.start_chat(history=gemini_history)
+        # Yeni SDK chat session: client.chats.create(model=, config=, history=)
+        chat_session = client.chats.create(
+            model=DEFAULT_MODEL,
+            config=config,
+            history=gemini_history,
+        )
         response = chat_session.send_message(user_message)
 
         # Tool call var mı kontrol et — Gemini function calling
         tool_calls_made: list[dict] = []
         # Tek-tur tool çağrısı (recursive değil, basit ilk versiyon)
         try:
-            for part in response.candidates[0].content.parts:
-                fn_call = getattr(part, "function_call", None)
-                if fn_call is not None and fn_call.name:
-                    args = dict(fn_call.args or {})
-                    result = _execute_tool(fn_call.name, args, current_user_id)
-                    tool_calls_made.append({
-                        "name": fn_call.name,
-                        "args": args,
-                        "result": result,
-                    })
-                    # Tool sonucunu modele geri gönder, final yanıtı al
-                    response = chat_session.send_message(
-                        genai.protos.Content(  # type: ignore
-                            parts=[genai.protos.Part(  # type: ignore
-                                function_response=genai.protos.FunctionResponse(  # type: ignore
-                                    name=fn_call.name,
-                                    response={"result": result},
-                                )
-                            )]
+            candidates = getattr(response, "candidates", None) or []
+            if candidates:
+                parts = getattr(candidates[0].content, "parts", []) or []
+                for part in parts:
+                    fn_call = getattr(part, "function_call", None)
+                    if fn_call is not None and getattr(fn_call, "name", None):
+                        # Yeni SDK fn_call.args zaten dict
+                        args = dict(getattr(fn_call, "args", None) or {})
+                        result = _execute_tool(fn_call.name, args, current_user_id)
+                        tool_calls_made.append({
+                            "name": fn_call.name,
+                            "args": args,
+                            "result": result,
+                        })
+                        # Tool sonucunu modele geri gönder — yeni SDK Part API
+                        response = chat_session.send_message(
+                            genai_types.Part.from_function_response(  # type: ignore
+                                name=fn_call.name,
+                                response={"result": result},
+                            )
                         )
-                    )
         except Exception as tool_err:
             logger.warning("[chatbot] Tool dispatch hatası: %s", tool_err)
 
-        final_text = (response.text or "").strip()
+        final_text = _safe_response_text(response)
         history.append(ChatMessage(
             role="model",
             content=final_text,

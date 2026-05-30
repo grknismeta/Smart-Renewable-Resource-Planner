@@ -32,9 +32,71 @@ logger = logging.getLogger(__name__)
 
 # Job adları (scheduler_meta.job_name'de tekil olarak tutulur)
 JOB_HOURLY_FETCH = "hourly_weather_fetch"
-JOB_PROVINCE_ANALYSIS = "province_analysis_recompute"
+JOB_PROVINCE_ANALYSIS = "province_analysis_recompute"  # legacy (deprecated S1)
+JOB_CLIMATOLOGY_REFRESH = "climatology_refresh"  # 2026-05-17 S1.10: 6 ayda bir
+JOB_THEMATIC_AGGREGATE = "thematic_aggregate_refresh"  # 2026-05-28: ayda bir
 
 _scheduler: Optional[BackgroundScheduler] = None
+
+
+# ───────────────────── Tematik agregat refresh (ayda bir) ─────────────────
+
+def _thematic_aggregate_refresh() -> None:
+    """Ağır tematik pencereleri (6ay/yıl/mevsim/2y/5y/10y) ayda bir hesapla.
+
+    `build_thematic_aggregates.main` çağırır → thematic_aggregate tablosu.
+    İl + ilçe, hibrit kaynak (yakın saatlik, eski günlük). ~1-2 dk.
+    """
+    logger.info("[Scheduler] thematic_aggregate_refresh BAŞLADI")
+    try:
+        import sys
+        import os
+        # scripts/ paketini import path'e ekle
+        scripts_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "scripts")
+        )
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import build_thematic_aggregates as bta  # type: ignore
+        bta.main(only_province=False, dry_run=False)
+        # T-6: zaman-serisi frame'leri (2y/5y/10y haftalık/aylık)
+        import build_thematic_timeseries as bts  # type: ignore
+        bts.main(years=10, dry_run=False)
+        logger.info("[Scheduler] thematic_aggregate_refresh BİTTİ")
+    except Exception:
+        logger.exception("[Scheduler] thematic_aggregate_refresh hatası")
+        raise
+
+
+# ───────────────────────── S1.10: Climatology refresh job ─────────────────
+
+def _climatology_refresh() -> None:
+    """6 ayda bir climatology tablosunu yeniden hesapla.
+
+    Sprint S1 — `compute_for_all_provinces` çağırır. Manisa örneği:
+    skor sürekli recompute edilmez (bölge karakteri statik), ama uzun vade
+    değişimlerini (yeni veri toplandıkça mevsim ortalamaları değişir)
+    yansıtmak için 6 ayda bir refresh.
+
+    Çalışma süresi ~5-10 dk (162 hesap × ~3-5sn). BackgroundScheduler
+    arka planda çalıştırır, FastAPI request handling'i bloklamaz.
+    """
+    from .climatology_service import compute_for_all_provinces
+
+    logger.info("[Scheduler] climatology_refresh BAŞLADI")
+    try:
+        results = compute_for_all_provinces(
+            resource_types=("wind", "solar"),
+            save=True,
+        )
+        ok_count = sum(1 for r in results if r.score_climatology is not None)
+        logger.info(
+            "[Scheduler] climatology_refresh BİTTİ: %d/%d skor üretildi",
+            ok_count, len(results),
+        )
+    except Exception:
+        logger.exception("[Scheduler] climatology_refresh hatası")
+        raise
 
 
 # ───────────────────────── Meta helpers ─────────────────────────
@@ -181,8 +243,39 @@ def start_scheduler(run_on_startup: bool = True) -> BackgroundScheduler:
         replace_existing=True,
     )
 
+    # 2026-05-17 S1.10: Climatology 6 ayda bir refresh (Ocak ve Temmuz, ayın 1'i, 03:00 UTC)
+    # Sebep: bölge karakteri statik ama mevsim ortalamaları zamanla değişir.
+    # Manisa örneği — günlük/saatlik değil, 6 ayda bir.
+    _scheduler.add_job(
+        func=lambda: _run_tracked(JOB_CLIMATOLOGY_REFRESH, _climatology_refresh),
+        trigger=CronTrigger(month="1,7", day=1, hour=3, minute=0),
+        id=JOB_CLIMATOLOGY_REFRESH,
+        name="6 ayda bir climatology recompute (81 il × 2 kaynak)",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,  # 1 saat geç bile çalışır (uzun job)
+        replace_existing=True,
+    )
+
+    # 2026-05-28: Ağır tematik pencereler ayda bir (ayın 1'i, 04:00 UTC).
+    # 6ay/yıl/mevsim/2y/5y/10y choropleth değerleri önceden hesaplanır.
+    _scheduler.add_job(
+        func=lambda: _run_tracked(JOB_THEMATIC_AGGREGATE,
+                                  _thematic_aggregate_refresh),
+        trigger=CronTrigger(day=1, hour=4, minute=0),
+        id=JOB_THEMATIC_AGGREGATE,
+        name="Ayda bir tematik agregat (il+ilçe × 6 pencere × 3 metrik)",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+        replace_existing=True,
+    )
+
     _scheduler.start()
-    logger.info("APScheduler baslatildi. Saatlik is kayitli: %s", JOB_HOURLY_FETCH)
+    logger.info(
+        "APScheduler baslatildi. Job'lar kayitli: %s, %s, %s",
+        JOB_HOURLY_FETCH, JOB_CLIMATOLOGY_REFRESH, JOB_THEMATIC_AGGREGATE,
+    )
 
     # next_run_at'i hemen kaydet (UI ilk anda da gostersin)
     _mark_run_end(

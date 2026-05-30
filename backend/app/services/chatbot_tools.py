@@ -28,12 +28,15 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# ─── Lazy import: Gemini protos sadece SDK varsa ─────────────────────────────
+# ─── Lazy import: Gemini types yeni SDK'dan (google-genai) ───────────────────
+# 2026-05-17 — `google-generativeai` → `google-genai` SDK migration.
+# Eski `genai.protos.*` (Tool, FunctionDeclaration, Schema, Type) yerine
+# yeni `google.genai.types.*` namespace kullanıyoruz.
 try:
-    import google.generativeai as genai  # type: ignore
+    from google.genai import types as genai_types  # type: ignore
     _SDK_OK = True
 except Exception:
-    genai = None  # type: ignore
+    genai_types = None  # type: ignore
     _SDK_OK = False
 
 
@@ -406,141 +409,142 @@ def compute_what_if(args: dict, current_user_id: Optional[int]) -> dict:
         return {"error": str(e)}
 
 
-# ─── Gemini Tool Declarations ───────────────────────────────────────────────
-# Gemini'nin function calling formatı — `Tool(function_declarations=[...])`.
+# ─── Gemini Tool Declarations (google-genai SDK) ────────────────────────────
+# Yeni SDK'da format: types.Tool(function_declarations=[types.FunctionDeclaration(...)])
+# Schema namespace artık `genai_types.Schema`, Type enum `genai_types.Type`.
 
 if _SDK_OK:
     GEMINI_TOOL_DECLARATIONS = [
-        genai.protos.Tool(  # type: ignore
+        genai_types.Tool(  # type: ignore
             function_declarations=[
-                genai.protos.FunctionDeclaration(  # type: ignore
+                genai_types.FunctionDeclaration(  # type: ignore
                     name="get_province_score",
                     description=(
                         "Bir ilin enerji potansiyel skorunu getirir "
                         "(rüzgar/güneş/hidro × 1 ay/3 ay/6 ay/yıllık)."
                     ),
-                    parameters=genai.protos.Schema(  # type: ignore
-                        type=genai.protos.Type.OBJECT,  # type: ignore
+                    parameters=genai_types.Schema(  # type: ignore
+                        type=genai_types.Type.OBJECT,  # type: ignore
                         properties={
-                            "province": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.STRING,  # type: ignore
+                            "province": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.STRING,  # type: ignore
                                 description="İl adı (Manisa, İzmir, Konya vb.)",
                             ),
-                            "resource": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.STRING,  # type: ignore
+                            "resource": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.STRING,  # type: ignore
                                 description="wind | solar | hydro",
                             ),
-                            "horizon": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.STRING,  # type: ignore
+                            "horizon": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.STRING,  # type: ignore
                                 description="1m | 3m | 6m | yearly",
                             ),
                         },
                         required=["province", "resource"],
                     ),
                 ),
-                genai.protos.FunctionDeclaration(  # type: ignore
+                genai_types.FunctionDeclaration(  # type: ignore
                     name="get_recommendations",
                     description="Top-N ili (rüzgar/güneş/hidro) skor sırasıyla listeler.",
-                    parameters=genai.protos.Schema(  # type: ignore
-                        type=genai.protos.Type.OBJECT,  # type: ignore
+                    parameters=genai_types.Schema(  # type: ignore
+                        type=genai_types.Type.OBJECT,  # type: ignore
                         properties={
-                            "resource": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.STRING,
+                            "resource": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.STRING,  # type: ignore
                                 description="wind | solar | hydro",
                             ),
-                            "horizon": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.STRING,
+                            "horizon": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.STRING,  # type: ignore
                                 description="1m | 3m | 6m | yearly",
                             ),
-                            "top_n": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.INTEGER,
+                            "top_n": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.INTEGER,  # type: ignore
                                 description="Kaç il listelensin (1-30)",
                             ),
                         },
                         required=["resource"],
                     ),
                 ),
-                genai.protos.FunctionDeclaration(  # type: ignore
+                genai_types.FunctionDeclaration(  # type: ignore
                     name="compare_provinces",
                     description="Birden fazla ili yan yana karşılaştırır.",
-                    parameters=genai.protos.Schema(  # type: ignore
-                        type=genai.protos.Type.OBJECT,
+                    parameters=genai_types.Schema(  # type: ignore
+                        type=genai_types.Type.OBJECT,  # type: ignore
                         properties={
-                            "provinces": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.ARRAY,
-                                items=genai.protos.Schema(type=genai.protos.Type.STRING),  # type: ignore
+                            "provinces": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.ARRAY,  # type: ignore
+                                items=genai_types.Schema(type=genai_types.Type.STRING),  # type: ignore
                                 description="['Manisa', 'İzmir']",
                             ),
-                            "resource": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.STRING,
+                            "resource": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.STRING,  # type: ignore
                                 description="wind | solar | hydro",
                             ),
                         },
                         required=["provinces", "resource"],
                     ),
                 ),
-                genai.protos.FunctionDeclaration(  # type: ignore
+                genai_types.FunctionDeclaration(  # type: ignore
                     name="get_scenario_financials",
                     description=(
                         "Mevcut bir senaryonun CAPEX, LCOE, payback period, "
                         "NPV, IRR ve yıllık CO₂ avoidance değerlerini hesaplar."
                     ),
-                    parameters=genai.protos.Schema(  # type: ignore
-                        type=genai.protos.Type.OBJECT,
+                    parameters=genai_types.Schema(  # type: ignore
+                        type=genai_types.Type.OBJECT,  # type: ignore
                         properties={
-                            "scenario_id": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.INTEGER,
+                            "scenario_id": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.INTEGER,  # type: ignore
                                 description="Kullanıcının senaryosunun id'si",
                             ),
                         },
                         required=["scenario_id"],
                     ),
                 ),
-                genai.protos.FunctionDeclaration(  # type: ignore
+                genai_types.FunctionDeclaration(  # type: ignore
                     name="get_weather_summary",
                     description=(
                         "Bir il için hava özeti (ortalama rüzgar hızı, ışınım, "
                         "sıcaklık) — seçilen zaman penceresinde."
                     ),
-                    parameters=genai.protos.Schema(  # type: ignore
-                        type=genai.protos.Type.OBJECT,
+                    parameters=genai_types.Schema(  # type: ignore
+                        type=genai_types.Type.OBJECT,  # type: ignore
                         properties={
-                            "province": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.STRING,
+                            "province": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.STRING,  # type: ignore
                                 description="İl adı",
                             ),
-                            "mode": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.STRING,
+                            "mode": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.STRING,  # type: ignore
                                 description="current|week|month|threeMonth|sixMonth|yearly|season",
                             ),
-                            "season": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.STRING,
+                            "season": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.STRING,  # type: ignore
                                 description="mode=season için: winter|spring|summer|autumn",
                             ),
                         },
                         required=["province"],
                     ),
                 ),
-                genai.protos.FunctionDeclaration(  # type: ignore
+                genai_types.FunctionDeclaration(  # type: ignore
                     name="compute_what_if",
                     description=(
                         "Hipotetik bir yatırım için finansal projeksiyon. "
                         "Örn: 'Manisa'ya 10 MW rüzgar + 5 MW güneş kursak'."
                     ),
-                    parameters=genai.protos.Schema(  # type: ignore
-                        type=genai.protos.Type.OBJECT,
+                    parameters=genai_types.Schema(  # type: ignore
+                        type=genai_types.Type.OBJECT,  # type: ignore
                         properties={
-                            "pin_specs": genai.protos.Schema(  # type: ignore
-                                type=genai.protos.Type.ARRAY,
-                                items=genai.protos.Schema(  # type: ignore
-                                    type=genai.protos.Type.OBJECT,
+                            "pin_specs": genai_types.Schema(  # type: ignore
+                                type=genai_types.Type.ARRAY,  # type: ignore
+                                items=genai_types.Schema(  # type: ignore
+                                    type=genai_types.Type.OBJECT,  # type: ignore
                                     properties={
-                                        "type": genai.protos.Schema(  # type: ignore
-                                            type=genai.protos.Type.STRING,
+                                        "type": genai_types.Schema(  # type: ignore
+                                            type=genai_types.Type.STRING,  # type: ignore
                                             description="'Güneş Paneli' | 'Rüzgar Türbini' | 'Hidroelektrik'",
                                         ),
-                                        "capacity_mw": genai.protos.Schema(  # type: ignore
-                                            type=genai.protos.Type.NUMBER,
+                                        "capacity_mw": genai_types.Schema(  # type: ignore
+                                            type=genai_types.Type.NUMBER,  # type: ignore
                                         ),
                                     },
                                 ),

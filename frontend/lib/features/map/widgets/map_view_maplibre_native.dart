@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:latlong2/latlong.dart';
 import 'package:maplibre/maplibre.dart' as ml;
 import 'package:provider/provider.dart';
 // http import kaldırıldı — il/ilçe seçimi artık tamamen client-side (asset GeoJSON)
@@ -46,6 +47,11 @@ const _districtHighlightLayerId  = 'srrp-district-highlight-line';
 
 const _hillshadeSourceId  = 'srrp-hillshade-dem';
 const _hillshadeLayerId   = 'srrp-hillshade';
+
+// 2026-05-27 (O1.4): İzohips contour overlay — OpenTopoMap raster.
+// CC-BY-SA attribution UI tarafında (layers_panel) gösteriliyor.
+const _contourSourceId    = 'srrp-contour-tiles';
+const _contourLayerId     = 'srrp-contour-layer';
 
 // 1.B (yeniden): animation province overlay constant'ları emekliye ayrıldı
 // — animasyon artık choropleth bridge'ten beslenir (`_syncChoropleth`).
@@ -236,6 +242,22 @@ class MapViewMapLibre extends StatefulWidget {
   static void clearSelectionMode() {}
   static void setInteractive(bool enable) {}
   static void setClickGuard(bool active) {}
+  static void setPinPlacementActive(bool active) {}
+  static void setTerrainExaggeration(double exaggeration) {}
+  static void setHillshadeIntensity(double intensity) {}
+  // 2026-05-27 (O1.4): İzohips contour native'de VM-watch ile senkronize
+  // edilir (_syncContourLayer). Static metodlar no-op — web JS interop için var.
+  static void toggleContour(bool enabled, double opacity,
+      {String source = 'opentopo'}) {}
+  static void setContourOpacity(double opacity) {}
+  // M-B.2/3 — ML projeksiyon choropleth native'de henüz desteksiz (web-only).
+  static void setMlChoropleth(String dataJson) {}
+  static void clearMlChoropleth() {}
+  // 2026-05-08 Madde 1: Pin preview marker (native polish Sprint 2).
+  static void showPreviewPin(LatLng? point) {}
+  // Madde 5+6+7: Coğrafi anchor — native polish Sprint 2.
+  static Offset? projectLngLatToScreen(LatLng point) => null;
+  static void registerAnchorListener(VoidCallback? callback) {}
   static void setMaxBounds(
       double swLng, double swLat, double neLng, double neLat) {
     // Native'de maxBounds MapOptions ile init-time'da ayarlanıyor.
@@ -271,6 +293,11 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   bool _clusterLayersActive = false;
   bool _lastCloud       = false;
   bool _cloudActive     = false;
+
+  // 2026-05-27 (O1.4): İzohips contour state.
+  bool   _lastContour        = false;
+  double _lastContourOpacity = 0.55;
+  bool   _contourActive      = false;
   bool _bordersActive   = false;
   bool _overlayActive   = false;
   bool _lastProvincesMode = false;
@@ -369,6 +396,12 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     } catch (e) {
       debugPrint('[MapLibre-Native] _syncCloudLayer hata: $e');
     }
+    // 2026-05-27 (O1.4): İzohips contour overlay
+    try {
+      await _syncContourLayer(vm.showContour, vm.contourOpacity);
+    } catch (e) {
+      debugPrint('[MapLibre-Native] _syncContourLayer hata: $e');
+    }
     // 1.B (yeniden): _syncAnimationProvinces emekliye ayrıldı —
     // animasyon ilçe choropleth path'inden beslenir (yukarıda _syncChoropleth).
     // İl/İlçe sınırları
@@ -401,6 +434,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _clusterLayersActive = false;
         _lastCloud = false;
         _cloudActive = false;
+        _lastContour = false;
+        _contourActive = false;
         _bordersActive = false;
         _lastProvincesMode = false;
         _lastSelectionLevel = SelectionLevel.none;
@@ -444,6 +479,14 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
   Future<void> _onMapClick(ml.Position point) async {
     final vm = Provider.of<MapViewModel>(context, listen: false);
+
+    // 0) Pin yerleştirme modu aktifse — selection/choropleth match'leri atla,
+    //    direkt pin akışına git. Aksi halde tematik harita veya il modu açıkken
+    //    pin koymak imkânsız oluyor (selection match önceliği yutuyor).
+    if (vm.placingPinType != null) {
+      widget.onMapTap?.call(point);
+      return;
+    }
 
     // 1) Pin tıklaması: her zaman en yüksek öncelik
     if (widget.onPinTap != null && vm.filteredPins.isNotEmpty) {
@@ -1841,6 +1884,73 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     }
   }
 
+  // ─── İzohips Contour Sync (O1.4 native parite) ────────────────────
+  //
+  // OpenTopoMap raster tiles, 3 subdomain rotation + maxZoom 17.
+  // Web tarafıyla aynı kaynak/lisans; UI'da attribution chip Layers panel'de.
+  // O2 sprint'inde kendi MVT pipeline'ımıza geçince bu URL değişir.
+  Future<void> _syncContourLayer(bool show, double opacity) async {
+    final style = _style;
+    if (style == null || !_styleLoaded) return;
+    final opacityChanged =
+        (opacity - _lastContourOpacity).abs() > 0.005;
+    if (show == _lastContour && !opacityChanged) return;
+    _lastContour = show;
+    _lastContourOpacity = opacity;
+
+    if (show && !_contourActive) {
+      try {
+        await style.addSource(ml.RasterSource(
+          id: _contourSourceId,
+          tiles: const [
+            'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
+            'https://b.tile.opentopomap.org/{z}/{x}/{y}.png',
+            'https://c.tile.opentopomap.org/{z}/{x}/{y}.png',
+          ],
+          tileSize: 256,
+          maxZoom: 17,
+        ));
+      } catch (_) {}
+
+      try {
+        await style.addLayer(
+          ml.RasterStyleLayer(
+            id: _contourLayerId,
+            sourceId: _contourSourceId,
+            paint: <String, Object>{
+              'raster-opacity': opacity,
+            },
+          ),
+          // Pin/cluster katmanlarının altında, terrain/borders üstünde.
+          belowLayerId: _pinsShadowLayerId,
+        );
+        _contourActive = true;
+      } catch (e) {
+        debugPrint('[MapLibre-Native] contour layer eklenemedi: $e');
+      }
+    } else if (show && _contourActive && opacityChanged) {
+      // maplibre 0.2.2'de setPaintProperty/updateLayer yok → layer'ı
+      // kaldırıp aynı paint ile tekrar ekle. Source aynı kalabilir.
+      try {
+        await style.removeLayer(_contourLayerId);
+        await style.addLayer(
+          ml.RasterStyleLayer(
+            id: _contourLayerId,
+            sourceId: _contourSourceId,
+            paint: <String, Object>{'raster-opacity': opacity},
+          ),
+          belowLayerId: _pinsShadowLayerId,
+        );
+      } catch (e) {
+        debugPrint('[MapLibre-Native] contour opacity update fail: $e');
+      }
+    } else if (!show && _contourActive) {
+      try { await style.removeLayer(_contourLayerId); } catch (_) {}
+      try { await style.removeSource(_contourSourceId); } catch (_) {}
+      _contourActive = false;
+    }
+  }
+
   // ─── İl/İlçe Sınırları Sync (ViewModel değişimine tepki) ──────
 
   /// Border layer işlemleri için kilit — race condition önler (SIGSEGV fix).
@@ -2059,18 +2169,18 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       // Ramp: [[gerçek_değer, '#hex'], ...] — interpolate ile ara değerler hesaplanır.
       List<List<dynamic>> physicalRamp;
       if (dataKey == 'solar') {
-        // W/m² — 0=gece/karanlık, 800+=güçlü güneş
+        // W/m² — 2026-05-19 ters çevrildi (sezgi: gece=koyu, çok güneş=parlak).
         physicalRamp = [
           [0,   '#1a1a2e'], // gece — koyu lacivert
-          [50,  '#FFFFCC'], // şafak — soluk sarı
-          [150, '#FFEDA0'],
-          [250, '#FED976'],
-          [350, '#FEB24C'],
+          [50,  '#4D0014'], // çok düşük — koyu bordo
+          [150, '#BD0026'],
+          [250, '#E31A1C'],
+          [350, '#FC4E2A'],
           [450, '#FD8D3C'],
-          [550, '#FC4E2A'],
-          [650, '#E31A1C'],
-          [750, '#BD0026'],
-          [800, '#4D0014'], // maksimum — koyu bordo
+          [550, '#FEB24C'],
+          [650, '#FED976'],
+          [750, '#FFEDA0'],
+          [800, '#FFFFCC'], // maksimum — parlak sarı
         ];
       } else if (dataKey == 'wind') {
         // m/s (100m) — 0=durgun, 25+=fırtına

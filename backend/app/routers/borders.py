@@ -258,17 +258,60 @@ def get_province_borders():
 
 
 @router.get("/districts", summary="957 ilçe sınırı (GADM TUR-2)")
-def get_district_borders():
+def get_district_borders(province: str | None = None, region: str | None = None):
     """
     Türkiye'nin ilçe sınırlarını GeoJSON FeatureCollection olarak döndürür.
     Her feature'da NAME_1 (il) ve NAME_2 (ilçe) özellikleri bulunur.
     Geometri tolerance=0.001° ile basitleştirilmiştir (~100 m hassasiyet).
+
+    2026-05-27 (N4): `province=Marmaris` veya `region=Marmara` query parametre
+    ile filtrelenebilir → Raporlar haritası 10 MB tüm GeoJSON yerine sadece
+    seçili ilin/bölgenin ilçelerini ~50-500 KB döndürür.
     """
-    return Response(
-        content=_load_geojson(level=2, tolerance=0.001),
-        media_type="application/geo+json",
-        headers={"Cache-Control": "public, max-age=86400"},
-    )
+    raw = _load_geojson(level=2, tolerance=0.001)
+
+    # Filter yoksa tüm GeoJSON
+    if not province and not region:
+        return Response(
+            content=raw,
+            media_type="application/geo+json",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    # province veya region verildi → filter
+    try:
+        fc = json.loads(raw)
+        features = fc.get("features", [])
+
+        if province:
+            wanted_key = _ascii_key(province)
+            features = [
+                f for f in features
+                if _ascii_key(f.get("properties", {}).get("NAME_1", "")) == wanted_key
+            ]
+        elif region:
+            wanted_provinces = TURKEY_REGIONS.get(region, [])
+            wanted_keys = {_ascii_key(p) for p in wanted_provinces}
+            features = [
+                f for f in features
+                if _ascii_key(f.get("properties", {}).get("NAME_1", "")) in wanted_keys
+            ]
+
+        filtered_fc = {"type": "FeatureCollection", "features": features}
+        return Response(
+            content=json.dumps(filtered_fc, ensure_ascii=False),
+            media_type="application/geo+json",
+            # Filtered response — short cache (parametre değişebilir)
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+    except Exception as exc:
+        logger.warning("İlçe filtreleme hatası (%s/%s): %s", province, region, exc)
+        # Hata durumunda tüm veri dön
+        return Response(
+            content=raw,
+            media_type="application/geo+json",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
 
 @router.post("/cache/clear", summary="Sınır cache'ini temizle")

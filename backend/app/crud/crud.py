@@ -32,16 +32,25 @@ def create_user(db: Session, user: schemas.UserCreate):
 
 # --- EKİPMAN (System DB) İŞLEMLERİ ---
 
-def get_equipments(db: Session, type: Optional[str] = None, skip: int = 0, limit: int = 100):
-    # db: SystemSession olmalı
-    print(f'[CRUD.get_equipments] type={type}, skip={skip}, limit={limit}')
+def get_equipments(db: Session, type: Optional[str] = None, skip: int = 0, limit: int = 100,
+                   user_id: Optional[int] = None):
+    """
+    Ekipman listesi: sistem ekipmanları (owner_id IS NULL) + (user_id varsa)
+    kullanıcının kendi eklediği ekipmanlar.
+    2026-05-17 Sprint A — user-aware filtering.
+    """
+    print(f'[CRUD.get_equipments] type={type}, user_id={user_id}, skip={skip}, limit={limit}')
     query = db.query(models.Equipment)
-    total_count = query.count()
-    print(f'[CRUD.get_equipments] Toplam equipment sayısı: {total_count}')
     if type:
         query = query.filter(models.Equipment.type == type)
-        filtered_count = query.count()
-        print(f'[CRUD.get_equipments] {type} filtresi sonrası: {filtered_count}')
+    if user_id is not None:
+        # Sistem ekipmanları (owner_id NULL) + kullanıcının kendi'leri
+        query = query.filter(
+            (models.Equipment.owner_id == None) | (models.Equipment.owner_id == user_id)  # noqa: E711
+        )
+    else:
+        # Geriye uyum: user_id verilmezse sadece sistem ekipmanları
+        query = query.filter(models.Equipment.owner_id == None)  # noqa: E711
     result = query.offset(skip).limit(limit).all()
     print(f'[CRUD.get_equipments] Döndürülen: {len(result)} ekipman')
     return result
@@ -49,6 +58,62 @@ def get_equipments(db: Session, type: Optional[str] = None, skip: int = 0, limit
 def get_equipment(db: Session, equipment_id: int):
     # db: SystemSession olmalı
     return db.query(models.Equipment).filter(models.Equipment.id == equipment_id).first()
+
+def create_user_equipment(db: Session, equipment_data, user_id: int):
+    """
+    Kullanıcının kendi ekipmanını oluşturur. owner_id = user_id ile insert.
+    2026-05-17 Sprint A.
+    """
+    db_eq = models.Equipment(
+        name=equipment_data.name,
+        type=equipment_data.type,
+        rated_power_kw=equipment_data.rated_power_kw,
+        efficiency=equipment_data.efficiency,
+        cost_per_unit=equipment_data.cost_per_unit or 0.0,
+        specs=equipment_data.specs or {},
+        owner_id=user_id,
+    )
+    db.add(db_eq)
+    db.commit()
+    db.refresh(db_eq)
+    return db_eq
+
+def delete_user_equipment(db: Session, equipment_id: int, user_id: int) -> bool:
+    """
+    Kullanıcının kendi ekipmanını siler. Sistem ekipmanları silinemez
+    (owner_id NULL — query eşleşmez).
+    """
+    eq = db.query(models.Equipment).filter(
+        models.Equipment.id == equipment_id,
+        models.Equipment.owner_id == user_id,
+    ).first()
+    if not eq:
+        return False
+    db.delete(eq)
+    db.commit()
+    return True
+
+def update_user_equipment(db: Session, equipment_id: int, equipment_data, user_id: int):
+    """
+    Kullanıcının kendi ekipmanını günceller. Sistem ekipmanları (owner_id NULL)
+    güncellenemez — owner_id filter eşleşmez, None döner.
+    2026-05-17 — 'Kullanıcının eklediği santral tipleri düzenlenebilir' isteği.
+    """
+    eq = db.query(models.Equipment).filter(
+        models.Equipment.id == equipment_id,
+        models.Equipment.owner_id == user_id,
+    ).first()
+    if not eq:
+        return None
+    eq.name = equipment_data.name
+    eq.type = equipment_data.type
+    eq.rated_power_kw = equipment_data.rated_power_kw
+    eq.efficiency = equipment_data.efficiency
+    eq.cost_per_unit = equipment_data.cost_per_unit or 0.0
+    eq.specs = equipment_data.specs or {}
+    db.commit()
+    db.refresh(eq)
+    return eq
 
 # --- PIN (User DB + System DB) İŞLEMLERİ ---
 

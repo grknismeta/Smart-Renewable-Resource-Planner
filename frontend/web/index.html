@@ -122,8 +122,20 @@
         const instance = Reflect.construct(Target, args);
         window._srrpMap = instance;
 
+        // ── Custom Style-Ready Flag ──────────────────────────────────
+        // MapLibre'nin `isStyleLoaded()` getter'ı sürekli tile yüklemesi
+        // (vector tiles, MVT, choropleth tile fetch, raster reload, vb.)
+        // sırasında HEP false dönüyor. Bu, click query'leri için yanlış sinyal —
+        // ilk style.load fire ettiyse query'ler çalışabilmeli.
+        //
+        // Çözüm: kendi flag'imiz. Yeni instance açılınca false, ilk style.load
+        // fire edince true. Bir daha false yapılmaz (style switch'te yeni
+        // instance açılır → constructor tekrar çalışır → false reset olur).
+        window._srrpStyleReady = false;
+
         // Her style.load'da (ilk yükleme + stil değişimi) sınır düzeltmesini uygula
         instance.on('style.load', function() {
+          window._srrpStyleReady = true;
           // Dart tarafındaki _initLayers'ın bitmesini bekle (100ms yeterli)
           setTimeout(function() { _srrpApplyAdminBorderFixes(instance); }, 150);
           // MapLibre varsayılan 'grab' cursor'ını kaldır — 'default' kullan
@@ -533,6 +545,27 @@
     var _choroplethSrcId    = 'srrp-choropleth-src';
 
     /**
+     * 2026-05-17 — Tematik harita aktifken graph coloring (srrp-sel-unique)
+     * opacity'sini düşürür, choropleth okunabilir hale gelsin. Kapanınca
+     * normal parlaklığa döner. Kullanıcı: "ilçe modunun renkleri arkadaki
+     * renklendirme anlaşılacak kadar azalsın. kapatınca normal renklerine
+     * geri gelsin."
+     */
+    function _srrpSyncGraphColoringOpacity(choroplethActive) {
+      var map = window._srrpMap;
+      if (!map) return;
+      try {
+        if (map.getLayer('srrp-sel-unique')) {
+          map.setPaintProperty(
+            'srrp-sel-unique',
+            'fill-opacity',
+            choroplethActive ? 0.2 : 1.0
+          );
+        }
+      } catch(_) {}
+    }
+
+    /**
      * İlçe poligonlarını veri bazlı renklendirir.
      * Ayrı GeoJSON source oluşturur, her feature'a _cval property ekler,
      * MapLibre native interpolate ile sürekli gradyan sağlar.
@@ -571,6 +604,8 @@
           try { if (map.getLayer(LINE_ID)) map.removeLayer(LINE_ID); } catch(_) {}
           try { if (map.getSource(_choroplethSrcId)) map.removeSource(_choroplethSrcId); } catch(_) {}
           _activeChoroplethId = null;
+          // Graph coloring opacity normale dönsün
+          _srrpSyncGraphColoringOpacity(false);
         }, _CHORO_TRANSITION_MS + 50);
         return;
       }
@@ -602,9 +637,71 @@
       }
     };
 
+    /**
+     * M-B.2/3 — ML iklim projeksiyon choropleth'i.
+     * dataJson: {"İl": değer, ...} (il bazlı; ilçeler n1 fallback ile renklenir).
+     * Metrik/birim ne olursa olsun min-max normalize viridis rampası kullanır.
+     * Mevcut choropleth pipeline'ını (geo cache, fade, layer, fallback) reuse eder.
+     */
+    window.srrpSetMlChoropleth = function(dataJson) {
+      try {
+        if (!dataJson) { window.srrpSetChoropleth('none', null); return; }
+        var raw = JSON.parse(dataJson);
+        var vals = [];
+        for (var k in raw) {
+          if (k === '_meta') continue;
+          var v = (typeof raw[k] === 'number') ? raw[k] : (raw[k] && raw[k].value);
+          if (typeof v === 'number' && isFinite(v)) vals.push(v);
+        }
+        if (vals.length === 0) { window.srrpSetChoropleth('none', null); return; }
+        var mn = Math.min.apply(null, vals);
+        var mx = Math.max.apply(null, vals);
+        if (mx - mn < 1e-9) mx = mn + 1;
+        // Viridis 7-stop, veri aralığına yayılmış
+        var pal = ['#440154','#414487','#2a788e','#22a884','#7ad151','#bddf26','#fde725'];
+        _mlChoroplethStops = pal.map(function(c, i) {
+          return [mn + (mx - mn) * (i / (pal.length - 1)), c];
+        });
+        // {İl: {ml: val}} formatına çevir (entry[mode] erişimi için)
+        var data = {};
+        for (var p in raw) {
+          if (p === '_meta') continue;
+          var vv = (typeof raw[p] === 'number') ? raw[p] : (raw[p] && raw[p].value);
+          if (typeof vv === 'number') data[p] = { ml: vv };
+        }
+        window.srrpSetChoropleth('ml', JSON.stringify(data));
+      } catch (e) {
+        console.error('[SRRP] srrpSetMlChoropleth:', e);
+      }
+    };
+
+    window.srrpClearMlChoropleth = function() {
+      window.srrpSetChoropleth('none', null);
+    };
+
+    // İl adı normalize — diakritik/kısaltma farklarını köprüle (Hakkâri↔Hakkari,
+    // â→a vb.). Choropleth il-fallback eşleşmesi için (2026-05-28).
+    function _srrpNormName(s) {
+      if (!s) return '';
+      return s.toLowerCase()
+        .replace(/â/g, 'a').replace(/î/g, 'i').replace(/û/g, 'u')
+        .replace(/ı/g, 'i').replace(/İ/g, 'i')
+        .replace(/ş/g, 's').replace(/ç/g, 'c')
+        .replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ü/g, 'u')
+        .replace(/\s+/g, '').trim();
+    }
+
     function _applyChoropleth(map, mode, data, geojson, FILL_ID, LINE_ID) {
       var features = geojson.features || [];
       var vals = [];
+
+      // İl-seviyesi (tek token, '|' içermeyen) anahtarların normalize indexi —
+      // ilçe anahtarı + düz il anahtarı tutmazsa son çare normalize eşleşme.
+      var _provNormIndex = {};
+      for (var dk in data) {
+        if (dk === '_meta' || dk.indexOf('|') !== -1) continue;
+        _provNormIndex[_srrpNormName(dk)] = data[dk];
+      }
 
       // Her feature'a _cval property ekle (orijinal GeoJSON'ı mutate etmiyoruz, klonluyoruz)
       var newFeatures = [];
@@ -615,7 +712,11 @@
         var n2 = props.NAME_2 || '';
         var compositeKey = n1 + '|' + n2;
 
-        var entry = data[compositeKey];
+        // İlçe anahtarı eşleşmezse il (NAME_1) değerine düş; o da tutmazsa
+        // normalize edilmiş il adıyla eşleştir (Hakkâri↔Hakkari, â→a vb.).
+        // precompute uzun pencerelerde bazı adlar GADM ile birebir tutmuyor;
+        // il fallback siyah deliği önler (2026-05-28).
+        var entry = data[compositeKey] || data[n1] || _provNormIndex[_srrpNormName(n1)];
         var val = entry ? entry[mode] : null;
 
         newFeatures.push({
@@ -683,6 +784,7 @@
         map.setPaintProperty(FILL_ID, 'fill-opacity', fillOpacityExpr);
         map.setPaintProperty(LINE_ID, 'line-opacity', 1);
         _activeChoroplethId = FILL_ID;
+        _srrpSyncGraphColoringOpacity(true); // graph coloring zayıflasın
         console.log('[SRRP] Choropleth güncellendi (geçişli): mode=' + mode +
           ', ' + vals.length + ' veri');
         return;
@@ -744,6 +846,7 @@
         });
 
         _activeChoroplethId = FILL_ID;
+        _srrpSyncGraphColoringOpacity(true); // graph coloring zayıflasın
         console.log('[SRRP] Choropleth oluşturuldu (fade-in): mode=' + mode +
           ', ' + newFeatures.length + ' feature, ' + vals.length + ' veri');
       } catch(e) {
@@ -756,23 +859,35 @@
      * Renk dizileri perceptually uniform ve koyu arka plan üzerinde
      * yüksek kontrast sağlayacak şekilde seçilmiştir.
      */
+    // ML projeksiyon için dinamik (min-max normalize) renk stops.
+    // srrpSetMlChoropleth doldurur; metrik/birim ne olursa olsun çalışır.
+    var _mlChoroplethStops = null;
+
     function _choroplethBuildStops(mode) {
+      // ML projeksiyon: veri min-max'ine göre dinamik viridis rampası.
+      if (mode === 'ml') {
+        return _mlChoroplethStops || [[0, '#440154'], [1, '#FDE725']];
+      }
       // Tüm modlar sabit fiziksel değer → renk eşlemesi kullanır.
       // Native (map_view_maplibre_native.dart) ve tooltip (map_layer_mixin.dart)
       // ile birebir aynı renkler.
       if (mode === 'solar') {
-        // Güneş ışınımı: 0–800 W/m²
+        // Güneş ışınımı: 0–800 W/m².
+        // 2026-05-19 — Renk skalası TERS ÇEVRİLDİ. Eski palet sezgisel
+        // değildi: yüksek ışınım = koyu bordo, düşük = soluk sarı.
+        // Yeni: gece/düşük = koyu, çok güneşli = parlak sarı.
+        // Inferno-like progresyon: lacivert→mor→kırmızı→turuncu→sarı.
         return [
           [  0, '#1a1a2e'],   // gece / sıfır — koyu lacivert
-          [ 50, '#FFFFCC'],   // çok düşük — soluk sarı
-          [150, '#FFEDA0'],
-          [250, '#FED976'],
-          [350, '#FEB24C'],
+          [ 50, '#4D0014'],   // çok düşük — koyu bordo
+          [150, '#BD0026'],
+          [250, '#E31A1C'],
+          [350, '#FC4E2A'],
           [450, '#FD8D3C'],
-          [550, '#FC4E2A'],
-          [650, '#E31A1C'],
-          [750, '#BD0026'],
-          [800, '#4D0014'],   // maksimum — koyu bordo
+          [550, '#FEB24C'],
+          [650, '#FED976'],
+          [750, '#FFEDA0'],
+          [800, '#FFFFCC'],   // maksimum — parlak sarı
         ];
       } else if (mode === 'wind') {
         // Rüzgar hızı: 0–25 m/s
@@ -826,6 +941,23 @@
       try { if (map.getLayer(id)) map.removeLayer(id); } catch (e) {}
     };
 
+    // ── Bug 4 fix: Pin/label layer'larını en üste taşı ───────────────
+    //
+    // Liberty (OpenFreeMap) gibi yoğun katmanlı style'larda fill-extrusion
+    // ve symbol layer'lar pin circle'ı görsel olarak gizleyebiliyor. MapLibre
+    // moveLayer(id) layer'ı stack'in tepesine alır → pin garantili görünür.
+    //
+    // Verilen id sırasında çağırın; sonraki çağrı bir öncekinin üstüne çıkar.
+    window.srrpMoveLayerToTop = function (layerId) {
+      const map = window._srrpMap;
+      if (!map) return;
+      try {
+        if (map.getLayer(layerId)) map.moveLayer(layerId);
+      } catch (e) {
+        console.warn('[SRRP] srrpMoveLayerToTop:', layerId, e);
+      }
+    };
+
     // ── Aşama I: PostGIS MVT Vektör Katmanları ─────────────────────
     //
     // Backend tek tile endpoint'i 3 layer içerir:
@@ -868,11 +1000,17 @@
 
     /**
      * Hidro katmanı: göl/baraj/nehir polygon'ları.
-     * Su türü `feature_type` ile renklendirilir:
-     *   riverbank → açık mavi (akarsu)
-     *   reservoir/water → koyu mavi (durağan)
-     *   wetland → yeşil-mavi (sulak)
-     *   glacier → beyaz
+     *
+     * 2026-05-08 — Su sebepli "kurulamaz" alanları belirgin mavi göstermek için
+     * opacity 0.55 → 0.7. Wetland tonu yeşilden mavi-sulak tonuna (mavi sema-
+     * cıyla tutarlı). RES/GES için tıklanan koordinat su üzerindeyse backend
+     * suitability false döner; harita rengi de bunu görsel olarak yansıtır.
+     *   riverbank → açık mavi (akarsu — HES kıyısı)
+     *   water     → orta mavi (göl)
+     *   reservoir → koyu mavi (baraj)
+     *   wetland   → mavi-camgöbeği (sulak)
+     *   glacier   → buz beyazı
+     *   dock      → gri-mavi (liman)
      */
     window.srrpToggleHydroLayer = function (visible) {
       const map = window._srrpMap;
@@ -891,12 +1029,13 @@
                   'riverbank', '#3FA9F5',
                   'water',     '#1E5BA8',
                   'reservoir', '#16467F',
-                  'wetland',   '#5BA678',
+                  'wetland',   '#2E86AB',  // yeşil → mavi-camgöbeği
                   'glacier',   '#E8F1FA',
                   'dock',      '#5C6B7C',
                   /* default */ '#3D7AB3',
                 ],
-                'fill-opacity': 0.55,
+                'fill-opacity': 0.70,
+                'fill-outline-color': '#0E3A6E',
               },
             });
           }
@@ -908,8 +1047,8 @@
               'source-layer': 'hydro',
               paint: {
                 'line-color': '#9FD8FF',
-                'line-width': 0.6,
-                'line-opacity': 0.7,
+                'line-width': 0.8,
+                'line-opacity': 0.8,
               },
             });
           }
@@ -924,6 +1063,15 @@
 
     /**
      * Yasaklı bölge katmanı (askeri / milli park / koruma alanı).
+     *
+     * 2026-05-08 — Renk semantiği düzeltildi: tüm yasaklı feature'lar KIRMIZI
+     * tonunda. Eski yeşil tonları (national_park yeşil, vb) "uygun" hissi
+     * yaratıyordu, oysa hepsi "kurulamaz" anlamı taşıyor. Şimdi:
+     *   military          → koyu/saf kırmızı (en sıkı yasak)
+     *   national_park     → kırmızımsı bordo (doğa koruma — kurulamaz)
+     *   protected_area    → kırmızı (genel koruma)
+     *   nature_reserve    → açık kırmızı/mercan (rezerv)
+     * Opacity de 0.35 → 0.42 — görünürlük artar, basemap detayı yok olmaz.
      */
     window.srrpToggleRestrictedLayer = function (visible) {
       const map = window._srrpMap;
@@ -939,14 +1087,14 @@
               paint: {
                 'fill-color': [
                   'match', ['get', 'feature_type'],
-                  'military',         '#D32F2F',  // kırmızı
-                  'national_park',    '#2E7D32',  // koyu yeşil
-                  'protected_area',   '#558B2F',
-                  'nature_reserve',   '#7CB342',
-                  /* default */       '#A0A0A0',
+                  'military',         '#C62828',  // koyu kırmızı (en sıkı)
+                  'national_park',    '#AD1457',  // bordomsı kırmızı
+                  'protected_area',   '#D32F2F',  // saf kırmızı
+                  'nature_reserve',   '#E57373',  // açık kırmızı
+                  /* default */       '#B71C1C',
                 ],
-                'fill-opacity': 0.35,
-                'fill-outline-color': '#000',
+                'fill-opacity': 0.42,
+                'fill-outline-color': '#7F0000',
               },
             });
           }
@@ -988,27 +1136,239 @@
     };
 
     // ── 3D Terrain ─────────────────────────────────────────────────
-    // MapLibre ^0.2.2 Flutter paketi setTerrain() sunmuyor; JS üzerinden çağrılır.
+    // 2026-05-17 Sprint S2 — AWS Open Data Terrain Tiles (terrarium PNG).
+    // Eski MapLibre demo tile'ları düşük resolution + sınırlıydı; AWS
+    // Mapzen mirror (S3) global yüksek resolution DEM ücretsiz sağlar.
+    // Encoding: terrarium (R,G,B → elevation = (R*256 + G + B/256) - 32768)
+    // CDN: https://registry.opendata.aws/terrain-tiles/
 
-    window.srrpSetTerrain = function (enable) {
+    var _srrpTerrainExaggeration = 1.5;
+
+    window.srrpSetTerrain = function (enable, exaggeration) {
       const map = window._srrpMap;
       if (!map) return;
+      if (typeof exaggeration === 'number' && exaggeration > 0) {
+        _srrpTerrainExaggeration = exaggeration;
+      }
       try {
         if (enable) {
           if (!map.getSource('srrp-dem')) {
             map.addSource('srrp-dem', {
               type: 'raster-dem',
-              url: 'https://demotiles.maplibre.org/terrain-tiles/tiles.json',
-              tileSize: 256
+              tiles: [
+                'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'
+              ],
+              encoding: 'terrarium',
+              tileSize: 256,
+              maxzoom: 15,
+              attribution: 'Mapzen / AWS Open Data'
             });
           }
-          map.setTerrain({ source: 'srrp-dem', exaggeration: 1.5 });
+          map.setTerrain({
+            source: 'srrp-dem',
+            exaggeration: _srrpTerrainExaggeration
+          });
+
+          // 2026-05-19 — Hillshade gölgelendirme: 3D algısı dramatic artar.
+          // Dağlar koyu/açık gradient ile yükseklik hissi verir. Choropleth
+          // üstüne uygulanır (paint'in altında değil; sınır çizgilerinin
+          // altında). Kullanıcı raporu: "kabartma var ama yüksekliği
+          // anlamıyorum" → bu fix.
+          if (!map.getLayer('srrp-hillshade')) {
+            // Choropleth fill'in HEMEN ÜSTÜNE ekle (gölge data'yı renksel
+            // olarak desteklesin); sınır çizgilerinin altında kalsın.
+            var beforeLayerId = undefined;
+            try {
+              if (map.getLayer('srrp-provinces-line')) {
+                beforeLayerId = 'srrp-provinces-line';
+              }
+            } catch (_) {}
+            map.addLayer({
+              id: 'srrp-hillshade',
+              type: 'hillshade',
+              source: 'srrp-dem',
+              paint: {
+                'hillshade-shadow-color': '#000000',
+                'hillshade-highlight-color': '#ffffff',
+                'hillshade-accent-color': '#454545',
+                'hillshade-exaggeration': 0.55,
+                'hillshade-illumination-direction': 335,  // KKB öğle güneşi
+                'hillshade-illumination-anchor': 'viewport',
+              }
+            }, beforeLayerId);
+          }
         } else {
           map.setTerrain(null);
+          // Hillshade'i de kaldır
+          try { if (map.getLayer('srrp-hillshade')) map.removeLayer('srrp-hillshade'); } catch (_) {}
           // Kaynak hata vermeden kaldır
           try { if (map.getSource('srrp-dem')) map.removeSource('srrp-dem'); } catch (_) {}
         }
       } catch (e) { console.error('[SRRP] srrpSetTerrain:', e); }
+    };
+
+    /**
+     * Hillshade gölge yoğunluğunu ayarla (0.0-1.5).
+     * Layers panel slider'ı bunu çağırır.
+     */
+    window.srrpSetHillshadeIntensity = function (intensity) {
+      const map = window._srrpMap;
+      if (!map || typeof intensity !== 'number') return;
+      var v = Math.max(0, Math.min(1.5, intensity));
+      try {
+        if (map.getLayer('srrp-hillshade')) {
+          map.setPaintProperty('srrp-hillshade', 'hillshade-exaggeration', v);
+        }
+      } catch (e) { console.error('[SRRP] srrpSetHillshadeIntensity:', e); }
+    };
+
+    /**
+     * 2026-05-27 (O1/O2) — İzohips (contour) overlay.
+     *   srrpToggleContour(enabled, opacity, source)
+     *     enabled: bool — aç/kapa
+     *     opacity: 0-1 — overlay görünürlüğü
+     *     source : 'opentopo' (raster, default) | 'self' (vektör MVT)
+     *
+     * - 'opentopo' : OpenTopoMap raster tile (CC-BY-SA, ~10K req/saat).
+     * - 'self'     : Kendi MVT contour endpoint'imiz
+     *                /api/v1/tiles/contour/{z}/{x}/{y}.pbf (O2 pipeline).
+     *                mbtiles yoksa tile'lar boş döner (204) → harita boş çizer,
+     *                Dart tarafı meta endpoint'ini kontrol edip fallback yapar.
+     *
+     * Kaynak değişiminde eski layer/source temizlenir.
+     */
+    var _srrpContourMode = null; // 'opentopo' | 'self' | null
+
+    function _srrpRemoveContour() {
+      const map = window._srrpMap;
+      if (!map) return;
+      // Raster
+      try { if (map.getLayer('srrp-contour')) map.removeLayer('srrp-contour'); } catch (_) {}
+      try { if (map.getSource('srrp-contour-src')) map.removeSource('srrp-contour-src'); } catch (_) {}
+      // Vektör
+      try { if (map.getLayer('srrp-contour-line')) map.removeLayer('srrp-contour-line'); } catch (_) {}
+      try { if (map.getLayer('srrp-contour-label')) map.removeLayer('srrp-contour-label'); } catch (_) {}
+      try { if (map.getSource('srrp-contour-vec')) map.removeSource('srrp-contour-vec'); } catch (_) {}
+      _srrpContourMode = null;
+    }
+
+    function _srrpContourBeforeLayer() {
+      const map = window._srrpMap;
+      try {
+        if (map.getLayer('srrp-provinces-line')) return 'srrp-provinces-line';
+        if (map.getLayer('srrp-districts-line')) return 'srrp-districts-line';
+      } catch (_) {}
+      return undefined;
+    }
+
+    window.srrpToggleContour = function (enabled, opacity, source) {
+      const map = window._srrpMap;
+      if (!map) return;
+      var op = (typeof opacity === 'number')
+        ? Math.max(0, Math.min(1, opacity))
+        : 0.5;
+      var mode = (source === 'self') ? 'self' : 'opentopo';
+      try {
+        if (!enabled) { _srrpRemoveContour(); return; }
+
+        // Kaynak değiştiyse önce temizle
+        if (_srrpContourMode && _srrpContourMode !== mode) {
+          _srrpRemoveContour();
+        }
+
+        var beforeLayerId = _srrpContourBeforeLayer();
+
+        if (mode === 'opentopo') {
+          if (!map.getSource('srrp-contour-src')) {
+            map.addSource('srrp-contour-src', {
+              type: 'raster',
+              tiles: [
+                'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
+                'https://b.tile.opentopomap.org/{z}/{x}/{y}.png',
+                'https://c.tile.opentopomap.org/{z}/{x}/{y}.png',
+              ],
+              tileSize: 256,
+              maxzoom: 17,
+              attribution:
+                '© <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',
+            });
+          }
+          if (!map.getLayer('srrp-contour')) {
+            map.addLayer({
+              id: 'srrp-contour',
+              type: 'raster',
+              source: 'srrp-contour-src',
+              paint: { 'raster-opacity': op },
+            }, beforeLayerId);
+          } else {
+            map.setPaintProperty('srrp-contour', 'raster-opacity', op);
+          }
+        } else {
+          // self-hosted vektör MVT
+          var base = (window.SRRP_API_BASE || 'http://localhost:8000').replace(/\/$/, '');
+          if (!map.getSource('srrp-contour-vec')) {
+            map.addSource('srrp-contour-vec', {
+              type: 'vector',
+              tiles: [base + '/api/v1/tiles/contour/{z}/{x}/{y}.pbf'],
+              minzoom: 8,
+              maxzoom: 14,
+              attribution: '© SRRP / SRTM (NASA)',
+            });
+          }
+          if (!map.getLayer('srrp-contour-line')) {
+            map.addLayer({
+              id: 'srrp-contour-line',
+              type: 'line',
+              source: 'srrp-contour-vec',
+              'source-layer': 'contour',
+              paint: {
+                'line-color': '#8B4513',
+                'line-opacity': op,
+                // 100m'nin katları (ana izohips) daha kalın
+                'line-width': [
+                  'interpolate', ['linear'], ['zoom'],
+                  8, 0.4,
+                  12, 0.8,
+                  14, 1.2,
+                ],
+              },
+            }, beforeLayerId);
+          } else {
+            map.setPaintProperty('srrp-contour-line', 'line-opacity', op);
+          }
+        }
+        _srrpContourMode = mode;
+      } catch (e) { console.error('[SRRP] srrpToggleContour:', e); }
+    };
+
+    /** Contour opacity güncelle (aktif moda göre). */
+    window.srrpSetContourOpacity = function (opacity) {
+      const map = window._srrpMap;
+      if (!map || typeof opacity !== 'number') return;
+      var v = Math.max(0, Math.min(1, opacity));
+      try {
+        if (map.getLayer('srrp-contour')) {
+          map.setPaintProperty('srrp-contour', 'raster-opacity', v);
+        }
+        if (map.getLayer('srrp-contour-line')) {
+          map.setPaintProperty('srrp-contour-line', 'line-opacity', v);
+        }
+      } catch (e) { console.error('[SRRP] srrpSetContourOpacity:', e); }
+    };
+
+    /**
+     * Terrain aktifken sadece exaggeration değiştir (kaynağı yeniden yükleme).
+     * Layers panel slider'ı bunu çağırır.
+     */
+    window.srrpSetTerrainExaggeration = function (exaggeration) {
+      const map = window._srrpMap;
+      if (!map || typeof exaggeration !== 'number' || exaggeration <= 0) return;
+      _srrpTerrainExaggeration = exaggeration;
+      try {
+        if (map.getSource('srrp-dem')) {
+          map.setTerrain({ source: 'srrp-dem', exaggeration: exaggeration });
+        }
+      } catch (e) { console.error('[SRRP] srrpSetTerrainExaggeration:', e); }
     };
 
     // ── Sky layer (terrain ile birlikte atmosfer görünümü) ─────────
@@ -1100,46 +1460,67 @@
     window.srrpQueryClick = function(lng, lat) {
       var map = window._srrpMap;
       // Defensive: map yoksa veya style yüklenmemişse (reload sırasında) erken çık.
-      if (!map || typeof map.getLayer !== 'function' || typeof map.queryRenderedFeatures !== 'function') return '{"type":"none"}';
-      if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) return '{"type":"none"}';
-      if (window._srrpClickGuard) return '{"type":"none"}';
+      if (!map || typeof map.getLayer !== 'function' || typeof map.queryRenderedFeatures !== 'function') {
+        console.log('[SRRP-Q] EARLY-EXIT: map veya getLayer/queryRenderedFeatures yok');
+        return '{"type":"none"}';
+      }
+      // NOT: map.isStyleLoaded() KULLANMA — sürekli tile yükleme sırasında hep
+      // false döner. Bunun yerine custom _srrpStyleReady flag (ilk style.load
+      // sonra true). Bkz: https://github.com/maplibre/maplibre-gl-js/issues/1683
+      if (!window._srrpStyleReady) {
+        console.log('[SRRP-Q] EARLY-EXIT: ilk style.load henüz fire etmedi');
+        return '{"type":"none"}';
+      }
+      // 2026-05-17 — clickGuard early-exit KALDIRILDI. Eski davranış: guard
+      // aktifken queryClick komple atlanıyordu → pinler arası geçiş çalışmaz.
+      // Yeni: query her zaman yapılır; Dart tarafı (`_onMapClick`) guard'a
+      // göre pin haricini yutar, pin tıklamasına izin verir (pop-up açıkken
+      // başka pine geçiş).
+
+      // Diagnostic — hangi layer'lar mevcut, click anında ne durumda?
+      var diag = {
+        pins:    !!map.getLayer('srrp-pins-circles'),
+        cluster: !!map.getLayer('srrp-cluster-single'),
+        selHit:  !!map.getLayer('srrp-sel-hit'),
+        selFb:   !!map.getLayer('srrp-sel-hit-prov-fallback'),
+        choro:   !!map.getLayer('srrp-choropleth-fill'),
+      };
+      console.log('[SRRP-Q] click @' + lng.toFixed(3) + ',' + lat.toFixed(3) + ' | layers:', diag);
 
       try {
         var point = map.project([lng, lat]);
 
         // 1. Pin katmanı (normal + cluster tekil)
         var pinLayers = [];
-        if (map.getLayer('srrp-pins-circles')) pinLayers.push('srrp-pins-circles');
-        if (map.getLayer('srrp-cluster-single')) pinLayers.push('srrp-cluster-single');
+        if (diag.pins) pinLayers.push('srrp-pins-circles');
+        if (diag.cluster) pinLayers.push('srrp-cluster-single');
 
         if (pinLayers.length > 0) {
           // 3D/eğimli görünümde de çalışması için geniş bbox kullan
           var bbox = [[point.x - 12, point.y - 12], [point.x + 12, point.y + 12]];
           var pinHits = map.queryRenderedFeatures(bbox, { layers: pinLayers });
           if (pinHits.length > 0) {
+            console.log('[SRRP-Q] -> PIN match');
             var props = pinHits[0].properties;
             return JSON.stringify({ type: 'pin', properties: props });
           }
         }
 
         // 2. Seçim katmanı (il/ilçe/bölge) + fallback layer
-        // Hem ana hit layer (srrp-sel-hit) hem de ilçe modundaki province fallback
-        // layer (srrp-sel-hit-prov-fallback) kontrol edilir. Fallback öncelik almaz;
-        // ana hit bulunursa o döner. Aksi halde fallback kontrol edilir.
-        if (map.getLayer('srrp-sel-hit')) {
+        if (diag.selHit) {
           var selHits = map.queryRenderedFeatures(point, { layers: ['srrp-sel-hit'] });
+          console.log('[SRRP-Q] sel-hit query result:', selHits.length);
           if (selHits.length > 0) {
             var selProps = selHits[0].properties;
+            console.log('[SRRP-Q] -> SELECTION match', selProps);
             return JSON.stringify({ type: 'selection', properties: selProps });
           }
         }
-        if (map.getLayer('srrp-sel-hit-prov-fallback')) {
+        if (diag.selFb) {
           var fbHits = map.queryRenderedFeatures(point, { layers: ['srrp-sel-hit-prov-fallback'] });
+          console.log('[SRRP-Q] sel-fb query result:', fbHits.length);
           if (fbHits.length > 0) {
             var fbProps = fbHits[0].properties || {};
-            // Fallback il layer'ı — NAME_1 + REGION var. Dart `_handleSelectionClick`
-            // initial-mode aware işler: İl modu → selectProvince(NAME_1);
-            // Bölge modu district level → region değiştiyse selectRegion + selectProvince.
             return JSON.stringify({ type: 'selection', properties: fbProps });
           }
         }
@@ -1166,10 +1547,12 @@
         }
 
         // 4. Choropleth katmanı tıklaması (ilçe tematik harita)
-        if (map.getLayer('srrp-choropleth-fill')) {
+        if (diag.choro) {
           var choroHits = map.queryRenderedFeatures(point, { layers: ['srrp-choropleth-fill'] });
+          console.log('[SRRP-Q] choro query result:', choroHits.length);
           if (choroHits.length > 0) {
             var choroProps = choroHits[0].properties || {};
+            console.log('[SRRP-Q] -> CHOROPLETH match', choroProps.NAME_1, choroProps.NAME_2);
             return JSON.stringify({
               type: 'choropleth',
               properties: {
@@ -1179,6 +1562,7 @@
             });
           }
         }
+        console.log('[SRRP-Q] -> NO MATCH (none döndü)');
       } catch(e) {
         console.error('[SRRP] srrpQueryClick hata:', e);
       }
@@ -1888,6 +2272,16 @@
       }
 
       function _build() {
+        // 2026-05-08 — Tematik harita aktifken graph coloring layer'ını
+        // (srrp-sel-unique) eklemiyoruz; aksi takdirde choropleth fill'inin
+        // üstüne random renkler binip "karmakarışık renklendirme" görünüyor.
+        // Choropleth modunda kullanıcı zaten data-bazlı rengi görüyor;
+        // ilçe/il sınırı için sadece srrp-sel-hit (görünmez, tıklama için)
+        // ve srrp-sel-hover (mouseover highlight) yeterli.
+        if (_activeChoroplethId !== null) {
+          console.log('[SRRP] _setupSelectionLayers._build: choropleth aktif → graph coloring atlanıyor (' + srcId + ')');
+          return;
+        }
         var raw = map.querySourceFeatures(srcId);
         // Değere göre tekilleştir; her değer için vertex key'leri birleştir
         var byVal = {};
@@ -1991,6 +2385,113 @@
       _build();
     }
 
+    // ────────────────────────────────────────────────────────────────────
+    // 2026-05-08 Madde 1 — Pin preview marker (Santral Kur akışı)
+    // Kullanıcı haritada tıkladığı yere "📍" benzeri görsel bir önizleme pini
+    // çizilir; V3 popover ve V2 form bu pin üzerinden referans alır.
+    // ────────────────────────────────────────────────────────────────────
+    var _previewPinSourceId = 'srrp-preview-pin';
+
+    window.srrpShowPreviewPin = function (lng, lat) {
+      var map = window._srrpMap;
+      if (!map || typeof map.addSource !== 'function') return;
+      if (!window._srrpStyleReady) return;
+      var data = {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [lng, lat] },
+        properties: {},
+      };
+      try {
+        var src = map.getSource(_previewPinSourceId);
+        if (src) {
+          src.setData(data);
+        } else {
+          map.addSource(_previewPinSourceId, { type: 'geojson', data: data });
+          // Halka (pulse efekti) — dış katman, yarı saydam
+          map.addLayer({
+            id: 'srrp-preview-pin-pulse',
+            type: 'circle',
+            source: _previewPinSourceId,
+            paint: {
+              'circle-radius': 16,
+              'circle-color': '#14B8A6',
+              'circle-opacity': 0.18,
+              'circle-stroke-color': '#14B8A6',
+              'circle-stroke-width': 2,
+              'circle-stroke-opacity': 0.7,
+            },
+          });
+          // İç nokta — belirgin teal renkli dot
+          map.addLayer({
+            id: 'srrp-preview-pin-dot',
+            type: 'circle',
+            source: _previewPinSourceId,
+            paint: {
+              'circle-radius': 6,
+              'circle-color': '#14B8A6',
+              'circle-stroke-color': '#FFFFFF',
+              'circle-stroke-width': 2,
+            },
+          });
+        }
+      } catch (e) {
+        console.warn('[SRRP] srrpShowPreviewPin hatası:', e);
+      }
+    };
+
+    window.srrpHidePreviewPin = function () {
+      var map = window._srrpMap;
+      if (!map) return;
+      ['srrp-preview-pin-dot', 'srrp-preview-pin-pulse'].forEach(function (id) {
+        try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
+      });
+      try { if (map.getSource(_previewPinSourceId)) map.removeSource(_previewPinSourceId); } catch (_) {}
+    };
+
+    // ────────────────────────────────────────────────────────────────────
+    // 2026-05-08 Madde 5+6+7 — Floating pop-up coğrafi anchor
+    // Pin form/popover'ı pin'in ekran pikseline anchor etmek için MapLibre
+    // map.project() ve map.on('move'/'zoom') eventlerini Dart'a köprüler.
+    // Pop-up Google Maps InfoWindow pattern: harita pan/zoom yapılınca pin'le
+    // birlikte hareket eder.
+    // ────────────────────────────────────────────────────────────────────
+
+    /** Coğrafi noktayı ekran piksel koordinatına çevirir. */
+    window.srrpProjectLngLat = function (lng, lat) {
+      var map = window._srrpMap;
+      if (!map || typeof map.project !== 'function') return null;
+      try {
+        var p = map.project([lng, lat]);
+        return JSON.stringify({ x: p.x, y: p.y });
+      } catch (e) { return null; }
+    };
+
+    var _srrpAnchorMoveCb = null;
+    var _srrpAnchorZoomCb = null;
+
+    /** Harita pan/zoom event'lerinde callback çağır. Callback string almaz —
+     * sadece tetikleyici (Dart tarafı state'ten lng/lat alır + tekrar project). */
+    window.srrpRegisterAnchorListener = function (callback) {
+      var map = window._srrpMap;
+      if (!map) return;
+      // Önceki listener'ları temizle
+      if (_srrpAnchorMoveCb) { try { map.off('move', _srrpAnchorMoveCb); } catch (_) {} }
+      if (_srrpAnchorZoomCb) { try { map.off('zoom', _srrpAnchorZoomCb); } catch (_) {} }
+      _srrpAnchorMoveCb = callback;
+      _srrpAnchorZoomCb = callback;
+      map.on('move', _srrpAnchorMoveCb);
+      map.on('zoom', _srrpAnchorZoomCb);
+    };
+
+    window.srrpUnregisterAnchorListener = function () {
+      var map = window._srrpMap;
+      if (!map) return;
+      if (_srrpAnchorMoveCb) { try { map.off('move', _srrpAnchorMoveCb); } catch (_) {} }
+      if (_srrpAnchorZoomCb) { try { map.off('zoom', _srrpAnchorZoomCb); } catch (_) {} }
+      _srrpAnchorMoveCb = null;
+      _srrpAnchorZoomCb = null;
+    };
+
     // Bekleyen _setupSelectionLayers setTimeout'unu iptal etmek için token
     var _selSetupTimerId = null;
 
@@ -2041,14 +2542,19 @@
       if (_selSetupTimerId) { clearTimeout(_selSetupTimerId); _selSetupTimerId = null; }
 
       var map = window._srrpMap;
-      // Defensive: map yok / yüklenmedi / style yüklenmedi → erken çık.
+      // Defensive: map yok / yüklenmedi → erken çık.
       // (Style reload sırasında map.getSource undefined patlatabilir, MapLibre 4.7
       // internal state'te source cache stale olabilir.)
-      if (!map || typeof map.getSource !== 'function' || typeof map.isStyleLoaded !== 'function') return;
-      if (!map.isStyleLoaded()) {
-        // Stil henüz hazır değil — kısa retry kuyruğuna at
+      if (!map || typeof map.getSource !== 'function') return;
+      // İlk style.load fire ettiyse devam — `isStyleLoaded()` sürekli tile
+      // yüklemesi sırasında hep false döner, retry'ları 8 turda öldürür ve
+      // selection layer hiç oluşmaz (Bug: "il/ilçe/bölge modu null döndürüyor").
+      if (!window._srrpStyleReady) {
         var rt0 = _retryCount || 0;
-        if (rt0 >= 8) return;
+        if (rt0 >= 8) {
+          console.error('[SRRP] _setupSelectionLayers: _srrpStyleReady 8 retry sonra hâlâ false');
+          return;
+        }
         _selSetupTimerId = setTimeout(function () {
           _selSetupTimerId = null;
           _setupSelectionLayers(srcId, hoverProp, hitFilter, clickFn, srcName, hoverProp2, rt0 + 1, colorFilter);

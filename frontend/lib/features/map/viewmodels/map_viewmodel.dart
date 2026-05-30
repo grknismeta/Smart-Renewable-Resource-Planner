@@ -14,6 +14,7 @@ import 'package:frontend/features/map/viewmodels/map_layer_mixin.dart';
 // ignore: unused_import — export için gerekli (MapLayerType caller'lara)
 import 'package:frontend/features/map/layers/map_layers_system.dart';
 import 'package:frontend/features/map/models/map_models.dart';
+import 'package:frontend/features/map/widgets/map_view_maplibre.dart';
 import 'package:frontend/data/models/recommendation_model.dart';
 export 'package:frontend/features/map/layers/map_layers_system.dart'
     show MapLayerType;
@@ -89,8 +90,19 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   Map<String, dynamic>? _preGlobeState;
   bool _show3DBuildings = false;
   bool _show3DTerrain = false;
+  // 2026-05-17 S2 — Terrain exaggeration (1.0=düz, 1.5=default, 3.0=dramatik)
+  double _terrainExaggeration = 1.5;
+  // 2026-05-19 — Hillshade gölge yoğunluğu (0=kapalı, 0.55=default, 1.5=max).
+  // Dağların yükseklik algısını arttırır.
+  double _hillshadeIntensity = 0.55;
   bool _showCloudLayer = false;
   double _cloudOpacity = 0.70;
+  // 2026-05-27 (O1): İzohips contour overlay (OpenTopoMap). Default kapalı.
+  bool _showContour = false;
+  double _contourOpacity = 0.55;
+  // 2026-05-27 (O2): Contour kaynağı — 'opentopo' (raster) | 'self' (vektör MVT).
+  // Default opentopo; self-hosted mbtiles hazır olunca kullanıcı geçebilir.
+  String _contourSource = 'opentopo';
 
   // Aşama I: PostGIS MVT vektör katmanları (haritada açılıp kapanan overlay'ler).
   // Backend tek tile endpoint'inden 3 layer servis ediyor:
@@ -119,6 +131,52 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   List<CityWeatherData>? _selectedCityHourlyData;
   bool _isLoadingSelectedCityData = false;
   int _cityDataRequestId = 0;
+
+  // --- 2026-05-08 — Pin Detail state ---
+  // DEPRECATED (2026-05-09 Strategic Reset): yeni `PinFlowController._activePin`
+  // tek source of truth. Bu API geriye uyum için (PinsPanel sidebar +
+  // ScenarioSidePanel cross-sheet) tutuluyor. Yeni geliştirmeler doğrudan
+  // `PinFlowController.openPinDetail(pin)` çağırmalı.
+  Pin? _activePinDetail;
+  Pin? get activePinDetail => _activePinDetail;
+
+  // --- 2026-05-08 — Reverse Geocode cache (PinAddFlow V3 popover header) ---
+  // V3 inline popover header "İl/İlçe" gösterir. Aynı noktaya tekrar tıklamada
+  // backend'i bombardımana tutmamak için son sonucu cache'le. (Pin form da
+  // header'da bunu okur — tek kaynaktan.)
+  final Map<String, Map<String, String>> _reverseGeocodeCache = {};
+
+  /// Koordinatın il/ilçe karşılığını döner. Cache → backend.
+  /// Türkiye dışı koordinatta `{'province': '', 'district': ''}` döner.
+  Future<Map<String, String>?> fetchReverseGeocode(LatLng point) async {
+    final key = '${point.latitude.toStringAsFixed(4)}_${point.longitude.toStringAsFixed(4)}';
+    final cached = _reverseGeocodeCache[key];
+    if (cached != null) return cached;
+    try {
+      final result = await _apiService.geo
+          .getCityForCoords(point.latitude, point.longitude);
+      _reverseGeocodeCache[key] = result;
+      // Cache büyümesin — eski girdileri sil
+      if (_reverseGeocodeCache.length > 50) {
+        _reverseGeocodeCache.remove(_reverseGeocodeCache.keys.first);
+      }
+      return result;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void openPinDetail(Pin pin) {
+    if (_activePinDetail?.id == pin.id) return;
+    _activePinDetail = pin;
+    safeNotify();
+  }
+
+  void closePinDetail() {
+    if (_activePinDetail == null) return;
+    _activePinDetail = null;
+    safeNotify();
+  }
 
   // --- Coğrafi Seçim Modu (Bölge / İl / İlçe) ---
   bool _isProvinceModeActive = false;
@@ -194,8 +252,29 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   bool get showGlobe => _showGlobe;
   bool get show3DBuildings => _show3DBuildings;
   bool get show3DTerrain => _show3DTerrain;
+  double get terrainExaggeration => _terrainExaggeration;
+  double get hillshadeIntensity => _hillshadeIntensity;
   bool get showCloudLayer => _showCloudLayer;
   double get cloudOpacity => _cloudOpacity;
+  // O1: contour
+  bool get showContour => _showContour;
+  double get contourOpacity => _contourOpacity;
+  // O2: contour kaynağı
+  String get contourSource => _contourSource;
+
+  // M-B.2/3: ML iklim projeksiyon haritası paneli açık mı?
+  bool _mlProjectionPanelOpen = false;
+  bool get mlProjectionPanelOpen => _mlProjectionPanelOpen;
+  void toggleMlProjectionPanel() {
+    _mlProjectionPanelOpen = !_mlProjectionPanelOpen;
+    safeNotify();
+  }
+
+  void setMlProjectionPanel(bool open) {
+    if (_mlProjectionPanelOpen == open) return;
+    _mlProjectionPanelOpen = open;
+    safeNotify();
+  }
 
   // Aşama I: PostGIS MVT vektör katman getter'ları
   bool get showHydroLayer => _showHydroLayer;
@@ -341,6 +420,32 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       return null;
     }
   }
+
+  /// 2026-05-08 — Madde 4: Bölge seçildiğinde Unified Selection Card'da
+  /// Rüzgar/Işınım/Sıcaklık değerlerini "-" yerine **bölge ortalaması** olarak
+  /// göster. Backend `/weather/region-summary` zaten bölge bazlı ortalama
+  /// döndürüyor (`RegionSummary.avgWindSpeed` vb.). Burada eşleştirip döner.
+  ///
+  /// NOT: Dart default `.toLowerCase()` Türkçe-aware DEĞİL — `'İ'.toLowerCase()`
+  /// = `'i̇'` (i + combining dot above), bu da backend'in `'iç anadolu'` ile
+  /// eşleşmez (sessizce null döner). Türkçe-safe lower kullan: önce `İ→i`,
+  /// `I→ı` replace, sonra toLowerCase.
+  RegionSummary? get selectedRegionSummary {
+    if (_selectedRegionName == null || _regionSummaries.isEmpty) return null;
+    final target = _trLower(_selectedRegionName!);
+    try {
+      return _regionSummaries.firstWhere(
+        (r) => _trLower(r.regionName) == target,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Türkçe-safe lower-case. Dart standart `.toLowerCase()` 'İ' için combining
+  /// mark ekliyor — Türkçe-İngilizce arası ASCII'de gözükmeyen fark.
+  static String _trLower(String s) =>
+      s.trim().replaceAll('İ', 'i').replaceAll('I', 'ı').toLowerCase();
 
   /// Seçili ilçenin hava özeti — district-summary listesinden eşleştirme.
   /// GeoJSON "Zonguldak Merkez" formatında gelir; API "Merkez" döndürür.
@@ -581,6 +686,29 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     safeNotify();
   }
 
+  /// 2026-05-17 S2 — Terrain yükseklik abartması (1.0-3.0).
+  /// Slider canlı update, JS bridge ile direkt MapLibre setTerrain yenilenir
+  /// (kaynak yeniden yüklenmez — hızlı). Terrain kapalıysa state saklanır,
+  /// terrain açıldığında uygulanır.
+  void setTerrainExaggeration(double v) {
+    final clamped = v.clamp(1.0, 3.0);
+    if ((clamped - _terrainExaggeration).abs() < 0.01) return;
+    _terrainExaggeration = clamped;
+    MapViewMapLibre.setTerrainExaggeration(clamped);
+    safeNotify();
+  }
+
+  /// 2026-05-19 — Hillshade gölge yoğunluğu (0-1.5).
+  /// 3D Arazi açıkken aktif. Dağların yükseklik algısını arttırır
+  /// (Kullanıcı geribildirimi: "kabartma var ama yüksekliği anlamıyorum").
+  void setHillshadeIntensity(double v) {
+    final clamped = v.clamp(0.0, 1.5);
+    if ((clamped - _hillshadeIntensity).abs() < 0.01) return;
+    _hillshadeIntensity = clamped;
+    MapViewMapLibre.setHillshadeIntensity(clamped);
+    safeNotify();
+  }
+
   void toggleShowCloudLayer() {
     _showCloudLayer = !_showCloudLayer;
     safeNotify();
@@ -588,6 +716,39 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   void setCloudOpacity(double v) {
     _cloudOpacity = v.clamp(0.0, 1.0);
+    safeNotify();
+  }
+
+  /// 2026-05-27 (O1): İzohips contour overlay aç/kapa.
+  /// OpenTopoMap raster veya self-hosted MVT (O2) — hillshade ile aynı anda
+  /// açık olabilir.
+  void setContourEnabled(bool enabled) {
+    if (_showContour == enabled) return;
+    _showContour = enabled;
+    MapViewMapLibre.toggleContour(enabled, _contourOpacity,
+        source: _contourSource);
+    safeNotify();
+  }
+
+  /// 2026-05-27 (O2): Contour kaynağını değiştir ('opentopo' | 'self').
+  /// Açıksa katmanı yeni kaynakla yeniden çizer.
+  void setContourSource(String source) {
+    final s = (source == 'self') ? 'self' : 'opentopo';
+    if (_contourSource == s) return;
+    _contourSource = s;
+    if (_showContour) {
+      MapViewMapLibre.toggleContour(true, _contourOpacity, source: s);
+    }
+    safeNotify();
+  }
+
+  void setContourOpacity(double v) {
+    final clamped = v.clamp(0.0, 1.0);
+    if ((clamped - _contourOpacity).abs() < 0.01) return;
+    _contourOpacity = clamped;
+    if (_showContour) {
+      MapViewMapLibre.setContourOpacity(clamped);
+    }
     safeNotify();
   }
 
@@ -648,6 +809,19 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   }
 
   // --- Coğrafi Seçim Modu Metodları ---
+
+  /// Tematik harita aç/kapa. **Auto-open ilçe modu mantığı kaldırıldı**
+  /// (2026-05-17 kullanıcı kararı): tematik artık standalone render
+  /// edilir, ilçe modu kullanıcının manuel kontrolünde kalır.
+  ///
+  /// Tematik KAPANIRKEN: choropleth tap tooltip her zaman temizlenir
+  /// (mixin'in setChoroplethMode'u zaten _choroplethTapDistrict'i sıfırlar).
+  /// Selected district/province dokunulmaz — kullanıcı manuel ilçe modu
+  /// kullanıyorsa seçimi korur.
+  @override
+  Future<void> setChoroplethMode(ChoroplethMode mode) async {
+    await super.setChoroplethMode(mode);
+  }
 
   /// Seçim modunu kapat.
   void closeSelectionMode() {
@@ -710,6 +884,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     _selectedProvinceName  = null;
     _selectedDistrictName  = null;
     _districtSummaries     = [];
+    // Manuel açılıyorsa (caller bu method'u direkt çağırdı) thematic
+    // auto-open flag'ini set etme — setChoroplethMode bunu override eder
+    // tematik açma sürecindeyse.
     safeNotify();
     if (_provinceSummaries.isEmpty) loadProvinceSummaries();
     if (_regionSummaries.isEmpty) loadRegionSummaries();
@@ -803,6 +980,46 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
       _selectionLevel = SelectionLevel.none;
     }
     safeNotify();
+  }
+
+  /// Mixin'in setChoroplethTap'ını genişletir — tematik harita aktifken
+  /// ilçeye tıklayınca yalnız mini tooltip değil, **zengin** ProvinceInfoCard
+  /// da açılsın diye selection state'ini de kurar.
+  ///
+  /// Bug 5 fix: Tematik harita + ilçe tıklama → sol alt bilgi kartı açılmıyordu.
+  /// Bug 2 fix: Selection mode "none" kalıyordu (kullanıcı "null" gözlemledi).
+  @override
+  void setChoroplethTap(String province, String district) {
+    // 1. Mixin'in temel davranışı (tooltip data + color)
+    super.setChoroplethTap(province, district);
+
+    // 2. ProvinceInfoCard'ın açılması için selection state'i ayarla.
+    //    Mixin sadece tap geçerliyse choroplethTapDistrict set eder
+    //    (mode != none ve data var). Aynı koşulu burada da doğrula.
+    if (choroplethTapDistrict == null) return;
+
+    final wasActive = _isProvinceModeActive;
+    _isProvinceModeActive = true;
+    if (_initialSelectionMode == SelectionLevel.none) {
+      _initialSelectionMode = SelectionLevel.district;
+    }
+    _selectionLevel = SelectionLevel.district;
+    _selectedProvinceName = province;
+    _selectedDistrictName = _mapDistrictName(district);
+
+    // Yaz cache'i ısıt — kart "yükleniyor" gösterse bile arka plan yüklesin
+    if (_provinceSummaries.isEmpty) {
+      loadProvinceSummaries();
+    }
+    final hasDistrictsForProvince = _districtSummaries
+        .any((d) => d.provinceName.toLowerCase() == province.toLowerCase());
+    if (!hasDistrictsForProvince) {
+      loadDistrictSummaries(province);
+    }
+
+    // super.setChoroplethTap zaten safeNotify çağırdı — yine de selection
+    // değişikliği için bir notify daha (state diff varsa)
+    if (!wasActive) safeNotify();
   }
 
   Future<void> loadProvinceSummaries({int hours = 168}) async {
@@ -937,9 +1154,11 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   Future<void> loadEquipments({String? type, bool forceRefresh = false}) async {
     if (_equipmentsLoading) return;
 
-    // If we have cached equipment, skip re-fetch unless forceRefresh AND stale (>5 min)
-    if (_equipments.isNotEmpty) {
-      if (!forceRefresh) return;
+    // 2026-05-17 fix: forceRefresh=true HER ZAMAN re-fetch eder (eski mantık
+    // 5 dakika dolmadıysa skip ediyordu → kullanıcı yeni ekipman ekledikten
+    // sonra dropdown güncellenmiyordu). Sadece forceRefresh=false durumunda
+    // cache fresh ise (var ve <5 dk) skip et.
+    if (!forceRefresh && _equipments.isNotEmpty) {
       if (_equipmentsLastFetch != null &&
           DateTime.now().difference(_equipmentsLastFetch!).inMinutes < 5) {
         return;
@@ -961,6 +1180,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   }
 
   // --- UI İşlemleri ---
+  /// DEPRECATED (2026-05-09 Strategic Reset): `PinFlowController.enterPlacing()`
+  /// kullan. Bu API geriye uyum için tutuluyor.
   void startPlacingMarker(PinType type) {
     // Eğer zaten o tipte ekleme modundaysa, modu kapat
     if (_placingPinType == type) {
@@ -1213,6 +1434,13 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     double? flowRate,
     double? headHeight,
     double? basinAreaKm2,
+    // 2026-05-17 Sprint A — Gelişmiş Ayarlar manuel parametre alanları
+    double? panelTilt,
+    double? panelAzimuth,
+    double? panelPowerW,
+    double? hubHeight,
+    double? rotorDiameter,
+    double? ratedPowerKw,
   }) async {
     try {
       // Pin oluşturulmadan önce şehir/ilçe bilgisini çek (bir kez, DB'ye kaydedilir)
@@ -1240,6 +1468,12 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         basinAreaKm2: basinAreaKm2,
         city: city,
         district: district,
+        panelTilt: panelTilt,
+        panelAzimuth: panelAzimuth,
+        panelPowerW: panelPowerW,
+        hubHeight: hubHeight,
+        rotorDiameter: rotorDiameter,
+        ratedPowerKw: ratedPowerKw,
       );
       await fetchPins();
       return newPin;
@@ -1260,6 +1494,12 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     double? flowRate,
     double? headHeight,
     double? basinAreaKm2,
+    double? panelTilt,
+    double? panelAzimuth,
+    double? panelPowerW,
+    double? hubHeight,
+    double? rotorDiameter,
+    double? ratedPowerKw,
   }) async {
     try {
       final updatedPin = await _apiService.resource.updatePin(
@@ -1273,6 +1513,12 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
         flowRate: flowRate,
         headHeight: headHeight,
         basinAreaKm2: basinAreaKm2,
+        panelTilt: panelTilt,
+        panelAzimuth: panelAzimuth,
+        panelPowerW: panelPowerW,
+        hubHeight: hubHeight,
+        rotorDiameter: rotorDiameter,
+        ratedPowerKw: ratedPowerKw,
       );
       await fetchPins(); // Listeyi güncelle
       return updatedPin;

@@ -1,7 +1,7 @@
 ---
 tags: [overview, vision, onboarding]
-updated: 2026-04-19
-related: [INBOX, "PLAN-2026-04-19-to-23", INDEX]
+updated: 2026-05-08
+related: [INBOX, "PLAN-2026-04-19-to-23", INDEX, PinAddFlow, LibrarySidePanel]
 ---
 
 # 🌍 SRRP — Proje Büyük Resim
@@ -50,18 +50,30 @@ Detay kurulum: [[README.md]] kök dizininde.
 4. **Vault tek bilgi kaynağı.** Kod değiştirince ilgili `.md` aynı commit'te güncellenir. Eski `frontend/ARCHITECTURE.md` artık dondu.
 5. **Harita Stack kuralı.** MapScreen ana Stack'e eklenen her widget `Positioned` ile sarılmalı. [[MapStackPositioned]].
 
-## Bu Sprint'in Odağı (19-23 Nisan)
+## Önceki Sprint (19-23 Nisan) — Tamamlandı
 
-Kök problem tek: **Veriler tutarsız.** Haritada "her şey 100 puan", İl Analizi'nde "hepsi 40-60". Sebep: ön-işlenmemiş veri, her istek canlı hesaplama.
-
-Çözüm sırası:
-1. **Faz 1 (Pzr):** Backend scheduler + `province_analysis` tablosu → tek kaynak.
-2. **Faz 2 (Pzt):** Raporlar redesign + Harita entegrasyonu + Önerilen Bölgeler.
-3. **Faz 3 (Salı):** Senaryo düzeltme + Ayarlar + Genel Bakış kaldır + Bulut disable.
-4. **Faz 4 (Çar):** Parity + regression + kod dondurma.
-5. **Faz 5 (Per):** AI seslendirmeli tanıtım videosu.
-
+Faz 1-3 tamamlandı: APScheduler + `province_analysis` + tek-kaynak endpoints,
+Raporlar redesign, Senaryo düzeltme, Ayarlar ekranı, Genel Bakış kaldırıldı.
 Tam detay: [[PLAN-2026-04-19-to-23]].
+
+## Aktif Sprint (2026-05-08+) — Pin UX Yeniden Yapılandırma
+
+2026-05-08 test turunda kullanıcı pin akışının ve sol panelin yanlış
+yorumlandığını söyledi. Doğru yapı:
+
+1. **Pin V3 inline popover** (tıklanan noktanın üstünde 3-tip mini menü)
+2. **Pin V2 zengin floating form** (pin yanına yapışık, sağ veri paneli + alt yıllık tahmin + gelişmiş ayarlar)
+3. **Sol Kütüphane panel** (Senaryolar | Pinlerim segmented header, kaynak-gruplu pin listesi, alt "Yeni Kaynak Ekle")
+4. **Suitability RES genişletme** (yerleşim/otoyol/sanayi/orman mesafe kontrolleri)
+5. **Telefon kritik bug fix** (il modu, zaman simülasyonu, chatbot `part.function_call`)
+
+Detay: [[INBOX]] (2026-05-08 bölümü), [[PinAddFlow]], [[LibrarySidePanel]],
+[[AdvancedSettings]].
+
+**Sprint 1 odak:** Pin akışı + sol panel (UX kritik).
+**Sprint 2:** Telefon bugları + chatbot fix.
+**Sprint 3:** Suitability RES + gelişmiş ayarlar form.
+**Sprint 4:** HES backend potansiyel (DSI/EİE), marker stilleri, polish.
 
 ## Sprint Sonrası (Bu Teslimden Sonra)
 

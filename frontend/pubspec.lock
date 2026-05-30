@@ -344,6 +344,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.9.0"
+  just_the_tooltip:
+    dependency: "direct main"
+    description:
+      name: just_the_tooltip
+      sha256: "7a081133d57285bfb41b331f411006d57b433d7b35772e6155745f6a7a09cb82"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.12"
   latlong2:
     dependency: "direct main"
     description:
@@ -384,6 +392,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.1.1"
+  lottie:
+    dependency: "direct main"
+    description:
+      name: lottie
+      sha256: c5fa04a80a620066c15cf19cc44773e19e9b38e989ff23ea32e5903ef1015950
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.3.1"
   maplibre:
     dependency: "direct main"
     description:

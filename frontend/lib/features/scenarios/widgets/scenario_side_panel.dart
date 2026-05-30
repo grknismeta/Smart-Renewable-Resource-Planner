@@ -8,6 +8,7 @@ import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 import 'package:frontend/features/scenarios/dialogs/scenario_create_dialog.dart';
+import 'package:frontend/features/pins/controllers/pin_flow_controller.dart';
 
 /// Haritanın solundan kayan senaryo yönetim paneli.
 class ScenarioSidePanel extends StatefulWidget {
@@ -24,7 +25,13 @@ class ScenarioSidePanel extends StatefulWidget {
   State<ScenarioSidePanel> createState() => _ScenarioSidePanelState();
 }
 
+// Sprint 1.3 — Kütüphane panel iki sekmesi.
+// Bkz: [[LibrarySidePanel]] (vault).
+enum _LibraryTab { scenarios, pins }
+
 class _ScenarioSidePanelState extends State<ScenarioSidePanel> {
+  _LibraryTab _activeTab = _LibraryTab.scenarios;
+
   @override
   void initState() {
     super.initState();
@@ -72,12 +79,18 @@ class _ScenarioSidePanelState extends State<ScenarioSidePanel> {
               return Column(
                 children: [
                   _buildHeader(context, scenarioVM, mapVM),
+                  // Sprint 1.3 — Segmented tab switcher (Senaryolar | Pinlerim)
+                  _buildTabSwitcher(scenarioVM, mapVM),
                   Divider(
                     height: 1,
                     thickness: 0.5,
                     color: widget.theme.secondaryTextColor.withValues(alpha: 0.15),
                   ),
-                  Expanded(child: _buildList(context, scenarioVM, mapVM)),
+                  Expanded(
+                    child: _activeTab == _LibraryTab.scenarios
+                        ? _buildList(context, scenarioVM, mapVM)
+                        : _buildPinsList(context, mapVM),
+                  ),
                 ],
               );
             },
@@ -92,21 +105,22 @@ class _ScenarioSidePanelState extends State<ScenarioSidePanel> {
     ScenarioViewModel scenarioVM,
     MapViewModel mapVM,
   ) {
+    // Sprint 1.3 — başlık "Kütüphane" (Senaryolar + Pinlerim ortak panel).
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 12, 12),
+      padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
       child: Row(
         children: [
-          const Icon(Icons.layers, color: Colors.blueAccent, size: 20),
+          const Icon(Icons.collections_bookmark_rounded, color: Colors.blueAccent, size: 20),
           const SizedBox(width: 10),
           Text(
-            'Senaryolar',
+            'Kütüphane',
             style: TextStyle(
               color: widget.theme.textColor,
               fontWeight: FontWeight.bold,
               fontSize: 16,
             ),
           ),
-          if (scenarioVM.hasSelection) ...[
+          if (_activeTab == _LibraryTab.scenarios && scenarioVM.hasSelection) ...[
             const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -126,13 +140,14 @@ class _ScenarioSidePanelState extends State<ScenarioSidePanel> {
             ),
           ],
           const Spacer(),
-          _IconBtn(
-            icon: Icons.add,
-            color: Colors.blueAccent,
-            tooltip: 'Yeni Senaryo',
-            onTap: () => _showCreateDialog(context, mapVM),
-          ),
-          if (scenarioVM.hasSelection) ...[
+          if (_activeTab == _LibraryTab.scenarios)
+            _IconBtn(
+              icon: Icons.add,
+              color: Colors.blueAccent,
+              tooltip: 'Yeni Senaryo',
+              onTap: () => _showCreateDialog(context, mapVM),
+            ),
+          if (_activeTab == _LibraryTab.scenarios && scenarioVM.hasSelection) ...[
             const SizedBox(width: 6),
             _IconBtn(
               icon: Icons.deselect,
@@ -151,6 +166,244 @@ class _ScenarioSidePanelState extends State<ScenarioSidePanel> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 2-segment tab switcher: [Senaryolar | Pinlerim], badge sayaçları ile.
+  Widget _buildTabSwitcher(ScenarioViewModel scenarioVM, MapViewModel mapVM) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: widget.theme.backgroundColor.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: widget.theme.secondaryTextColor.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Row(
+          children: [
+            _tabButton(
+              label: 'Senaryolar',
+              icon: Icons.layers_rounded,
+              isActive: _activeTab == _LibraryTab.scenarios,
+              count: scenarioVM.scenarios.length,
+              onTap: () => setState(() => _activeTab = _LibraryTab.scenarios),
+            ),
+            _tabButton(
+              label: 'Pinlerim',
+              icon: Icons.location_on_rounded,
+              isActive: _activeTab == _LibraryTab.pins,
+              count: mapVM.pins.length,
+              onTap: () => setState(() => _activeTab = _LibraryTab.pins),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tabButton({
+    required String label,
+    required IconData icon,
+    required bool isActive,
+    required int count,
+    required VoidCallback onTap,
+  }) {
+    final activeColor = isActive
+        ? widget.theme.textColor
+        : widget.theme.secondaryTextColor;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: isActive ? widget.theme.cardColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 14, color: activeColor),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: activeColor,
+                  fontSize: 12.5,
+                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 5),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: widget.theme.backgroundColor.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    color: activeColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Pinlerim sekmesi — kaynak tipine göre gruplu liste (V5 mantığı).
+  /// Her grup: ☀ Güneş / 💨 Rüzgar / 💧 HES başlığı altında pin'ler.
+  /// Tıklama → `mapVM.openPinDetail` (V2 bottom card açılır).
+  Widget _buildPinsList(BuildContext context, MapViewModel mapVM) {
+    final pins = mapVM.pins;
+    if (pins.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.location_on_outlined,
+              size: 44,
+              color: widget.theme.secondaryTextColor.withValues(alpha: 0.4),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Henüz pin yok',
+              style: TextStyle(
+                color: widget.theme.secondaryTextColor,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Haritadan "Santral Kur" ile başla',
+              style: TextStyle(
+                color: widget.theme.secondaryTextColor.withValues(alpha: 0.7),
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final solar = pins.where((p) => p.type == 'Güneş Paneli').toList();
+    final wind = pins.where((p) => p.type == 'Rüzgar Türbini').toList();
+    final hes = pins.where((p) => p.type == 'Hidroelektrik').toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      children: [
+        if (solar.isNotEmpty) _pinGroup(mapVM, 'Güneş', Icons.wb_sunny_rounded, Colors.orange, solar),
+        if (wind.isNotEmpty) _pinGroup(mapVM, 'Rüzgar', Icons.wind_power_rounded, Colors.blueAccent, wind),
+        if (hes.isNotEmpty) _pinGroup(mapVM, 'HES', Icons.water_drop_rounded, const Color(0xFF1DB954), hes),
+      ],
+    );
+  }
+
+  Widget _pinGroup(MapViewModel mapVM, String label, IconData icon, Color color, List<Pin> pins) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              children: [
+                Icon(icon, size: 14, color: color),
+                const SizedBox(width: 6),
+                Text(
+                  '$label (${pins.length})',
+                  style: TextStyle(
+                    color: widget.theme.secondaryTextColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...pins.map((p) => _pinRow(mapVM, p, color)),
+        ],
+      ),
+    );
+  }
+
+  Widget _pinRow(MapViewModel mapVM, Pin pin, Color accentColor) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          // 2026-05-09 Strategic Reset: PinFlowController doğrudan tetiklenir.
+          try {
+            Provider.of<PinFlowController>(context, listen: false)
+                .openPinDetail(pin);
+          } catch (_) {
+            mapVM.openPinDetail(pin); // fallback geriye uyum
+          }
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: widget.theme.backgroundColor.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: accentColor.withValues(alpha: 0.18)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 6, height: 6,
+                decoration: BoxDecoration(color: accentColor, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      pin.name,
+                      style: TextStyle(
+                        color: widget.theme.textColor,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      '${pin.capacityMw.toStringAsFixed(1)} MW'
+                      '${(pin.city != null && pin.city!.isNotEmpty) ? " · ${pin.city}" : ""}',
+                      style: TextStyle(
+                        color: widget.theme.secondaryTextColor,
+                        fontSize: 10.5,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 16,
+                color: widget.theme.secondaryTextColor.withValues(alpha: 0.6),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -561,28 +814,43 @@ class _ScenarioCardState extends State<_ScenarioCard> {
               ),
             ),
             const SizedBox(height: 4),
+            // Cross-sheet navigation (A.5): pin satırı tıklanabilir → pin detay
+            // bottom card overlay'i açılır. ScenarioSidePanel kapanmaz; harita
+            // alanında card gösterilir, kullanıcı geri panel'e dönebilir.
             ...scenarioPins.take(5).map(
-                  (p) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _pinIcon(p.type),
-                          size: 11,
-                          color: _pinColor(p.type),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            p.name,
-                            style: TextStyle(
-                              color: theme.textColor,
-                              fontSize: 11,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                  (p) => InkWell(
+                    onTap: () {
+                      Provider.of<MapViewModel>(context, listen: false)
+                          .openPinDetail(p);
+                    },
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _pinIcon(p.type),
+                            size: 11,
+                            color: _pinColor(p.type),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              p.name,
+                              style: TextStyle(
+                                color: theme.textColor,
+                                fontSize: 11,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 12,
+                            color: theme.secondaryTextColor.withValues(alpha: 0.5),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

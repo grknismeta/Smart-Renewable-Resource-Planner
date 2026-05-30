@@ -69,11 +69,11 @@ Refresh mantığı [[MapViewModel#Refresh]] + `MapLayerMixin.forceRefreshChoropl
 
 Üç ayrı buton; her biri VM'deki karşılık gelen metodu çağırır:
 
-| Buton | Metod | Sonuç |
-|---|---|---|
-| Bölge | `mapViewModel.openRegionMode()` | 7 bölge görünür |
-| İl | `mapViewModel.openProvincesMode()` | 81 il görünür |
-| İlçe | `mapViewModel.openDistrictsMode()` | Tüm Türkiye ilçeleri |
+| Buton | Metod                              | Sonuç                |
+| ----- | ---------------------------------- | -------------------- |
+| Bölge | `mapViewModel.openRegionMode()`    | 7 bölge görünür      |
+| İl    | `mapViewModel.openProvincesMode()` | 81 il görünür        |
+| İlçe  | `mapViewModel.openDistrictsMode()` | Tüm Türkiye ilçeleri |
 
 Aktif mod highlight edilir (`isProvinceModeActive`, `isDistrictsModeActive`, `isRegionsModeActive`).
 

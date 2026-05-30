@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>SRRP — Raporlar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="tokens.css"/>
+  <style>
+    body { background: #0B0E14; }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="ios-frame.jsx"></script>
+  <script type="text/babel" src="shared.jsx"></script>
+
+  <!-- Data layer -->
+  <script type="text/babel" src="reports-data.jsx"></script>
+  <script type="text/babel" src="reports-data-tr.jsx"></script>
+
+  <!-- Chart primitives -->
+  <script type="text/babel" src="reports-charts.jsx"></script>
+  <script type="text/babel" src="reports-charts-v2.jsx"></script>
+
+  <!-- Sections (Senaryo Raporu) -->
+  <script type="text/babel" src="reports-sections.jsx"></script>
+  <script type="text/babel" src="reports-extras.jsx"></script>
+  <script type="text/babel" src="reports-shells.jsx"></script>
+
+  <!-- v3: Landing + Bölge + İl + Hava + Pin Extended -->
+  <script type="text/babel" src="reports-landing.jsx"></script>
+  <script type="text/babel" src="reports-landing-responsive.jsx"></script>
+  <script type="text/babel" src="reports-region.jsx"></script>
+  <script type="text/babel" src="reports-province.jsx"></script>
+  <script type="text/babel" src="reports-province-responsive.jsx"></script>
+  <script type="text/babel" src="time-simulation.jsx"></script>
+  <script type="text/babel" src="reports-pin-extended.jsx"></script>
+
+  <script type="text/babel">
+    const Intro = () => (
+      <div style={{ width: 1100, padding: '24px 28px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 18, color: 'var(--text)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(20,184,166,.16)', border: '1px solid rgba(20,184,166,.4)', display: 'grid', placeItems: 'center' }}>
+            <Icon name="roi" size={18} color="var(--accent)"/>
+          </div>
+          <div>
+            <div style={{ font: '700 18px/1 var(--font)', letterSpacing: '-.01em' }}>SRRP · Raporlar Sekmesi · v3</div>
+            <div style={{ font: '500 12px/1.4 var(--font)', color: 'var(--text-3)', marginTop: 4 }}>Landing → Bölge → İl → İlçe hiyerarşisi · Senaryo & Santral analizi · Hava analizi · 3 cihaz uyumlu</div>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 9, marginBottom: 10 }}>
+          {[
+            ['🏠 LANDING',  'Türkiye potansiyel haritası + 4 KPI', '7 bölge kartı · top 10 il · 10-yıl trend · potansiyel/gerçekleşen'],
+            ['🗺️ BÖLGE',   '7 coğrafi bölge', 'İklim profili · rüzgar gülü · iller · yatırım fırsatları'],
+            ['📍 İL',       'Province + Hava sub-tab', 'İlçe haritası · 3 kolon en iyi GES/RES/HES · karşılaştırma tablosu'],
+            ['🌤️ HAVA',     'Sub-tab (İl içinde)', '3 tip için: ışınım · rüzgar · yağış · risk uyarıları'],
+            ['📊 SENARYO',  'Mevcut, dokunulmadı', 'Akıllı özet · Hassasiyet · P50/P90 · Karşılaştırma · Print'],
+            ['🏭 SANTRAL', 'Pin raporu genişletildi', 'Üretim zaman çizelgesi · type deep-dive · TR finans · manuel override'],
+          ].map(([k, v, w]) => (
+            <div key={k} style={{ padding: 12, background: 'rgba(0,0,0,.25)', borderRadius: 11, border: '1px solid var(--border-2)' }}>
+              <div style={{ font: '600 10px/1 var(--font-mono)', color: 'var(--accent)', letterSpacing: '.08em', marginBottom: 5 }}>{k}</div>
+              <div style={{ font: '600 12px/1.3 var(--font)', color: 'var(--text)', marginBottom: 5 }}>{v}</div>
+              <div style={{ font: '500 10.5px/1.5 var(--font)', color: 'var(--text-3)' }}>{w}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: 11, background: 'rgba(20,184,166,.06)', border: '1px solid rgba(20,184,166,.25)', borderRadius: 10, font: '500 12px/1.5 var(--font)', color: 'var(--text-2)' }}>
+          <b style={{ color: 'var(--accent)' }}>Veri katmanı:</b> Türkiye 2024 gerçek değerleri (TEİAŞ 116.8 GW · 65.4 GW yenil. · %56 pay) · MGM/PVGIS/ERA-5/DSİ iklim ortalamaları · 27 öne çıkan il, ilçe detayı, ayrı saha gösterimi. <b style={{ color: 'var(--accent)' }}>Hiyerarşi:</b> Bölge → İl → İlçe → Saha. <b style={{ color: 'var(--accent)' }}>Etkileşim:</b> il/ilçe seçimi, bölge filtresi, slider'lar tüm cihazlarda çalışır.
+        </div>
+      </div>
+    );
+
+    const App = () => (
+      <DesignCanvas title="SRRP · Raporlar v3">
+
+        <DCSection id="brief" title="00 · Brief & v3 Yenilikleri">
+          <DCArtboard id="brief" label="Tasarım özeti + yeni eklenenler" width={1100} height={400}>
+            <Intro/>
+          </DCArtboard>
+        </DCSection>
+
+        {/* LANDING */}
+        <DCSection id="landing" title="01 · LANDING · Türkiye Genel Bakış">
+          <DCArtboard id="landing-desktop" label="Desktop · Türkiye haritası + 7 bölge + top 10 il + trend · 1280×2000" width={1280} height={2000}>
+            <LandingDesktop/>
+          </DCArtboard>
+          <DCArtboard id="landing-tablet" label="Tablet (820×1180)" width={820} height={1180}>
+            <LandingTablet/>
+          </DCArtboard>
+          <DCArtboard id="landing-mobile" label="Mobile (390×844)" width={430} height={930}>
+            <IOSDevice width={390} height={844} dark>
+              <LandingMobile/>
+            </IOSDevice>
+          </DCArtboard>
+        </DCSection>
+
+        {/* BÖLGE ANALİZİ */}
+        <DCSection id="region" title="02 · BÖLGE ANALİZİ · İç Anadolu örneği">
+          <DCArtboard id="region-desktop" label="Desktop · iklim profili + iller + fırsatlar · 1280×1800" width={1280} height={1800}>
+            <RegionAnalysisDesktop initialRegion="icanadolu"/>
+          </DCArtboard>
+          <DCArtboard id="region-tablet" label="Tablet (820×1180)" width={820} height={1180}>
+            <RegionAnalysisTablet initialRegion="icanadolu"/>
+          </DCArtboard>
+          <DCArtboard id="region-mobile" label="Mobile (390×844)" width={430} height={930}>
+            <IOSDevice width={390} height={844} dark>
+              <RegionAnalysisMobile initialRegion="icanadolu"/>
+            </IOSDevice>
+          </DCArtboard>
+        </DCSection>
+
+        {/* İL ANALİZİ — Saha Potansiyeli */}
+        <DCSection id="province" title="03 · İL ANALİZİ · Konya örneği · Saha Potansiyeli">
+          <DCArtboard id="province-desktop" label="Desktop · ilçe haritası + en iyi GES/RES/HES + karşılaştırma · 1280×1700" width={1280} height={1700}>
+            <ProvinceAnalysisDesktop initialProvinceId="konya"/>
+          </DCArtboard>
+          <DCArtboard id="province-tablet" label="Tablet (820×1180)" width={820} height={1180}>
+            <ProvinceAnalysisTablet initialProvinceId="konya"/>
+          </DCArtboard>
+          <DCArtboard id="province-mobile" label="Mobile (390×844)" width={430} height={930}>
+            <IOSDevice width={390} height={844} dark>
+              <ProvinceAnalysisMobile initialProvinceId="konya"/>
+            </IOSDevice>
+          </DCArtboard>
+        </DCSection>
+
+        {/* İL — Hidro örneği (Artvin) */}
+        <DCSection id="province-hydro" title="03b · İL ANALİZİ · Artvin · Hidro lider">
+          <DCArtboard id="province-artvin" label="Desktop · Karadeniz hidro lideri · 1280×1700" width={1280} height={1700}>
+            <ProvinceAnalysisDesktop initialProvinceId="artvin"/>
+          </DCArtboard>
+        </DCSection>
+
+        {/* HAVA ANALİZİ — Detaylı görünüm İl içinden */}
+        <DCSection id="weather" title="04 · HAVA ANALİZİ · İl sub-tab (Konya örneği)">
+          <DCArtboard id="weather-info" label="İl Analizi → Hava Analizi sekmesi seçili · 1280×1700" width={1280} height={1700}>
+            <ProvinceAnalysisWeatherView/>
+          </DCArtboard>
+        </DCSection>
+
+        {/* SENARYO RAPORU — mevcut, kısaltıldı (önceki tasarım) */}
+        <DCSection id="senaryo" title="05 · SENARYO RAPORU (mevcut, v2'den)">
+          <DCArtboard id="senaryo-desktop" label="6 bölüm + Akıllı özet + Hassasiyet + P50/P90 · 1280×2400" width={1280} height={2400}>
+            <DesktopReportApp/>
+          </DCArtboard>
+          <DCArtboard id="senaryo-comparison" label="Karşılaştırma · Senaryo A vs B · 1280×1500" width={1280} height={1500}>
+            <ComparisonReportApp/>
+          </DCArtboard>
+          <DCArtboard id="senaryo-print" label="A4 Yazdırma · 4 sayfa · 1280×2560" width={1280} height={2560}>
+            <PrintReportApp/>
+          </DCArtboard>
+        </DCSection>
+
+        {/* ZAMAN SİMÜLASYONU — yeni responsive widget */}
+        <DCSection id="timesim" title="05b · ZAMAN SİMÜLASYONU · Yeniden tasarlandı · Web · Tablet · Telefon">
+          <DCArtboard id="timesim-intro" label="Tasarım notu" width={1180} height={290}>
+            <div style={{ width: '100%', padding: '20px 22px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, color: 'var(--text)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(20,184,166,.16)', border: '1px solid rgba(20,184,166,.45)', display: 'grid', placeItems: 'center' }}>
+                  <Icon name="roi" size={16} color="var(--accent)"/>
+                </div>
+                <div>
+                  <div style={{ font: '700 16px/1 var(--font)', letterSpacing: '-.01em' }}>Eski “Geçmişten Bugüne Üretim” → Zaman Simülasyonu</div>
+                  <div style={{ font: '500 11.5px/1.4 var(--font)', color: 'var(--text-3)', marginTop: 4 }}>Devreye alımdan +5 yıl ufka kadar scrub & play · 4 metrik · P10–P90 güven aralığı · milestone tıklaması · 3 cihaz</div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
+                {[
+                  ['SCRUB & PLAY',   'Zaman çizgisi tıklanabilir, oynat/duraklat, 3 hız (1×–4×–16×)'],
+                  ['GÜVEN ARALIĞI', 'Bugün sonrası için P10–P90 taralı alan; tahmin çizgisi kesikli'],
+                  ['4 METRİK',      'Üretim (GWh) · Gelir (₺) · CO₂ (kton) · Hane eşdeğeri'],
+                  ['MİLESTONE',     'Devreye alım · 1 GWh · Geri ödeme · Tepe ay (her biri butonlu)'],
+                ].map(([k, v]) => (
+                  <div key={k} style={{ padding: 10, background: 'rgba(0,0,0,.25)', borderRadius: 9, border: '1px solid var(--border-2)' }}>
+                    <div style={{ font: '600 10px/1 var(--font-mono)', color: 'var(--accent)', letterSpacing: '.06em', marginBottom: 5 }}>{k}</div>
+                    <div style={{ font: '500 11.5px/1.45 var(--font)', color: 'var(--text-2)' }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding: 11, background: 'rgba(20,184,166,.06)', border: '1px solid rgba(20,184,166,.25)', borderRadius: 9, font: '500 11.5px/1.5 var(--font)', color: 'var(--text-2)' }}>
+                <b style={{ color: 'var(--accent)' }}>Veri modeli:</b> Devreye alım tarihi pin id’den deterministik (~2.5–3.5y önce) · aylık profil + seçilen hava varyansı + yıl 5’ten sonra yıllık %0.4 dejenerasyon. <b style={{ color: 'var(--accent)' }}>Etkileşim:</b> grafiğin üzerinde tıkla/sürükle, oynat butonuna bas, metrik seç, milestone’a tıkla — tüm cihazlarda çalışır.
+              </div>
+            </div>
+          </DCArtboard>
+          <DCArtboard id="timesim-desktop" label="Web (1180×620)" width={1200} height={640}>
+            <div style={{ padding: 10 }}>
+              <TimeSimulation pin={REPORT_PINS.find(p => p.id === 2) || REPORT_PINS[0]} variant="desktop"/>
+            </div>
+          </DCArtboard>
+          <DCArtboard id="timesim-desktop-solar" label="Web · GES (Konya) · metrik = Gelir vurgusu" width={1200} height={640}>
+            <div style={{ padding: 10 }}>
+              <TimeSimulation pin={REPORT_PINS.find(p => p.id === 1) || REPORT_PINS[0]} variant="desktop"/>
+            </div>
+          </DCArtboard>
+          <DCArtboard id="timesim-desktop-hydro" label="Web · HES (Çoruh)" width={1200} height={640}>
+            <div style={{ padding: 10 }}>
+              <TimeSimulation pin={REPORT_PINS.find(p => p.id === 3) || REPORT_PINS[2]} variant="desktop"/>
+            </div>
+          </DCArtboard>
+          <DCArtboard id="timesim-tablet" label="Tablet (820×780)" width={820} height={780}>
+            <div style={{ padding: 10 }}>
+              <TimeSimulation pin={REPORT_PINS.find(p => p.id === 2) || REPORT_PINS[0]} variant="tablet"/>
+            </div>
+          </DCArtboard>
+          <DCArtboard id="timesim-mobile" label="Telefon (390×844)" width={430} height={780}>
+            <IOSDevice width={390} height={760} dark>
+              <div style={{ padding: 12, background: '#0B0E14', minHeight: '100%' }}>
+                <TimeSimulation pin={REPORT_PINS.find(p => p.id === 2) || REPORT_PINS[0]} variant="mobile"/>
+              </div>
+            </IOSDevice>
+          </DCArtboard>
+        </DCSection>
+
+        {/* SANTRAL ANALİZİ — Pin extended */}
+        <DCSection id="santral" title="06 · SANTRAL ANALİZİ · 3 type için extended (yeni)">
+          <DCArtboard id="santral-wind" label="RES örnek · Bandırma · Production Timeline + Power Curve + TR Finans · 1280×2200" width={1280} height={2200}>
+            <PinReportExtended pinId={2}/>
+          </DCArtboard>
+          <DCArtboard id="santral-solar" label="GES örnek · Konya · Tilt/Azimuth interaktif · 1280×2200" width={1280} height={2200}>
+            <PinReportExtended pinId={1}/>
+          </DCArtboard>
+          <DCArtboard id="santral-hydro" label="HES örnek · Çoruh · Debi profili + Türbin önerisi · 1280×2200" width={1280} height={2200}>
+            <PinReportExtended pinId={3}/>
+          </DCArtboard>
+        </DCSection>
+
+        {/* SANTRAL — Pin Raporu (basit, mevcut) */}
+        <DCSection id="pinreport-orig" title="06b · PİN RAPORU (mevcut basit versiyon)">
+          <DCArtboard id="pinreport-orig" label="Basit pin raporu · 1280×1300" width={1280} height={1300}>
+            <PinReportApp pinId={2}/>
+          </DCArtboard>
+        </DCSection>
+
+      </DesignCanvas>
+    );
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

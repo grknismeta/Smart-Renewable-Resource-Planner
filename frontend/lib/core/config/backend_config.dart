@@ -17,9 +17,15 @@ class BackendConfig {
 
   static const String _kPrefKey = 'srrp_backend_url';
 
-  /// Android/iOS/desktop için varsayılan. PC LAN IP'si burada tutulur.
-  /// Kullanıcı Ayarlar'dan farklı bir URL girerse bu override edilir.
-  static const String defaultMobileBackendUrl = 'http://192.168.1.15:8000';
+  /// Android/iOS/desktop için varsayılan.
+  ///
+  /// 2026-05-20: `localhost`'a çevrildi. Geliştirme akışı `adb reverse
+  /// tcp:8000 tcp:8000` (USB tüneli) — telefon localhost:8000'i PC'ye
+  /// yönlendirir. LAN IP (192.168.x.x) DHCP'de değişir + adb tüneli LAN
+  /// IP'sini taşımaz; localhost IP değişiminden bağımsız ve daha sağlam.
+  /// LAN üzerinden bağlanmak istenirse Ayarlar → Veri Kaynağı'ndan
+  /// `http://<PC-IP>:8000` girilir.
+  static const String defaultMobileBackendUrl = 'http://localhost:8000';
 
   /// Web fallback (Uri.base.host kullanılamadığı durumlar için).
   static const String defaultWebBackendUrl = 'http://127.0.0.1:8000';

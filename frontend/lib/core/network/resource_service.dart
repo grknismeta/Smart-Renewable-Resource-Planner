@@ -32,6 +32,13 @@ class ResourceService extends BaseService {
     String? city,
     String? district,
     String? waterBodyName,
+    // 2026-05-17 Sprint A — Gelişmiş Ayarlar manuel parametreler
+    double? panelTilt,
+    double? panelAzimuth,
+    double? panelPowerW,
+    double? hubHeight,
+    double? rotorDiameter,
+    double? ratedPowerKw,
   }) async {
     final Map<String, dynamic> pinData = {
       'latitude': point.latitude,
@@ -47,6 +54,12 @@ class ResourceService extends BaseService {
       if (city != null && city.isNotEmpty) 'city': city,
       if (district != null && district.isNotEmpty) 'district': district,
       if (waterBodyName != null && waterBodyName.isNotEmpty) 'water_body_name': waterBodyName,
+      if (panelTilt != null) 'panel_tilt': panelTilt,
+      if (panelAzimuth != null) 'panel_azimuth': panelAzimuth,
+      if (panelPowerW != null) 'panel_power_w': panelPowerW,
+      if (hubHeight != null) 'hub_height': hubHeight,
+      if (rotorDiameter != null) 'rotor_diameter': rotorDiameter,
+      if (ratedPowerKw != null) 'rated_power_kw': ratedPowerKw,
     };
 
     final response = await http.post(
@@ -54,11 +67,11 @@ class ResourceService extends BaseService {
       headers: await getHeaders(),
       body: json.encode(pinData),
     );
-    
+
     if (response.statusCode == 201) {
        final data = processResponse(response);
        return Pin.fromJson(data);
-    } 
+    }
     throw Exception('Pin eklenemedi (Status code: ${response.statusCode})');
   }
 
@@ -76,6 +89,12 @@ class ResourceService extends BaseService {
     String? city,
     String? district,
     String? waterBodyName,
+    double? panelTilt,
+    double? panelAzimuth,
+    double? panelPowerW,
+    double? hubHeight,
+    double? rotorDiameter,
+    double? ratedPowerKw,
   }) async {
     final Map<String, dynamic> pinData = {
       'latitude': point.latitude,
@@ -91,6 +110,12 @@ class ResourceService extends BaseService {
       if (city != null && city.isNotEmpty) 'city': city,
       if (district != null && district.isNotEmpty) 'district': district,
       if (waterBodyName != null && waterBodyName.isNotEmpty) 'water_body_name': waterBodyName,
+      if (panelTilt != null) 'panel_tilt': panelTilt,
+      if (panelAzimuth != null) 'panel_azimuth': panelAzimuth,
+      if (panelPowerW != null) 'panel_power_w': panelPowerW,
+      if (hubHeight != null) 'hub_height': hubHeight,
+      if (rotorDiameter != null) 'rotor_diameter': rotorDiameter,
+      if (ratedPowerKw != null) 'rated_power_kw': ratedPowerKw,
     };
 
     final response = await http.put(
@@ -205,4 +230,75 @@ class ResourceService extends BaseService {
     }
     throw Exception('Toplu analiz başarısız (Status code: ${response.statusCode})');
   }
+
+  /// GET /pins/{id}/generation — Pin'in dönem bazlı üretim geçmişi.
+  ///
+  /// [period]: today | week | month | year | total
+  Future<PinGeneration> fetchPinGeneration(
+    int pinId, {
+    String period = 'month',
+  }) async {
+    final uri = Uri.parse('$baseUrl/pins/$pinId/generation')
+        .replace(queryParameters: {'period': period});
+    final response = await http.get(uri, headers: await getHeaders());
+    final data = processResponse(response);
+    if (data is! Map) {
+      throw Exception('Beklenmeyen yanıt: /pins/$pinId/generation');
+    }
+    return PinGeneration.fromJson(Map<String, dynamic>.from(data));
+  }
+}
+
+/// /pins/{id}/generation yanıtı.
+class PinGeneration {
+  final int pinId;
+  final String period;
+  final DateTime startDate;
+  final DateTime endDate;
+  final double totalKwh;
+  final List<GenerationPoint> dailyBreakdown;
+  final double? comparisonPrevPeriodKwh;
+  final double? comparisonPctChange;
+  final String dataSource; // hourly_actual | climatology_interpolated | hybrid
+
+  const PinGeneration({
+    required this.pinId,
+    required this.period,
+    required this.startDate,
+    required this.endDate,
+    required this.totalKwh,
+    required this.dailyBreakdown,
+    required this.comparisonPrevPeriodKwh,
+    required this.comparisonPctChange,
+    required this.dataSource,
+  });
+
+  factory PinGeneration.fromJson(Map<String, dynamic> j) {
+    return PinGeneration(
+      pinId: (j['pin_id'] as num?)?.toInt() ?? 0,
+      period: j['period']?.toString() ?? '',
+      startDate: DateTime.tryParse(j['start_date']?.toString() ?? '') ??
+          DateTime.now(),
+      endDate: DateTime.tryParse(j['end_date']?.toString() ?? '') ??
+          DateTime.now(),
+      totalKwh: (j['total_kwh'] as num?)?.toDouble() ?? 0,
+      dailyBreakdown: ((j['daily_breakdown'] as List?) ?? const [])
+          .map((e) => GenerationPoint.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+      comparisonPrevPeriodKwh:
+          (j['comparison_prev_period_kwh'] as num?)?.toDouble(),
+      comparisonPctChange: (j['comparison_pct_change'] as num?)?.toDouble(),
+      dataSource: j['data_source']?.toString() ?? 'unknown',
+    );
+  }
+}
+
+class GenerationPoint {
+  final String date;
+  final double kwh;
+  const GenerationPoint({required this.date, required this.kwh});
+  factory GenerationPoint.fromJson(Map<String, dynamic> j) => GenerationPoint(
+        date: j['date']?.toString() ?? '',
+        kwh: (j['kwh'] as num?)?.toDouble() ?? 0,
+      );
 }

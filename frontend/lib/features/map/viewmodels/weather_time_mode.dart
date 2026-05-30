@@ -23,6 +23,10 @@ enum WeatherTimeWindow {
   sixMonth,
   yearly,
   season,
+  // 2026-05-28: Uzun pencereler — ayda bir precompute edilir (thematic_aggregate).
+  twoYear,
+  fiveYear,
+  tenYear,
   custom,
 }
 
@@ -78,8 +82,30 @@ extension WeatherTimeWindowX on WeatherTimeWindow {
         return 'yearly';
       case WeatherTimeWindow.season:
         return 'season';
+      case WeatherTimeWindow.twoYear:
+        return 'twoYear';
+      case WeatherTimeWindow.fiveYear:
+        return 'fiveYear';
+      case WeatherTimeWindow.tenYear:
+        return 'tenYear';
       case WeatherTimeWindow.custom:
         return 'custom';
+    }
+  }
+
+  /// Bu mod ayda bir precompute ediliyor mu? (thematic-precomputed endpoint).
+  /// True ise frontend `/weather/thematic-precomputed` kullanır.
+  bool get isPrecomputed {
+    switch (this) {
+      case WeatherTimeWindow.sixMonth:
+      case WeatherTimeWindow.yearly:
+      case WeatherTimeWindow.season:
+      case WeatherTimeWindow.twoYear:
+      case WeatherTimeWindow.fiveYear:
+      case WeatherTimeWindow.tenYear:
+        return true;
+      default:
+        return false;
     }
   }
 
@@ -100,6 +126,12 @@ extension WeatherTimeWindowX on WeatherTimeWindow {
         return 'Yıllık';
       case WeatherTimeWindow.season:
         return 'Mevsim';
+      case WeatherTimeWindow.twoYear:
+        return '2 Yıl';
+      case WeatherTimeWindow.fiveYear:
+        return '5 Yıl';
+      case WeatherTimeWindow.tenYear:
+        return '10 Yıl';
       case WeatherTimeWindow.custom:
         return 'Özel';
     }
@@ -122,6 +154,12 @@ extension WeatherTimeWindowX on WeatherTimeWindow {
       case WeatherTimeWindow.yearly:
       case WeatherTimeWindow.season:
         return 365;
+      case WeatherTimeWindow.twoYear:
+        return 730;
+      case WeatherTimeWindow.fiveYear:
+        return 1825;
+      case WeatherTimeWindow.tenYear:
+        return 3650;
       case WeatherTimeWindow.custom:
         return -1;
     }

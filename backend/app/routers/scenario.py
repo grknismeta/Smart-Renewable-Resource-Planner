@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, cast, Any, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 
 from app import auth
@@ -163,6 +163,104 @@ def update_scenario(
     return db_scenario
 
 
+def _monthly_distribution(pin, resource_type: str) -> List[float]:
+    """Pin'in yıllık üretimini 12 aya dağıtmak için oransal profil döner.
+
+    2026-05-25 (P1/4): Senaryo aylık breakdown için.
+    - **GES (solar):** monthly_sunshine_hours profili — daha güneşli ay = daha
+      yüksek pay.
+    - **HES (hydro):** monthly_river_discharge.mean profili — debinin yüksek
+      olduğu ay = daha yüksek pay.
+    - **RES (wind):** monthly wind speed verisi yok (climatology'de eksik) →
+      düz dağılım (her ay 1/12).
+
+    Dönen list 12 eleman, toplamı 1.0. Profil bulunamazsa düz dağılım.
+    """
+    from app.db.database import SystemSessionLocal
+    from app.services.province_aliases import province_aliases
+
+    flat = [1.0 / 12] * 12
+    city = getattr(pin, "city", None)
+    if not city:
+        return flat
+    try:
+        with SystemSessionLocal() as sdb:
+            variants = province_aliases(str(city))
+            # Climatology row'unu çek (resource_type filtre yok — monthly veriler
+            # tüm satırlarda aynı olabilir, ilk uygun olanı al)
+            rows = (
+                sdb.query(models.Climatology)
+                .filter(
+                    models.Climatology.province_name.in_(variants),
+                    models.Climatology.district_name.is_(None),
+                )
+                .all()
+            )
+            if not rows:
+                return flat
+
+            if resource_type == "solar":
+                # monthly_sunshine_hours: [h_jan, ..., h_dec]
+                for r in rows:
+                    sh = getattr(r, "monthly_sunshine_hours", None)
+                    if isinstance(sh, list) and len(sh) == 12:
+                        total = sum(sh)
+                        if total > 0:
+                            return [float(x) / total for x in sh]
+            elif resource_type == "hydro":
+                # monthly_river_discharge: [{"mean": .., "min": .., "max": ..}, ...]
+                for r in rows:
+                    md = getattr(r, "monthly_river_discharge", None)
+                    if isinstance(md, list) and len(md) == 12:
+                        means = []
+                        for m in md:
+                            if isinstance(m, dict):
+                                v = m.get("mean", 0)
+                                means.append(float(v) if v else 0.0)
+                            else:
+                                means.append(0.0)
+                        total = sum(means)
+                        if total > 0:
+                            return [m / total for m in means]
+            # RES için profil yok → düz dağılım
+    except Exception as e:
+        logger.debug("monthly_distribution okunamadı ({}): {}", city, e)
+    return flat
+
+
+def _climatology_capacity_factor(pin, resource_type: str) -> float:
+    """Pin'in ilinin climatology capacity_factor'ünü döner (0-1).
+
+    Senaryo yıllık üretimi: capacity_mw × 1000 × CF × 8760.
+    CF 10-yıl ortalamadan statik hesaplanır — saatlik veri kapsamından
+    bağımsız, tutarlı. Climatology'de kayıt yoksa sektör fallback'i.
+    """
+    from app.db.database import SystemSessionLocal
+    from app.services.province_aliases import province_aliases
+
+    fallback = {"solar": 0.16, "wind": 0.30, "hydro": 0.45}
+    city = getattr(pin, "city", None)
+    if not city:
+        return fallback.get(resource_type, 0.20)
+    try:
+        with SystemSessionLocal() as sdb:
+            variants = province_aliases(str(city))
+            row = (
+                sdb.query(models.Climatology)
+                .filter(
+                    models.Climatology.province_name.in_(variants),
+                    models.Climatology.resource_type == resource_type,
+                    models.Climatology.district_name.is_(None),
+                )
+                .first()
+            )
+            if row and row.capacity_factor:
+                return float(row.capacity_factor)
+    except Exception as e:
+        logger.debug("climatology CF okunamadı ({}): {}", city, e)
+    return fallback.get(resource_type, 0.20)
+
+
 @router.post("/{scenario_id}/calculate", response_model=schemas.ScenarioResponse)
 def calculate_scenario(
     scenario_id: int,
@@ -228,20 +326,31 @@ def calculate_scenario(
     start_date_obj = parse_dt(start_date)
     end_date_obj = parse_dt(end_date)
 
-    if start_date_obj is None or end_date_obj is None:
+    # 2026-05-26 (N1): start_date hâlâ zorunlu (geçmişten başlamalı), ama
+    # end_date null ise "süresiz" sayılır → bugüne kadar üret. Kullanıcı
+    # "şu ana kadar" demek için end_date'i boş bırakabilir. Yeni veri
+    # geldikçe senaryo otomatik genişler (recalculate ettiğinde).
+    if start_date_obj is None:
         logger.warning(
-            "Senaryo {} /calculate → 400: tarih eksik/geçersiz "
-            "(start={!r}, end={!r})",
-            scenario_id, start_date, end_date,
+            "Senaryo {} /calculate → 400: start_date eksik/geçersiz "
+            "(start={!r})",
+            scenario_id, start_date,
         )
         raise HTTPException(
             status_code=400,
             detail=(
-                "Senaryonun tarih aralığı eksik veya geçersiz. "
-                "Senaryoyu düzenleyip Başlangıç ve Bitiş tarihlerini seçin."
+                "Senaryonun Başlangıç tarihi eksik veya geçersiz. "
+                "Senaryoyu düzenleyip Başlangıç tarihini seçin."
             ),
         )
-    
+    if end_date_obj is None:
+        # Süresiz senaryo — bugüne kadar üretmeye devam ediyor.
+        end_date_obj = datetime.utcnow()
+        logger.info(
+            "Senaryo {} süresiz: end_date null → bugün ({}) kullanılıyor",
+            scenario_id, end_date_obj.date(),
+        )
+
     start_date = start_date_obj
     end_date = end_date_obj
     
@@ -255,176 +364,143 @@ def calculate_scenario(
     solar_count = 0
     wind_count = 0
     hydro_count = 0
+    # 2026-05-25 (P1/4): Aylık breakdown — pin başına climatology profilinden
+    # oran çekip yıllık üretimi 12 aya dağıt, toplam aylık dizini güncelle.
+    monthly_total_kwh = [0.0] * 12
+    monthly_solar_kwh = [0.0] * 12
+    monthly_wind_kwh = [0.0] * 12
+    monthly_hydro_kwh = [0.0] * 12
     
-    # On-Demand Service Import
-    from app.services.collectors.on_demand import fetch_point_climate_data
+    # DB-tabanlı hesaplama — 2026-05-21 refactor.
+    # Eski yöntem her pin için canlı Open-Meteo çağrısı (`fetch_point_climate_data`)
+    # yapıyordu → API kotası dolunca senaryo hesaplaması çöküyordu. Yeni yöntem:
+    #   - GES/RES: `compute_pin_generation` (climatology + hourly_weather_data, DB)
+    #   - HES: calculate_annual_hydro_production (debi/düşü fiziksel hesabı, DB-based)
+    # Artık kota bağımsız + pin_generation_service ile tutarlı.
+    #
+    # 2026-05-27 (Q1 bug fix): Eski kod `HydroService` class import etmeye
+    # çalışıyordu, ama hydro_service.py modüle-level fonksiyonlar içeriyor
+    # (class yok) → ImportError → 500 → senaryo "henüz hesaplanmamış" kalıyordu.
+    from app.services.hydro_service import calculate_annual_hydro_production
 
-    try:
-        for pin_id in pin_ids:
-            db_pin = db.query(models.Pin).filter(models.Pin.id == pin_id).first()
-            if not db_pin: # type: ignore
-                continue
-                
-            pin_type = str(db_pin.type or "Güneş Paneli").strip() # type: ignore
-            pin_lat = float(db_pin.latitude) # type: ignore
-            pin_lon = float(db_pin.longitude) # type: ignore
-            pin_title = str(db_pin.title or "Pin") # type: ignore
-            
-            prediction_result: Dict[str, Any] = {"pin_id": pin_id, "pin_name": pin_title, "type": pin_type}
-            
-            # --- Common Data Fetching (Efficient) ---
-            # Fetch climate data once for both Solar and Wind using the robust On-Demand service
-            # This avoids the complex and error-prone invalid DB queries for 'WeatherData'
-            # and fulfills the "No ML" requirement by using physical math on real data.
-            climate_data = fetch_point_climate_data(pin_lat, pin_lon, years=1)
-            
-            if "error" in climate_data:
-                prediction_result["error"] = f"Hava verisi alınamadı: {climate_data['error']}"
-                pin_results.append(prediction_result)
-                continue
+    for pin_id in pin_ids:
+        db_pin = db.query(models.Pin).filter(models.Pin.id == pin_id).first()
+        if not db_pin:  # type: ignore
+            continue
 
-            annual_summary = climate_data.get("annual_summary", {})
+        pin_type = str(db_pin.type or "Güneş Paneli").strip()  # type: ignore
+        pin_name = str(
+            getattr(db_pin, "name", None)
+            or getattr(db_pin, "title", None)
+            or f"Pin {pin_id}"
+        )
+        prediction_result: Dict[str, Any] = {
+            "pin_id": pin_id, "pin_name": pin_name, "type": pin_type,
+        }
 
-            if "Güneş" in pin_type or "Solar" in pin_type or pin_type == "Güneş Paneli":
-                try:
-                    # Basit Fiziksel Hesap (NO ML)
-                    # E = H * A * eff * PR
-                    annual_solar_kwh_m2 = annual_summary.get("total_solar_kwh_m2", 1600.0)
-                    
-                    # Varsayılanlar
-                    panel_area = float(db_pin.panel_area or 10.0) # type: ignore
-                    efficiency = 0.20
-                    PR = 0.80
-                    
-                    annual_production = annual_solar_kwh_m2 * panel_area * efficiency * PR
-                    
-                    # Sonuçları formatla
-                    prediction_result.update({
-                        "total_prediction_value": round(annual_production, 2),
-                        "daily_avg_production": round(annual_production / 365, 2),
-                        "info": "Yıllık fiziksel simülasyon (ML Kullanılmadı)"
-                    })
-                    
-                    # Aylık dağılım (Grafik için)
-                    monthly_data = climate_data.get("monthly_data", [])
-                    history = []
-                    today = datetime.now()
-                    for m in monthly_data:
-                         # Basit bir tarih oluştur (Geçmiş 1 yıl gibi göster)
-                         # 2024-01-15 gibi
-                         m_num = m['month']
-                         y_val = today.year - 1 if m_num > today.month else today.year
-                         d_str = f"{y_val}-{m_num:02d}-15"
-                         
-                         m_prod = m['total_solar_kwh_m2'] * panel_area * efficiency * PR
-                         history.append({
-                             "ds": d_str,
-                             "y": round(m_prod, 2)
-                         })
-                    
-                    prediction_result["history"] = history
-                    prediction_result["future"] = [] # ML yok, gelecek tahmini boş
+        is_hydro = (
+            "Hidro" in pin_type or "Hydro" in pin_type or "HES" in pin_type
+        )
 
-                    total_solar_kwh += annual_production
+        if is_hydro:
+            # HES — debi/düşü fiziksel hesabı (DB-based, kota bağımsız)
+            try:
+                flow_rate = float(db_pin.flow_rate) if db_pin.flow_rate else None  # type: ignore
+                head_height = float(db_pin.head_height) if db_pin.head_height else None  # type: ignore
+                basin_area_km2 = float(db_pin.basin_area_km2) if db_pin.basin_area_km2 else None  # type: ignore
+
+                if flow_rate is None and basin_area_km2 is None:
+                    prediction_result["error"] = "HES için debi veya havza alanı gerekli"
+                    pin_results.append(prediction_result)
+                    continue
+
+                # Q1 (2026-05-27): head_height zorunlu (fonksiyon imzası).
+                # Yoksa Türkiye HES ortalaması ~50m default — kullanıcı pin
+                # formunda eksik bıraktıysa çökmek yerine makul tahmin yap.
+                hydro_results = calculate_annual_hydro_production(
+                    latitude=float(db_pin.latitude),  # type: ignore
+                    longitude=float(db_pin.longitude),  # type: ignore
+                    head_height=head_height if head_height is not None else 50.0,
+                    flow_rate=flow_rate,
+                    basin_area_km2=basin_area_km2,
+                )
+                annual_prod = hydro_results.get("predicted_annual_production_kwh", 0.0)
+                # 2026-05-25 (P1/4): Aylık dağılım — climatology
+                # monthly_river_discharge profilinden oranlama.
+                profile = _monthly_distribution(db_pin, "hydro")
+                pin_monthly = [round(annual_prod * p, 2) for p in profile]
+                prediction_result.update({
+                    "total_prediction_value": round(annual_prod, 2),
+                    "daily_avg_production": round(annual_prod / 365, 2),
+                    "monthly_kwh": pin_monthly,
+                    "info": f"HES fiziksel hesaplama ({hydro_results.get('turbine_type', '')})",
+                    "history": [],
+                    "future": [],
+                })
+                for i, v in enumerate(pin_monthly):
+                    monthly_total_kwh[i] += v
+                    monthly_hydro_kwh[i] += v
+                total_hydro_kwh += annual_prod
+                hydro_count += 1
+            except Exception as e:
+                logger.warning("HES hesaplama hatası (pin {}): {}", pin_id, e)
+                prediction_result["error"] = f"HES hesaplama hatası: {str(e)}"
+        else:
+            # GES + RES — climatology capacity_factor bazlı yıllık üretim.
+            # annual_kwh = capacity_mw × 1000 × CF × 8760
+            # CF 10-yıl ortalamadan statik; saatlik veri kapsamından bağımsız,
+            # tutarlı (compute_pin_generation eksik-veri illerde düşük çıkıyordu).
+            try:
+                is_solar = "Güneş" in pin_type or "Solar" in pin_type
+                resource = "solar" if is_solar else "wind"
+                cf = _climatology_capacity_factor(db_pin, resource)
+                cap_mw = float(db_pin.capacity_mw or 1.0)  # type: ignore
+                annual_prod = cap_mw * 1000.0 * cf * 8760.0
+                # 2026-05-25 (P1/4): GES için monthly_sunshine_hours profili,
+                # RES için düz dağılım (climatology'de aylık wind yok).
+                profile = _monthly_distribution(db_pin, resource)
+                pin_monthly = [round(annual_prod * p, 2) for p in profile]
+                prediction_result.update({
+                    "total_prediction_value": round(annual_prod, 2),
+                    "daily_avg_production": round(annual_prod / 365, 2),
+                    "capacity_factor": round(cf, 3),
+                    "monthly_kwh": pin_monthly,
+                    "info": f"Climatology CF bazlı (KF %{cf * 100:.1f})",
+                    "history": [],
+                    "future": [],
+                })
+                for i, v in enumerate(pin_monthly):
+                    monthly_total_kwh[i] += v
+                    if is_solar:
+                        monthly_solar_kwh[i] += v
+                    else:
+                        monthly_wind_kwh[i] += v
+                if is_solar:
+                    total_solar_kwh += annual_prod
                     solar_count += 1
-                        
-                except Exception as e:
-                    logger.warning("Solar hesaplama hatası (pin {}): {}", pin_id, e)
-                    prediction_result["error"] = f"Solar hesaplama hatası: {str(e)}"
-                
-            elif "Rüzgar" in pin_type or "Wind" in pin_type or pin_type == "Rüzgar Türbini":
-                try:
-                    # Wind Service Reuse (Logic only)
-                    avg_speed = annual_summary.get("avg_wind", 6.0)
-                    
-                    weather_stats_adapter = {
-                        "annual_avg": {"wind": avg_speed}
-                    }
-                    
-                    wind_calc = wind_calculations.calculate_wind_power_production(pin_lat, pin_lon, weather_stats_adapter)
-                    annual_prod = wind_calc["predicted_annual_production_kwh"]
-                    
-                    prediction_result.update({
-                        "total_prediction_value": round(annual_prod, 2),
-                        "daily_avg_production": round(annual_prod / 365, 2),
-                        "info": "Rüzgar fiziksel hesaplama"
-                    })
-                    
-                    # Aylık Dağılım (Simüle veya Gerçek Rüzgar Verisinden)
-                    monthly_data = climate_data.get("monthly_data", [])
-                    history = []
-                    today = datetime.now()
-                    
-                    # Rüzgar hızı küpü ile orantılı dağıt
-                    total_speed_cubed = sum([m['avg_wind']**3 for m in monthly_data]) if monthly_data else 1
-                    
-                    for m in monthly_data:
-                         m_num = m['month']
-                         y_val = today.year - 1 if m_num > today.month else today.year
-                         d_str = f"{y_val}-{m_num:02d}-15"
-                         
-                         share = (m['avg_wind']**3) / total_speed_cubed if total_speed_cubed > 0 else 1/12
-                         m_prod = annual_prod * share
-                         
-                         history.append({
-                             "ds": d_str,
-                             "y": round(m_prod, 2)
-                         })
-                         
-                    prediction_result["history"] = history
-                    prediction_result["future"] = []
-
+                else:
                     total_wind_kwh += annual_prod
                     wind_count += 1
+            except Exception as e:
+                logger.warning("Pin {} üretim hesabı hatası: {}", pin_id, e)
+                prediction_result["error"] = f"Hesaplama hatası: {str(e)}"
 
-                except Exception as e:
-                     logger.warning("Rüzgar hesaplama hatası (pin {}): {}", pin_id, e)
-                     prediction_result["error"] = f"Rüzgar hesaplama hatası: {str(e)}"
-
-            elif "Hidroelektrik" in pin_type or "Hydro" in pin_type or "HES" in pin_type:
-                try:
-                    from app.services.hydro_service import HydroService
-                    hydro_service = HydroService()
-
-                    flow_rate = float(db_pin.flow_rate) if db_pin.flow_rate else None  # type: ignore
-                    head_height = float(db_pin.head_height) if db_pin.head_height else None  # type: ignore
-                    basin_area_km2 = float(db_pin.basin_area_km2) if db_pin.basin_area_km2 else None  # type: ignore
-
-                    if flow_rate is None and basin_area_km2 is None:
-                        prediction_result["error"] = "HES için debi veya havza alanı gerekli"
-                        pin_results.append(prediction_result)
-                        continue
-
-                    hydro_results = hydro_service.calculate(
-                        lat=pin_lat,
-                        lon=pin_lon,
-                        flow_rate=flow_rate,
-                        head_height=head_height,
-                        basin_area_km2=basin_area_km2,
-                    )
-
-                    annual_prod = hydro_results.get("predicted_annual_production_kwh", 0.0)
-                    prediction_result.update({
-                        "total_prediction_value": round(annual_prod, 2),
-                        "daily_avg_production": round(annual_prod / 365, 2),
-                        "info": f"HES fiziksel hesaplama ({hydro_results.get('turbine_type', '')})",
-                        "history": [],
-                        "future": [],
-                    })
-                    total_hydro_kwh += annual_prod
-                    hydro_count += 1
-
-                except Exception as e:
-                    logger.warning("HES hesaplama hatası (pin {}): {}", pin_id, e)
-                    prediction_result["error"] = f"HES hesaplama hatası: {str(e)}"
-
-            pin_results.append(prediction_result)
-            
-    except Exception as e:
-        logger.error("Senaryo genel hesaplama hatası: {}", e)
-        pass
+        pin_results.append(prediction_result)
 
     # Toplu sonuçları kaydet
+    # 2026-05-25 (P1/4): monthly_breakdown — yıllık üretim 12 aya dağıtılmış
+    # halde. Climatology profilinden alındı (solar → sunshine, hydro →
+    # discharge, wind → düz). Frontend bar chart için kullanılır.
+    monthly_breakdown = [
+        {
+            "month": i + 1,
+            "total_kwh": round(monthly_total_kwh[i], 2),
+            "solar_kwh": round(monthly_solar_kwh[i], 2),
+            "wind_kwh": round(monthly_wind_kwh[i], 2),
+            "hydro_kwh": round(monthly_hydro_kwh[i], 2),
+        }
+        for i in range(12)
+    ]
     summary = {
         "total_solar_kwh": total_solar_kwh,
         "total_wind_kwh": total_wind_kwh,
@@ -433,7 +509,8 @@ def calculate_scenario(
         "solar_count": solar_count,
         "wind_count": wind_count,
         "hydro_count": hydro_count,
-        "pin_results": pin_results
+        "monthly_breakdown": monthly_breakdown,
+        "pin_results": pin_results,
     }
     
     db_scenario.result_data = summary # type: ignore

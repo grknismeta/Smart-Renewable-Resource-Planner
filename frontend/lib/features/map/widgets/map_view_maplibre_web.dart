@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:js_interop';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:maplibre/maplibre.dart' as ml;
 import 'package:provider/provider.dart';
 
@@ -22,6 +23,29 @@ import 'package:frontend/core/theme/app_theme.dart';
 
 @JS('window.srrpSetTerrain')
 external void _jsSetTerrain(bool enable);
+
+// 2026-05-17 S2 — Parametrik exaggeration. Slider canlı güncelleme.
+@JS('window.srrpSetTerrainExaggeration')
+external void _jsSetTerrainExaggeration(double exaggeration);
+
+// 2026-05-19 — Hillshade gölge yoğunluğu slider (0-1.5).
+@JS('window.srrpSetHillshadeIntensity')
+external void _jsSetHillshadeIntensity(double intensity);
+
+// 2026-05-27 (O1/O2) — İzohips contour overlay.
+// source: 'opentopo' (raster) | 'self' (vektör MVT, O2).
+@JS('window.srrpToggleContour')
+external void _jsToggleContour(bool enabled, double opacity, String source);
+
+@JS('window.srrpSetContourOpacity')
+external void _jsSetContourOpacity(double opacity);
+
+// M-B.2/3 — ML iklim projeksiyon choropleth (il bazlı, normalize renk).
+@JS('window.srrpSetMlChoropleth')
+external void _jsSetMlChoropleth(String dataJson);
+
+@JS('window.srrpClearMlChoropleth')
+external void _jsClearMlChoropleth();
 
 @JS('window.srrpSetCloudLayer')
 external void _jsSetCloudLayer(bool enable, double opacity);
@@ -53,6 +77,25 @@ external void _jsToggleRestrictedLayer(bool visible);
 
 @JS('window.srrpToggleEnergyCorridorLayer')
 external void _jsToggleEnergyCorridorLayer(bool visible);
+
+// 2026-05-08 Madde 1: Pin preview marker (Santral Kur akışında tıklanan nokta).
+@JS('window.srrpShowPreviewPin')
+external void _jsShowPreviewPin(num lng, num lat);
+
+@JS('window.srrpHidePreviewPin')
+external void _jsHidePreviewPin();
+
+// 2026-05-08 Madde 5+6+7: Coğrafi anchor için JS köprüleri.
+//   srrpProjectLngLat → harita pixel koordinatı (JSON string {x,y})
+//   srrpRegisterAnchorListener → harita move/zoom → callback (string-free)
+@JS('window.srrpProjectLngLat')
+external String? _jsProjectLngLat(num lng, num lat);
+
+@JS('window.srrpRegisterAnchorListener')
+external void _jsRegisterAnchorListener(JSFunction callback);
+
+@JS('window.srrpUnregisterAnchorListener')
+external void _jsUnregisterAnchorListener();
 
 @JS('window.srrpStartWindParticles')
 external void _jsStartWindParticles(String geojsonStr);
@@ -87,6 +130,10 @@ external void _jsLoadBorderLayers(
   String distUrl,
   String regUrl,
 );
+
+// NOT: srrpMoveLayerToTop JS shim'i web/index.html'de hâlâ mevcut. Gerektiğinde
+// `@JS('window.srrpMoveLayerToTop') external void _jsMoveLayerToTop(String);`
+// tek satırla tekrar bind edilir.
 
 @JS('window.srrpSetupProvinceSelect')
 external void _jsSetupProvinceSelect(bool enable);
@@ -199,12 +246,12 @@ const _heatmapSolarId = 'srrp-heatmap-solar';
 const _heatmapWindId = 'srrp-heatmap-wind';
 const _heatmapTempId = 'srrp-heatmap-temp';
 
-const _martinSourceId = 'srrp-martin';
-// Martin tile URL - dinamik host kullanır (telefon/PC uyumlu)
-String get _martinTileJsonUrl {
-  final host = kIsWeb ? Uri.base.host : 'localhost';
-  return 'http://$host:3000/public.weather_tiles';
-}
+// NOT: Eski `_martinSourceId` (srrp-martin) `public.weather_tiles` table'ına
+// fetch yapıyordu — Martin server'da o tablo yok, 404 spam yaratıyordu ve
+// MapLibre tile loading state'ini meşgul edip `isStyleLoaded()`'u false'ta
+// tutuyordu (selection mode + click query'leri kırıyordu). Hiçbir layer ona
+// bağlı değildi (dead code). Kaldırıldı 2026-05-08. MVT vektör katmanları
+// (hydro/restricted/energy_corridor) ayrı `srrp-mvt-overlays` source'u kullanır.
 
 const _hillshadeSourceId = 'srrp-hillshade-dem';
 const _hillshadeLayerId = 'srrp-hillshade';
@@ -537,6 +584,49 @@ class MapViewMapLibre extends StatefulWidget {
     if (kIsWeb) _jsSetClickGuard(active);
   }
 
+  /// 2026-05-17 — Pin yerleştirme/forma modu aktifken queryClick atlanır,
+  /// tıklama doğrudan onMapTap'a gider. Bu sayede kullanıcı ilçe modu
+  /// açıkken pin yerleştirirken haritaya tıkladığında ilçe seçimi yerine
+  /// pin konumu güncellenir. PinFlowController.mode değişiminde sync edilir.
+  static bool _pinPlacementActive = false;
+  static void setPinPlacementActive(bool active) {
+    _pinPlacementActive = active;
+  }
+
+  /// 2026-05-17 S2 — Terrain exaggeration canlı güncelleme.
+  /// Slider değiştikçe çağrılır; terrain aktif değilse no-op.
+  static void setTerrainExaggeration(double exaggeration) {
+    if (kIsWeb) _jsSetTerrainExaggeration(exaggeration);
+  }
+
+  /// 2026-05-19 — Hillshade gölge yoğunluğu canlı güncelleme.
+  /// 3D Arazi aktifken hillshade layer otomatik eklenir; bu fonksiyon
+  /// sadece o layer'ın `hillshade-exaggeration` paint property'sini değiştirir.
+  static void setHillshadeIntensity(double intensity) {
+    if (kIsWeb) _jsSetHillshadeIntensity(intensity);
+  }
+
+  /// 2026-05-27 (O1/O2) — İzohips contour overlay aç/kapa.
+  /// [source]: 'opentopo' (raster, CC-BY-SA) | 'self' (vektör MVT).
+  static void toggleContour(bool enabled, double opacity,
+      {String source = 'opentopo'}) {
+    if (kIsWeb) _jsToggleContour(enabled, opacity, source);
+  }
+
+  /// Contour opacity güncelle (layer mevcutsa).
+  static void setContourOpacity(double opacity) {
+    if (kIsWeb) _jsSetContourOpacity(opacity);
+  }
+
+  /// M-B.2/3 — ML iklim projeksiyon choropleth (il bazlı JSON {"İl": değer}).
+  static void setMlChoropleth(String dataJson) {
+    if (kIsWeb) _jsSetMlChoropleth(dataJson);
+  }
+
+  static void clearMlChoropleth() {
+    if (kIsWeb) _jsClearMlChoropleth();
+  }
+
   /// Bölge seçim modunu başlat.
   static void setupRegionMode() {
     if (kIsWeb) _jsSetupRegionMode();
@@ -555,6 +645,47 @@ class MapViewMapLibre extends StatefulWidget {
   /// Tüm seçim katmanlarını kaldır ve kamerayı sıfırla.
   static void clearSelectionMode() {
     if (kIsWeb) _jsClearSelectionMode();
+  }
+
+  /// 2026-05-08 Madde 1: Pin preview marker. Santral Kur akışında haritada
+  /// tıklanan noktada teal halka + nokta gösterir; null → kaldırır.
+  /// Native fallback: Aşama 2 polish (Flutter MapLibre symbol layer).
+  static void showPreviewPin(LatLng? point) {
+    if (!kIsWeb) return; // native polish sonra
+    if (point == null) {
+      _jsHidePreviewPin();
+    } else {
+      _jsShowPreviewPin(point.longitude, point.latitude);
+    }
+  }
+
+  /// 2026-05-08 Madde 5+6+7: Coğrafi noktayı ekran piksel koordinatına çevirir.
+  /// `null` döner: harita henüz hazır değil ya da native (Sprint 2 polish).
+  static Offset? projectLngLatToScreen(LatLng point) {
+    if (!kIsWeb) return null;
+    final json = _jsProjectLngLat(point.longitude, point.latitude);
+    if (json == null) return null;
+    try {
+      final m = jsonDecode(json) as Map<String, dynamic>;
+      return Offset(
+        (m['x'] as num).toDouble(),
+        (m['y'] as num).toDouble(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 2026-05-08 Madde 5+6+7: Harita pan/zoom event'lerinde callback çağırır.
+  /// Caller (map_screen) state güncelleyip `projectLngLatToScreen` ile yeni
+  /// pixel pozisyonu alıp pop-up'ı yeniler. `null` callback → unregister.
+  static void registerAnchorListener(VoidCallback? callback) {
+    if (!kIsWeb) return;
+    if (callback == null) {
+      _jsUnregisterAnchorListener();
+    } else {
+      _jsRegisterAnchorListener(callback.toJS);
+    }
   }
 
   // ─── Animasyon static metodları ────────────────────────────────────
@@ -633,6 +764,10 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   // Choropleth (ilçe tematik harita)
   ChoroplethMode _lastChoropleth = ChoroplethMode.none;
   String? _lastChoroplethDataJson;
+  // Bug 1 fix: identity ref cache — jsonEncode'u her notify'de tekrarlamaktan kaçınır.
+  // 920 ilçe × 3 metrik için JSON encode ~ms düzeyinde maliyetli; layer panel
+  // toggle'ı sonrasında re-render storm jank'a yol açıyordu.
+  Object? _lastChoroplethDataRef;
 
   // Kümeleme
   bool _lastClustering = false;
@@ -1176,6 +1311,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _lastCloudOpacity = 0.70;
         _lastChoropleth = ChoroplethMode.none;
         _lastChoroplethDataJson = null;
+        _lastChoroplethDataRef = null;
         _lastPins = [];
         _lastSummary = [];
 
@@ -1219,15 +1355,32 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   // 3D/eğimli görünümde de doğru çalışır çünkü ekran koordinatı kullanır.
 
   Future<void> _onMapClick(ml.Position point) async {
-    // Dialog açıkken harita tıklamalarını yoksay
-    if (MapViewMapLibre._clickGuardActive) return;
+    // 2026-05-09 Sprint 5 — Click guard mantığı düzeltildi:
+    // Eski: guard aktifken HİÇBİR şey çalışmıyordu → pin form açıkken başka
+    //       pine tıklayamıyorduk (pinler arası geçiş yok).
+    // Yeni: guard aktifken yine queryClick yap — eğer **pin** tıklamasıysa
+    //       geçir (yeni pine geçiş), başka tıklamayı yine engelle.
+    final bool guard = MapViewMapLibre._clickGuardActive;
 
     if (!kIsWeb) {
-      widget.onMapTap?.call(point);
+      if (!guard) widget.onMapTap?.call(point);
       return;
     }
 
-    // JS queryRenderedFeatures ile hangi feature'a tıklandığını sorgula
+    // Pin yerleştirme modu aktifse queryClick'i atla — pin koymak istiyor,
+    // selection/choropleth/cluster match yutmasın.
+    // 2026-05-17 — Yeni PinFlowController için `_pinPlacementActive` flag'ı
+    // (placing/typeSelection/addForm modlarında true). Eski VM API'si
+    // (`placingPinType`) ile birlikte kontrol edilir.
+    final pinPlacement =
+        _vmRef?.placingPinType != null || MapViewMapLibre._pinPlacementActive;
+    if (pinPlacement && !guard) {
+      widget.onMapTap?.call(point);
+      return;
+    }
+    // Form/popover açıksa + placing mode kapalı ise: pin tıklaması iste
+    // pinler arası geçiş için.
+
     try {
       final resultJson = _jsQueryClick(point.lng.toDouble(), point.lat.toDouble());
       final result = jsonDecode(resultJson) as Map<String, dynamic>;
@@ -1259,6 +1412,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         return;
       }
 
+      // Guard aktifken pin tıklaması dışındakileri yoksay (form/popup açık)
+      if (guard) return;
+
       if (type == 'selection') {
         // ── İl / İlçe / Bölge seçim tıklaması ──
         final props = result['properties'] as Map<String, dynamic>? ?? {};
@@ -1286,6 +1442,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     } catch (e) {
       debugPrint('[MapLibre] queryClick hatası: $e');
     }
+
+    // Guard aktifken boş alan tıklaması da yoksay (form açıkken sadece pin geçiş)
+    if (guard) return;
 
     // ── Boş alan tıklaması ──
     _dismissInfoCard();
@@ -1891,6 +2050,12 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       _jsSetupPinClick();
     }
 
+    // NOT: Bug 4 fix için eklenen `_jsMoveLayerToTop` çağrıları kaldırıldı.
+    // Pin layer'ları zaten _initLayers sonunda eklendiği için stack'in tepesinde.
+    // Liberty gibi yoğun stil'lerde gizlilik şüphesi farklı kök nedenle ilgili
+    // olabilir — diagnostic log ile teşhis sonrası gerekirse `srrpMoveLayerToTop`
+    // helper'ı (web/index.html'de hâlâ mevcut) kullanılabilir.
+
     // GADM il/ilçe/bölge sınır katmanları
     // Dinamik URL: telefon veya PC fark etmez, doğru host'a bağlanır
     if (kIsWeb) {
@@ -1902,17 +2067,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       );
     }
 
-    // 3. Martin MVT source (opsiyonel)
-    try {
-      await style.addSource(
-        ml.VectorSource(
-          id: _martinSourceId,
-          url: _martinTileJsonUrl,
-          minZoom: 0,
-          maxZoom: 14,
-        ),
-      );
-    } catch (_) {}
+    // (Eski "Martin MVT source" eklemesi kaldırıldı — bkz. constants başındaki not.)
   }
 
   // ─── Pin Sync ─────────────────────────────────────────────────────
@@ -2245,27 +2400,37 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     final mode = vm.choroplethMode;
     final data = vm.choroplethData;
 
-    // Mod değişmediyse ve veri aynıysa atla
-    if (mode == _lastChoropleth && data == null) return;
+    // Bug 1 fix — Hızlı kapı: mode ve data referansı değişmediyse anında çık.
+    // Bu, jsonEncode (~920 ilçe × 3 metrik) çağrısını her notify'de
+    // tetiklemekten korur. Layer panel toggle sonrası kasma kök sebebi buydu.
+    if (mode == _lastChoropleth && identical(data, _lastChoroplethDataRef)) {
+      return;
+    }
 
     if (mode == ChoroplethMode.none) {
       if (_lastChoropleth != ChoroplethMode.none) {
         _jsSetChoropleth('none', null);
         _lastChoropleth = ChoroplethMode.none;
         _lastChoroplethDataJson = null;
+        _lastChoroplethDataRef = null;
       }
       return;
     }
 
     if (data == null || data.isEmpty) return;
 
-    // Veriyi JSON'a çevir ve cache'le
+    // Ağır: sadece data referansı değiştiyse encode.
     final dataJson = jsonEncode(data);
-    if (mode == _lastChoropleth && dataJson == _lastChoroplethDataJson) return;
+    // İçerik aynı çıkarsa (yeni Map kopyası ama eşit) JS bridge'i tekrar dürtme.
+    if (mode == _lastChoropleth && dataJson == _lastChoroplethDataJson) {
+      _lastChoroplethDataRef = data; // ref güncel kalsın → bir sonraki tur skip
+      return;
+    }
 
     _jsSetChoropleth(mode.dataKey, dataJson);
     _lastChoropleth = mode;
     _lastChoroplethDataJson = dataJson;
+    _lastChoroplethDataRef = data;
   }
 
   // ─── Terrain Sync ─────────────────────────────────────────────────

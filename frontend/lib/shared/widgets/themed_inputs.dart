@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'package:frontend/core/theme/app_theme.dart';
 
 /// Tema uyumlu text field widget'ı
@@ -87,6 +88,19 @@ class ThemedDropdown<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 2026-05-17 — Flutter web platform-view bug fix: dropdown overlay
+    // Material global Overlay'a yerleşir, MapLibre canvas alttan tıklamayı
+    // bubble eder ve pin konumunu değiştirir. Her item'ı PointerInterceptor
+    // ile sarmak tıklamayı yutar; canvas'a inmez.
+    final wrappedItems = items
+        .map((item) => DropdownMenuItem<T>(
+              value: item.value,
+              enabled: item.enabled,
+              alignment: item.alignment,
+              onTap: item.onTap,
+              child: PointerInterceptor(child: item.child),
+            ))
+        .toList();
     return DropdownButtonFormField<T>(
       value: value,
       dropdownColor: theme.cardColor,
@@ -105,7 +119,7 @@ class ThemedDropdown<T> extends StatelessWidget {
         filled: true,
         fillColor: theme.backgroundColor.withValues(alpha: 0.5),
       ),
-      items: items,
+      items: wrappedItems,
       onChanged: onChanged,
     );
   }

@@ -48,19 +48,25 @@ Percentile-based (p10/p90) adaptif skalalama kullanılıyordu:
 25   → #08306B  (fırtına)
 ```
 
-### Güneş Işınımı (`W/m²`, 0 → 800)
+### Güneş Işınımı (`W/m²`, 0 → 800) — 2026-05-19 TERS ÇEVRİLDİ
 ```
-  0  → #1a1a2e  (gece/kapalı)
- 50  → #FFFFCC
-150  → #FFEDA0
-250  → #FED976
-350  → #FEB24C
+  0  → #1a1a2e  (gece/kapalı — koyu lacivert)
+ 50  → #4D0014  (çok düşük — koyu bordo)
+150  → #BD0026
+250  → #E31A1C
+350  → #FC4E2A
 450  → #FD8D3C
-550  → #FC4E2A
-650  → #E31A1C
-750  → #BD0026
-800  → #4D0014  (maksimum ışınım)
+550  → #FEB24C
+650  → #FED976
+750  → #FFEDA0
+800  → #FFFFCC  (maksimum ışınım — parlak sarı)
 ```
+
+**Karar gerekçesi:** Eski skala sezgi karşıtıydı (yüksek=koyu bordo, düşük=
+soluk sarı). Kullanıcı raporu: "doğu sarı/turuncu, batı koyu kırmızı"
+görseli "doğu güneşli batı kötü" izlenimi veriyordu — gerçek tam tersi
+(Konya/Antalya 1000+ W/m², Rize/Trabzon 350 W/m²). Yeni progresyon:
+gece koyu → şafak bordo → öğle parlak sarı (sezgisel inferno-like).
 
 ## İmplementasyon
 

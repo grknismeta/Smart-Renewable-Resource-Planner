@@ -306,10 +306,11 @@ mixin MapLayerMixin on BaseViewModel {
     // ── Sabit fiziksel skala — haritayla birebir aynı ──────────
     List<List<dynamic>> physicalRamp;
     if (dataKey == 'solar') {
+      // 2026-05-19 — ters çevrildi: gece=koyu, çok güneş=parlak sarı.
       physicalRamp = [
-        [0,0x1a1a2e],[50,0xFFFFCC],[150,0xFFEDA0],[250,0xFED976],
-        [350,0xFEB24C],[450,0xFD8D3C],[550,0xFC4E2A],[650,0xE31A1C],
-        [750,0xBD0026],[800,0x4D0014]];
+        [0,0x1a1a2e],[50,0x4D0014],[150,0xBD0026],[250,0xE31A1C],
+        [350,0xFC4E2A],[450,0xFD8D3C],[550,0xFEB24C],[650,0xFED976],
+        [750,0xFFEDA0],[800,0xFFFFCC]];
     } else if (dataKey == 'wind') {
       physicalRamp = [
         [0,0xF7FBFF],[2,0xDEEBF7],[4,0xC6DBEF],[6,0x9ECAE1],

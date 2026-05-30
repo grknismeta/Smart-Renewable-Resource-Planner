@@ -36,6 +36,16 @@ class Pin(UserBase):
     head_height = Column(Float, nullable=True)      # Düşü yüksekliği (m)
     basin_area_km2 = Column(Float, nullable=True)   # Havza alanı (km²)
 
+    # 2026-05-17 Sprint A — Gelişmiş Ayarlar manuel parametre alanları
+    # GES (Güneş Paneli):
+    panel_tilt = Column(Float, nullable=True)       # Panel eğim açısı (°), 0-90
+    panel_azimuth = Column(Float, nullable=True)    # Panel azimuth (°), 0-360 (180=güney)
+    panel_power_w = Column(Float, nullable=True)    # Tek panel rated power (W)
+    # RES (Rüzgar Türbini):
+    hub_height = Column(Float, nullable=True)       # Kule yüksekliği (m)
+    rotor_diameter = Column(Float, nullable=True)   # Rotor çapı (m)
+    rated_power_kw = Column(Float, nullable=True)   # Türbin nominal güç (kW)
+
     # Konum bilgisi (Reverse geocoding — pin oluşturulurken bir kez kaydedilir)
     city = Column(String, nullable=True)           # İl (örn. "Adıyaman")
     district = Column(String, nullable=True)       # İlçe (örn. "Merkez")
@@ -45,6 +55,10 @@ class Pin(UserBase):
     equipment_id = Column(Integer, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # 2026-05-17 S1 — Santralin gerçek kuruluş tarihi.
+    # Pin generation history bu tarihten itibaren hesaplanır. NULL ise
+    # `created_at` kullanılır (geriye uyum). Migration 015.
+    installation_date = Column(DateTime(timezone=True), nullable=True)
 
     owner_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="pins")
@@ -89,14 +103,19 @@ class Scenario(UserBase):
 # B) SİSTEM VERİTABANI (SystemBase) Modelleri
 # ===============================================
 
-class Equipment(SystemBase): 
+class Equipment(SystemBase):
     __tablename__ = "equipments"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
-    type = Column(String) 
+    type = Column(String)
     rated_power_kw = Column(Float)
     efficiency = Column(Float)
-    specs = Column(JSON) 
+    specs = Column(JSON)
+    # 2026-05-17 Sprint A — User-aware equipment.
+    # NULL  = sistem ekipmanı (varsayılan kütüphane, tüm kullanıcılar görür)
+    # Dolu  = kullanıcının kendi eklediği (sadece o kullanıcı görür)
+    # FK kurmuyoruz — SystemBase vs UserBase ayrı veritabanı olabilir.
+    owner_id = Column(Integer, nullable=True, index=True)
     cost_per_unit = Column(Float)
     maintenance_cost_annual = Column(Float)
 
@@ -134,6 +153,10 @@ class WeatherData(SystemBase):
     wind_direction_dominant = Column(Float)
     # Genel
     temperature_mean = Column(Float)
+    # M-E.1 (2026-05-28): precipitation/cloud/humidity Open-Meteo Historical backfill
+    precipitation_sum = Column(Float, nullable=True)        # mm/gün
+    cloud_cover_mean = Column(Float, nullable=True)         # %
+    relative_humidity_mean = Column(Float, nullable=True)   # %
 
 
 # --- ŞEHİR BAZLI SAATLİK VERİ ---
@@ -209,6 +232,225 @@ class ProvinceAnalysis(SystemBase):
 
     sample_count = Column(Integer, nullable=True)           # kaç saatlik kayıttan üretildi
     computed_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+# --- CLIMATOLOGY (S1 — 2026-05-17) ---
+class Climatology(SystemBase):
+    """
+    10+ yıl günlük + 2 yıl saatlik veriden tek seferlik hesaplanan iklim
+    metrikleri. 81 il × 3 tip × (opsiyonel ilçe) = ~243 il satırı + ~2880
+    ilçe satırı. 6 ayda bir refresh job ile güncellenir.
+
+    `province_analysis` deprecate edildi; mevcut endpoint'ler bu tablodan
+    okur. Manisa örneği: bölge karakteri statik kalır, son ay az rüzgar
+    diye listeden düşmez.
+
+    Migration: 015_climatology_and_pin_install_date
+    Plan: BACKEND-PLAN-2026-05-17.md S1
+    """
+    __tablename__ = "climatology"
+    __table_args__ = (
+        UniqueConstraint(
+            "province_name", "district_name", "resource_type",
+            name="uq_climatology_loc_resource",
+        ),
+        Index("ix_climatology_type_score",
+              "resource_type", "score_climatology"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    province_name = Column(String, nullable=False, index=True)
+    # district_name NULL = il bazlı toplam; dolu = belirli ilçe
+    district_name = Column(String, nullable=True, index=True)
+    resource_type = Column(String, nullable=False, index=True)  # wind|solar|hydro
+
+    # Rüzgar metrikleri
+    avg_wind_speed_10y = Column(Float, nullable=True)   # m/s @ 100m
+    weibull_k = Column(Float, nullable=True)            # şekil (süreklilik)
+    weibull_c = Column(Float, nullable=True)            # skala
+
+    # Güneş metrikleri
+    avg_solar_irradiance_10y = Column(Float, nullable=True)  # kWh/m²/yıl
+    avg_ghi_wm2 = Column(Float, nullable=True)               # W/m² ortalama
+
+    # Termal / genel
+    avg_temperature_10y = Column(Float, nullable=True)  # °C
+    seasonal_variance = Column(Float, nullable=True)    # 0-1 normalize
+
+    # Teknik üretkenlik (kaynak tipine göre formül)
+    capacity_factor = Column(Float, nullable=True)  # 0-1
+
+    # 12 ay × 24 saat tipik profil (Pin generation interpolasyonu için)
+    hourly_typical_profile = Column(JSON, nullable=True)
+
+    # ── v3 Raporlar için aylık seriler (Migration 016, 2026-05-20) ──
+    # Open-Meteo'dan R0 Colab tarafından çekilir.
+    # wind_direction_histogram: {"0": {"N": freq_pct, "NE": ..., }, "1": {...}, ... "12": {...}}
+    #   Key 0 = yıllık ortalama, 1-12 = aylar
+    wind_direction_histogram = Column(JSON, nullable=True)
+    # monthly_precipitation: [jan_mm, feb_mm, ..., dec_mm] — 12 değer (10 yıl ort.)
+    monthly_precipitation = Column(JSON, nullable=True)
+    # monthly_cloud_cover: [jan_pct, ..., dec_pct] — 12 değer
+    monthly_cloud_cover = Column(JSON, nullable=True)
+    # monthly_sunshine_hours: [jan_h, ..., dec_h] — 12 değer (10 yıl ort.)
+    monthly_sunshine_hours = Column(JSON, nullable=True)
+    # monthly_river_discharge: [{"mean": .., "min": .., "max": ..}, ...] — 12 obje
+    monthly_river_discharge = Column(JSON, nullable=True)
+
+    # Multi-criteria skor (statik, climatology bazlı)
+    score_climatology = Column(Float, nullable=True)  # 0-100
+
+    # Meta
+    sample_count_daily = Column(Integer, nullable=True)
+    sample_count_hourly = Column(Integer, nullable=True)
+    data_start_date = Column(DateTime(timezone=True), nullable=True)
+    data_end_date = Column(DateTime(timezone=True), nullable=True)
+    computed_at = Column(DateTime(timezone=True),
+                         server_default=func.now(), onupdate=func.now())
+
+
+# --- ML PRECOMPUTE FORECAST (Sprint M-A, 2026-05-28) ---
+class MlForecast(SystemBase):
+    """Önceden hesaplanmış iklim projeksiyonu — batch job çıktısı.
+
+    `build_ml_forecasts.py` tüm il + ilçe × metrik × senaryo kombinasyonları
+    için SARIMAX/Holt-Winters çalıştırıp en iyi modeli seçer ve sonucu buraya
+    yazar. Tematik harita + Projeksiyon tab bu tablodan **anında** okur (model
+    fit beklemez).
+
+    Bilimsel çerçeve: aylık iklim normali + uzun-vade trend + RCP senaryo.
+    "Günlük hava tahmini" DEĞİL (kaos ufku ~14 gün); günlük gösterim aylık
+    değerden mevsimsel interpolasyonla üretilir.
+
+    Granülerlik: aylık. Anahtar = (scope, province, district, resource, metric,
+    scenario, year, month).
+
+    Migration: 017_ml_forecast
+    Plan: PLAN-2026-05-28-ML-CLIMATE-PROJECTION.md
+    """
+    __tablename__ = "ml_forecast"
+    __table_args__ = (
+        UniqueConstraint(
+            "scope", "province_name", "district_name", "resource",
+            "metric", "scenario", "year", "month",
+            name="uq_ml_forecast_key",
+        ),
+        # Choropleth sorgusu: belirli metrik+senaryo+yıl için tüm iller
+        Index("ix_ml_forecast_choropleth",
+              "scope", "metric", "scenario", "year"),
+        Index("ix_ml_forecast_location",
+              "province_name", "district_name", "resource", "metric"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    # "province" = il bazlı toplam; "district" = ilçe
+    scope = Column(String, nullable=False, index=True)
+    province_name = Column(String, nullable=False, index=True)
+    district_name = Column(String, nullable=True, index=True)
+    resource = Column(String, nullable=False)   # solar | wind | hydro
+    metric = Column(String, nullable=False)     # sunshine|precipitation|cloud|discharge
+    scenario = Column(String, nullable=False, default="baseline")  # baseline|rcp45|rcp85
+
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)     # 1-12
+
+    value = Column(Float, nullable=False)
+    lower = Column(Float, nullable=True)        # 95% CI alt
+    upper = Column(Float, nullable=True)        # 95% CI üst
+
+    # Model meta (en iyi seçilen)
+    method = Column(String, nullable=True)      # sarimax_auto|sarimax_default|holt_winters|linear_seasonal|fallback
+    mape = Column(Float, nullable=True)         # holdout MAPE (model seçim skoru)
+
+    computed_at = Column(DateTime(timezone=True),
+                         server_default=func.now(), onupdate=func.now())
+
+
+# --- TEMATİK HARİTA PRECOMPUTE AGREGAT (2026-05-28) ---
+class ThematicAggregate(SystemBase):
+    """Ayda bir hesaplanan ağır tematik harita pencereleri.
+
+    `sixMonth / yearly / season / twoYear / fiveYear / tenYear` modları her
+    istekte hesaplanmaz; `build_thematic_aggregates.py` aylık batch ile bu
+    tabloyu doldurur, choropleth endpoint buradan **anında** okur.
+
+    Veri kaynağı hibrit: yakın dönem `hourly_weather_data` (saatlik), eski
+    dönem `weather_data` (günlük). Batch bu farkı yönetir.
+
+    Anahtar = (scope, location_key, metric, mode, season).
+    - scope: "province" | "district"
+    - location_key: il adı (province) veya "İl|İlçe" (district)
+    - metric: "wind" | "solar" | "temp"
+    - mode: sixMonth|yearly|season|twoYear|fiveYear|tenYear
+    - season: winter|spring|summer|autumn (sadece mode=season) yoksa "-"
+
+    Migration: 018_thematic_aggregate
+    Plan: PLAN-2026-05-28-ML-CLIMATE-PROJECTION.md (T sprint)
+    """
+    __tablename__ = "thematic_aggregate"
+    __table_args__ = (
+        UniqueConstraint(
+            "scope", "location_key", "metric", "mode", "season",
+            name="uq_thematic_aggregate_key",
+        ),
+        Index("ix_thematic_aggregate_lookup",
+              "scope", "metric", "mode", "season"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    scope = Column(String, nullable=False, index=True)
+    location_key = Column(String, nullable=False, index=True)
+    metric = Column(String, nullable=False)
+    mode = Column(String, nullable=False)
+    season = Column(String, nullable=False, default="-")
+
+    value = Column(Float, nullable=True)
+    sample_count = Column(Integer, nullable=True)
+    source = Column(String, nullable=True)  # hourly | daily | hybrid
+    computed_at = Column(DateTime(timezone=True),
+                         server_default=func.now(), onupdate=func.now())
+
+
+# --- TEMATİK ZAMAN-SERİSİ PRECOMPUTE (T-6, 2026-05-28) ---
+class ThematicTimeseries(SystemBase):
+    """Zaman simülasyonu uzun pencereleri için hafta/ay başına precompute.
+
+    `thematic_aggregate` tek-pencere ORTALAMASI tutar (choropleth için). Zaman
+    simülasyonu ise her hafta/ay için AYRI frame ister (2y/5y/10y haftalık veya
+    aylık adımlama). Bu tablo o frame'leri önceden hesaplar — animasyon her
+    istekte milyonlarca satır taramaz.
+
+    `build_thematic_timeseries.py` aylık batch ile doldurur (date_trunc GROUP BY).
+    Kaynak hibrit: yakın saatlik, eski günlük (build script yönetir).
+
+    Anahtar = (scope, location_key, metric, period_type, period_start).
+    - period_type: "month" | "week"
+    - period_start: ilgili ay/haftanın ilk günü (Date)
+
+    Migration: 019_thematic_timeseries
+    Plan: PLAN-2026-05-28-ML-CLIMATE-PROJECTION.md (T-6)
+    """
+    __tablename__ = "thematic_timeseries"
+    __table_args__ = (
+        UniqueConstraint(
+            "scope", "location_key", "metric", "period_type", "period_start",
+            name="uq_thematic_timeseries_key",
+        ),
+        Index("ix_thematic_timeseries_lookup",
+              "scope", "metric", "period_type", "period_start"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    scope = Column(String, nullable=False, index=True)
+    location_key = Column(String, nullable=False, index=True)
+    metric = Column(String, nullable=False)        # wind | solar | temp
+    period_type = Column(String, nullable=False)   # month | week
+    period_start = Column(Date, nullable=False, index=True)
+
+    value = Column(Float, nullable=True)
+    source = Column(String, nullable=True)         # hourly | daily
+    computed_at = Column(DateTime(timezone=True),
+                         server_default=func.now(), onupdate=func.now())
 
 
 # --- SCHEDULER META (son çalışma zamanı — "228 dk önce" fix) ---

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Optional, Dict, Literal, Any
 from datetime import datetime, date
 
@@ -37,6 +37,9 @@ class EquipmentCreate(EquipmentBase):
 
 class EquipmentResponse(EquipmentBase):
     id: int
+    # 2026-05-17 — owner_id None ise sistem ekipmanı, dolu ise kullanıcı-özel.
+    # Frontend bu alana göre "kendi modelim mi sistem mi" ayrımı yapar.
+    owner_id: Optional[int] = None
     class Config:
         from_attributes = True
 
@@ -53,13 +56,53 @@ class PinBase(BaseModel):
     flow_rate: Optional[float] = None          # Debi (m³/s)
     head_height: Optional[float] = None        # Düşü yüksekliği (m)
     basin_area_km2: Optional[float] = None     # Havza alanı (km²)
+    # 2026-05-17 Sprint A — Gelişmiş Ayarlar manuel parametreler.
+    # GES (Güneş Paneli)
+    panel_tilt: Optional[float] = None         # Panel eğim açısı (°)
+    panel_azimuth: Optional[float] = None      # Panel azimuth (°)
+    panel_power_w: Optional[float] = None      # Tek panel gücü (W)
+    # RES (Rüzgar Türbini)
+    hub_height: Optional[float] = None         # Kule yüksekliği (m)
+    rotor_diameter: Optional[float] = None     # Rotor çapı (m)
+    rated_power_kw: Optional[float] = None     # Nominal güç (kW)
     # Konum bilgisi (reverse geocoding — pin oluşturulurken frontend gönderir)
     city: Optional[str] = None                 # İl
     district: Optional[str] = None            # İlçe
     water_body_name: Optional[str] = None     # HES için göl/nehir adı
 
 class PinCreate(PinBase):
-    pass
+    """Yeni pin oluşturma payload'ı.
+
+    2026-05-25 (P2/6c): Frontend validation (PinDialogViewModel.validate)
+    backend tarafından da zorlanır — direkt API çağrısıyla geçersiz pin
+    kayıt edilmesin. Kurallar PinDialogViewModel ile birebir:
+      - capacity_mw ≥ 0.001 (≈1 kW altı reddedilir)
+      - HES: flow_rate > 0 ve head_height > 0 zorunlu
+      - GES: panel_area ≥ 10 m² zorunlu (yoksa equipment_id ile hesaplanmalı)
+    """
+
+    @model_validator(mode="after")
+    def _validate_capacity_and_type_fields(self) -> "PinCreate":
+        if self.capacity_mw < 0.001:
+            raise ValueError(
+                f"capacity_mw çok düşük ({self.capacity_mw:.4f} MW). "
+                "Minimum 0.001 MW (≈1 kW) olmalı."
+            )
+        if self.type == "Hidroelektrik":
+            if not self.flow_rate or self.flow_rate <= 0:
+                raise ValueError("HES için flow_rate (m³/s) zorunlu ve > 0 olmalı.")
+            if not self.head_height or self.head_height <= 0:
+                raise ValueError("HES için head_height (m) zorunlu ve > 0 olmalı.")
+        elif self.type == "Güneş Paneli":
+            if not self.panel_area or self.panel_area < 10:
+                raise ValueError(
+                    "GES için panel_area en az 10 m² olmalı "
+                    f"(verilen: {self.panel_area})."
+                )
+        elif self.type == "Rüzgar Türbini":
+            # RES capacity_mw equipment'tan hesaplanır, ≥ 0.001 yeterli (üstte check var).
+            pass
+        return self
 
 class PinResponse(PinBase):
     id: int

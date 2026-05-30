@@ -237,6 +237,54 @@ class AnalysisService extends BaseService {
     );
   }
 
+  // ── R1 Landing/Region Data ────────────────────────────────────────────────
+
+  /// /analysis/landing — TR genel + 7 bölge özeti + top-N il
+  Future<LandingData> fetchLanding({int topN = 10}) async {
+    final uri = Uri.parse('$baseUrl/analysis/landing').replace(
+      queryParameters: {'top_n': '$topN'},
+    );
+    final response = await http.get(uri).timeout(const Duration(seconds: 15));
+    final data = processResponse(response);
+    if (data is! Map) {
+      throw Exception('Beklenmeyen yanıt: /analysis/landing');
+    }
+    return LandingData.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  /// /analysis/region/{id} — Tek bölge detay + il listesi pivot
+  Future<RegionDetailData> fetchRegionDetail(String regionId) async {
+    final uri = Uri.parse('$baseUrl/analysis/region/$regionId');
+    final response = await http.get(uri).timeout(const Duration(seconds: 10));
+    final data = processResponse(response);
+    if (data is! Map) {
+      throw Exception('Beklenmeyen yanıt: /analysis/region/$regionId');
+    }
+    return RegionDetailData.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  /// /analysis/province/{name}/climate — İl aylık iklim serileri
+  Future<ClimateSeries> fetchProvinceClimate(String name) async {
+    final uri = Uri.parse('$baseUrl/analysis/province/$name/climate');
+    final response = await http.get(uri).timeout(const Duration(seconds: 10));
+    final data = processResponse(response);
+    if (data is! Map) {
+      throw Exception('Beklenmeyen yanıt: /analysis/province/$name/climate');
+    }
+    return ClimateSeries.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  /// /analysis/province/{name}/districts — İlçe granüler skor + best spots
+  Future<ProvinceDistrictsData> fetchProvinceDistricts(String name) async {
+    final uri = Uri.parse('$baseUrl/analysis/province/$name/districts');
+    final response = await http.get(uri).timeout(const Duration(seconds: 12));
+    final data = processResponse(response);
+    if (data is! Map) {
+      throw Exception('Beklenmeyen yanıt: /analysis/province/$name/districts');
+    }
+    return ProvinceDistrictsData.fromJson(Map<String, dynamic>.from(data));
+  }
+
   /// Aşama 3.D — Geçmiş günlük veriden gelecek tahmini.
   ///
   /// [metric]: 'wind_speed' | 'shortwave_radiation' | 'temperature'
@@ -327,6 +375,529 @@ class ProjectionResponse {
       annualTrendPct: (json['annual_trend_pct'] as num?)?.toDouble(),
       points: pts,
       disclaimer: json['disclaimer']?.toString() ?? '',
+    );
+  }
+}
+
+// ── R1 Landing DTO'ları ──────────────────────────────────────────────────────
+
+/// TR genel istatistikleri (tr_stats.json'dan).
+class TrStats {
+  final int totalInstalledMw;
+  final int renewableMw;
+  final double renewableShare;
+  final int solarMw;
+  final int windMw;
+  final int hydroMw;
+  final int geothermalMw;
+  final int biomassMw;
+  final int annualProductionGwh;
+  final int renewableProductionGwh;
+  final int co2AvoidedKtPerYear;
+  final int target2035Mw;
+  final double target2035RenewableShare;
+  final int solarPotentialMw;
+  final int windPotentialMw;
+  final int hydroPotentialMw;
+  final int technicalPotentialMw;
+  final List<LandingTrendPoint> capacityTrend;
+
+  const TrStats({
+    required this.totalInstalledMw,
+    required this.renewableMw,
+    required this.renewableShare,
+    required this.solarMw,
+    required this.windMw,
+    required this.hydroMw,
+    required this.geothermalMw,
+    required this.biomassMw,
+    required this.annualProductionGwh,
+    required this.renewableProductionGwh,
+    required this.co2AvoidedKtPerYear,
+    required this.target2035Mw,
+    required this.target2035RenewableShare,
+    required this.solarPotentialMw,
+    required this.windPotentialMw,
+    required this.hydroPotentialMw,
+    required this.technicalPotentialMw,
+    required this.capacityTrend,
+  });
+
+  factory TrStats.fromJson(Map<String, dynamic> j) {
+    int i(dynamic v) => (v as num?)?.toInt() ?? 0;
+    double d(dynamic v) => (v as num?)?.toDouble() ?? 0;
+    return TrStats(
+      totalInstalledMw: i(j['totalInstalledMw']),
+      renewableMw: i(j['renewableMw']),
+      renewableShare: d(j['renewableShare']),
+      solarMw: i(j['solarMw']),
+      windMw: i(j['windMw']),
+      hydroMw: i(j['hydroMw']),
+      geothermalMw: i(j['geothermalMw']),
+      biomassMw: i(j['biomassMw']),
+      annualProductionGwh: i(j['annualProductionGwh']),
+      renewableProductionGwh: i(j['renewableProductionGwh']),
+      co2AvoidedKtPerYear: i(j['co2AvoidedKtPerYear']),
+      target2035Mw: i(j['target2035Mw']),
+      target2035RenewableShare: d(j['target2035RenewableShare']),
+      solarPotentialMw: i(j['solarPotentialMw']),
+      windPotentialMw: i(j['windPotentialMw']),
+      hydroPotentialMw: i(j['hydroPotentialMw']),
+      technicalPotentialMw: i(j['technicalPotentialMw']),
+      capacityTrend: ((j['capacityTrend'] as List?) ?? const [])
+          .map((e) => LandingTrendPoint.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+    );
+  }
+}
+
+/// Yıllık trend noktası (kurulu güç GW).
+class LandingTrendPoint {
+  final int year;
+  final double total;
+  final double renewable;
+
+  const LandingTrendPoint({
+    required this.year,
+    required this.total,
+    required this.renewable,
+  });
+
+  factory LandingTrendPoint.fromJson(Map<String, dynamic> j) => LandingTrendPoint(
+        year: (j['year'] as num).toInt(),
+        total: (j['total'] as num).toDouble(),
+        renewable: (j['renewable'] as num).toDouble(),
+      );
+}
+
+/// 7 bölge meta + climatology avg_scores.
+class RegionMeta {
+  final String id;
+  final String name;
+  final String color;
+  final int provincesCount;
+  final List<String> provinces;
+  final int capacityMw;
+  final int annualGwh;
+  final double irradiance;
+  final double windSpeed;
+  final int precipitation;
+  final String climateNote;
+  final List<String> bestFor;
+  final String topResource;
+  final String description;
+  final Map<String, double?> avgScores; // {"wind": .., "solar": .., "hydro": ..}
+
+  const RegionMeta({
+    required this.id,
+    required this.name,
+    required this.color,
+    required this.provincesCount,
+    required this.provinces,
+    required this.capacityMw,
+    required this.annualGwh,
+    required this.irradiance,
+    required this.windSpeed,
+    required this.precipitation,
+    required this.climateNote,
+    required this.bestFor,
+    required this.topResource,
+    required this.description,
+    required this.avgScores,
+  });
+
+  factory RegionMeta.fromJson(Map<String, dynamic> j) {
+    final avg = (j['avg_scores'] as Map?) ?? const {};
+    return RegionMeta(
+      id: j['id']?.toString() ?? '',
+      name: j['name']?.toString() ?? '',
+      color: j['color']?.toString() ?? '#888888',
+      provincesCount: (j['provincesCount'] as num?)?.toInt() ?? 0,
+      provinces: ((j['provinces'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      capacityMw: (j['capacityMw'] as num?)?.toInt() ?? 0,
+      annualGwh: (j['annualGwh'] as num?)?.toInt() ?? 0,
+      irradiance: (j['irradiance'] as num?)?.toDouble() ?? 0,
+      windSpeed: (j['windSpeed'] as num?)?.toDouble() ?? 0,
+      precipitation: (j['precipitation'] as num?)?.toInt() ?? 0,
+      climateNote: j['climateNote']?.toString() ?? '',
+      bestFor: ((j['bestFor'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      topResource: j['topResource']?.toString() ?? '',
+      description: j['description']?.toString() ?? '',
+      avgScores: {
+        'wind': (avg['wind'] as num?)?.toDouble(),
+        'solar': (avg['solar'] as num?)?.toDouble(),
+        'hydro': (avg['hydro'] as num?)?.toDouble(),
+      },
+    );
+  }
+}
+
+/// Top-N il listesinde tek bir il.
+class TopProvinceItem {
+  final String provinceName;
+  final double score;
+  final double? capacityFactor;
+  final double? avgWindSpeed;
+  final double? avgGhi;
+
+  const TopProvinceItem({
+    required this.provinceName,
+    required this.score,
+    this.capacityFactor,
+    this.avgWindSpeed,
+    this.avgGhi,
+  });
+
+  factory TopProvinceItem.fromJson(Map<String, dynamic> j) => TopProvinceItem(
+        provinceName: j['province_name']?.toString() ?? '',
+        score: (j['score'] as num?)?.toDouble() ?? 0,
+        capacityFactor: (j['capacity_factor'] as num?)?.toDouble(),
+        avgWindSpeed: (j['avg_wind_speed'] as num?)?.toDouble(),
+        avgGhi: (j['avg_ghi'] as num?)?.toDouble(),
+      );
+}
+
+/// Tüm kaynaklar arasında en yüksek skorlu illerin (province, top_resource, score).
+class OverallTopItem {
+  final String provinceName;
+  final String topResource; // "wind" | "solar" | "hydro"
+  final double score;
+
+  const OverallTopItem({
+    required this.provinceName,
+    required this.topResource,
+    required this.score,
+  });
+
+  factory OverallTopItem.fromJson(Map<String, dynamic> j) => OverallTopItem(
+        provinceName: j['province_name']?.toString() ?? '',
+        topResource: j['top_resource']?.toString() ?? '',
+        score: (j['score'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+/// /analysis/landing tam yanıtı.
+class LandingData {
+  final TrStats trStats;
+  final List<RegionMeta> regions;
+  final Map<String, List<TopProvinceItem>> topByResource;
+  final List<OverallTopItem> overallTop;
+
+  const LandingData({
+    required this.trStats,
+    required this.regions,
+    required this.topByResource,
+    required this.overallTop,
+  });
+
+  factory LandingData.fromJson(Map<String, dynamic> j) {
+    final topRaw = (j['top_provinces'] as Map?) ?? const {};
+    final topMap = <String, List<TopProvinceItem>>{};
+    topRaw.forEach((key, value) {
+      if (value is List) {
+        topMap[key.toString()] = value
+            .map((e) =>
+                TopProvinceItem.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+    });
+    return LandingData(
+      trStats: TrStats.fromJson(Map<String, dynamic>.from(j['tr_stats'] as Map)),
+      regions: ((j['regions'] as List?) ?? const [])
+          .map((e) => RegionMeta.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+      topByResource: topMap,
+      overallTop: ((j['overall_top'] as List?) ?? const [])
+          .map((e) => OverallTopItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+    );
+  }
+}
+
+/// İl bazlı kaynak skoru — region detail provinces içinde.
+class RegionProvinceItem {
+  final String provinceName;
+  final double? lat;
+  final double? lon;
+  final double? windScore;
+  final double? solarScore;
+  final double? hydroScore;
+  final double? windCapacityFactor;
+  final double? solarCapacityFactor;
+  final double? hydroCapacityFactor;
+
+  const RegionProvinceItem({
+    required this.provinceName,
+    this.lat,
+    this.lon,
+    this.windScore,
+    this.solarScore,
+    this.hydroScore,
+    this.windCapacityFactor,
+    this.solarCapacityFactor,
+    this.hydroCapacityFactor,
+  });
+
+  factory RegionProvinceItem.fromJson(Map<String, dynamic> j) {
+    double? s(String key) {
+      final r = j[key];
+      if (r is Map) return (r['score'] as num?)?.toDouble();
+      return null;
+    }
+    double? cf(String key) {
+      final r = j[key];
+      if (r is Map) return (r['capacity_factor'] as num?)?.toDouble();
+      return null;
+    }
+    return RegionProvinceItem(
+      provinceName: j['province_name']?.toString() ?? '',
+      lat: (j['lat'] as num?)?.toDouble(),
+      lon: (j['lon'] as num?)?.toDouble(),
+      windScore: s('wind'),
+      solarScore: s('solar'),
+      hydroScore: s('hydro'),
+      windCapacityFactor: cf('wind'),
+      solarCapacityFactor: cf('solar'),
+      hydroCapacityFactor: cf('hydro'),
+    );
+  }
+
+  String get bestResource {
+    final scores = {
+      'wind': windScore ?? 0,
+      'solar': solarScore ?? 0,
+      'hydro': hydroScore ?? 0,
+    };
+    final entries = scores.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries.first.key;
+  }
+
+  double get bestScore =>
+      [windScore ?? 0, solarScore ?? 0, hydroScore ?? 0]
+          .reduce((a, b) => a > b ? a : b);
+}
+
+/// 12 aylık iklim serileri (climate_aggregate_service'ten gelen).
+class ClimateSeries {
+  final List<double> irradiance;
+  final List<double> windSpeed;
+  final List<double> precipitation;
+  final List<double> temperature;
+  final List<double> cloudCover;
+  final List<double> sunshineHours;
+  final List<RiverDischargePoint> riverDischarge;
+  final WindRose windRose;
+  final String source; // "db" | "mock_region:..." | "hybrid_..."
+
+  const ClimateSeries({
+    required this.irradiance,
+    required this.windSpeed,
+    required this.precipitation,
+    required this.temperature,
+    required this.cloudCover,
+    required this.sunshineHours,
+    required this.riverDischarge,
+    required this.windRose,
+    required this.source,
+  });
+
+  factory ClimateSeries.fromJson(Map<String, dynamic> j) {
+    List<double> arr(dynamic v) =>
+        (v as List? ?? const []).map((e) => (e as num).toDouble()).toList();
+    return ClimateSeries(
+      irradiance: arr(j['irradiance']),
+      windSpeed: arr(j['wind_speed']),
+      precipitation: arr(j['precipitation']),
+      temperature: arr(j['temperature']),
+      cloudCover: arr(j['cloud_cover']),
+      sunshineHours: arr(j['sunshine_hours']),
+      riverDischarge: ((j['river_discharge'] as List?) ?? const [])
+          .map((e) => RiverDischargePoint.fromJson(
+              Map<String, dynamic>.from(e as Map)))
+          .toList(),
+      windRose: WindRose.fromJson(
+          Map<String, dynamic>.from(j['wind_rose'] as Map? ?? const {})),
+      source: j['source']?.toString() ?? 'unknown',
+    );
+  }
+}
+
+class RiverDischargePoint {
+  final double mean;
+  final double min;
+  final double max;
+  const RiverDischargePoint({required this.mean, required this.min, required this.max});
+  factory RiverDischargePoint.fromJson(Map<String, dynamic> j) => RiverDischargePoint(
+        mean: (j['mean'] as num?)?.toDouble() ?? 0,
+        min: (j['min'] as num?)?.toDouble() ?? 0,
+        max: (j['max'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+class WindRose {
+  final String dominant;
+  final Map<String, double> histogram; // 8 bin: N/NE/E/SE/S/SW/W/NW
+
+  const WindRose({required this.dominant, required this.histogram});
+  factory WindRose.fromJson(Map<String, dynamic> j) {
+    final hist = <String, double>{};
+    final raw = j['histogram'] as Map? ?? const {};
+    raw.forEach((k, v) {
+      hist[k.toString()] = (v as num?)?.toDouble() ?? 0;
+    });
+    return WindRose(
+      dominant: j['dominant']?.toString() ?? 'NW',
+      histogram: hist,
+    );
+  }
+}
+
+// ── İlçe granüler skor DTO'ları (/analysis/province/{name}/districts) ────────
+
+/// Bir ilçenin 3 kaynak skoru.
+class DistrictScore {
+  final String name;
+  final double lat;
+  final double lon;
+  final double windScore;
+  final double solarScore;
+  final double hydroScore;
+  final String bestResource;
+  final double bestScore;
+  final int estimatedMw;
+
+  const DistrictScore({
+    required this.name,
+    required this.lat,
+    required this.lon,
+    required this.windScore,
+    required this.solarScore,
+    required this.hydroScore,
+    required this.bestResource,
+    required this.bestScore,
+    required this.estimatedMw,
+  });
+
+  factory DistrictScore.fromJson(Map<String, dynamic> j) {
+    final scores = (j['scores'] as Map?) ?? const {};
+    double s(String k) => (scores[k] as num?)?.toDouble() ?? 0;
+    return DistrictScore(
+      name: j['name']?.toString() ?? '',
+      lat: (j['lat'] as num?)?.toDouble() ?? 0,
+      lon: (j['lon'] as num?)?.toDouble() ?? 0,
+      windScore: s('wind'),
+      solarScore: s('solar'),
+      hydroScore: s('hydro'),
+      bestResource: j['best_resource']?.toString() ?? 'solar',
+      bestScore: (j['best_score'] as num?)?.toDouble() ?? 0,
+      estimatedMw: (j['estimated_mw'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  double scoreFor(String resource) => switch (resource) {
+        'wind' => windScore,
+        'solar' => solarScore,
+        'hydro' => hydroScore,
+        _ => 0,
+      };
+}
+
+/// Bir kaynak için "en iyi saha" — kaynak-spesifik ek alanlar dynamic map'te.
+class BestSpot {
+  final String name;
+  final double lat;
+  final double lon;
+  final double score;
+  final int estimatedMw;
+  // Kaynak-spesifik (solar: irradiance/slope/panelArea, wind: windSpeed/hub, hydro: flow/head)
+  final Map<String, dynamic> extra;
+
+  const BestSpot({
+    required this.name,
+    required this.lat,
+    required this.lon,
+    required this.score,
+    required this.estimatedMw,
+    required this.extra,
+  });
+
+  factory BestSpot.fromJson(Map<String, dynamic> j) {
+    const known = {'name', 'lat', 'lon', 'score', 'estimated_mw'};
+    return BestSpot(
+      name: j['name']?.toString() ?? '',
+      lat: (j['lat'] as num?)?.toDouble() ?? 0,
+      lon: (j['lon'] as num?)?.toDouble() ?? 0,
+      score: (j['score'] as num?)?.toDouble() ?? 0,
+      estimatedMw: (j['estimated_mw'] as num?)?.toInt() ?? 0,
+      extra: {
+        for (final e in j.entries)
+          if (!known.contains(e.key)) e.key: e.value,
+      },
+    );
+  }
+}
+
+/// /analysis/province/{name}/districts yanıtı.
+class ProvinceDistrictsData {
+  final String province;
+  final int districtCount;
+  final List<DistrictScore> districts;
+  final Map<String, List<BestSpot>> bestSpots; // {solar, wind, hydro}
+
+  const ProvinceDistrictsData({
+    required this.province,
+    required this.districtCount,
+    required this.districts,
+    required this.bestSpots,
+  });
+
+  factory ProvinceDistrictsData.fromJson(Map<String, dynamic> j) {
+    final spotsRaw = (j['best_spots'] as Map?) ?? const {};
+    final spots = <String, List<BestSpot>>{};
+    spotsRaw.forEach((key, value) {
+      if (value is List) {
+        spots[key.toString()] = value
+            .map((e) => BestSpot.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+    });
+    return ProvinceDistrictsData(
+      province: j['province']?.toString() ?? '',
+      districtCount: (j['district_count'] as num?)?.toInt() ?? 0,
+      districts: ((j['districts'] as List?) ?? const [])
+          .map((e) => DistrictScore.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+      bestSpots: spots,
+    );
+  }
+}
+
+/// /analysis/region/{id} yanıtı.
+class RegionDetailData {
+  final RegionMeta region;
+  final List<RegionProvinceItem> provinces;
+  final ClimateSeries climate;
+
+  const RegionDetailData({
+    required this.region,
+    required this.provinces,
+    required this.climate,
+  });
+
+  factory RegionDetailData.fromJson(Map<String, dynamic> j) {
+    return RegionDetailData(
+      region: RegionMeta.fromJson(Map<String, dynamic>.from(j['region'] as Map)),
+      provinces: ((j['provinces'] as List?) ?? const [])
+          .map((e) =>
+              RegionProvinceItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList(),
+      climate: ClimateSeries.fromJson(
+          Map<String, dynamic>.from(j['climate'] as Map? ?? const {})),
     );
   }
 }

@@ -1,1023 +1,1059 @@
 // lib/features/reports/widgets/tabs/province_drill_tab.dart
-import 'package:fl_chart/fl_chart.dart';
+//
+// İL ANALİZİ TAB — Sprint R1 v3 (eski 1286 satırlık versiyon değiştirildi)
+//
+// İçerik:
+//   • İl seçici (81 il dropdown)
+//   • 2 sub-tab: Potansiyel | Hava
+//   • Potansiyel:
+//       - 3 kolon "En İyi GES/RES/HES İlçeleri" (BestSpotCard)
+//       - İlçe karşılaştırma tablosu (ilçe × 3 score + best + MW)
+//   • Hava:
+//       - 4 WeatherStrip + Wind Rose + Nehir Debisi (shared climate widget'lar)
+//
+// Veri: GET /analysis/province/{name}/districts + /climate
+// Mockup ref: designhtml/reports-province.jsx
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'package:frontend/core/network/analysis_service.dart';
-import 'package:frontend/core/theme/app_theme.dart';
-import 'package:frontend/data/models/weather_model.dart';
-import 'package:frontend/features/reports/viewmodels/report_viewmodel.dart';
-import 'package:frontend/features/scenarios/dialogs/scenario_create_dialog.dart';
+import 'package:frontend/core/network/api_service.dart';
+import 'package:frontend/features/reports/pages/compare_page.dart';
+import 'package:frontend/features/reports/pages/district_detail_page.dart';
+import 'package:frontend/features/reports/viewmodels/province_drill_viewmodel.dart';
+import 'package:frontend/features/reports/viewmodels/report_nav_controller.dart';
+import 'package:frontend/features/reports/widgets/climate/climate_widgets.dart';
+import 'package:frontend/features/reports/widgets/common/report_mini_map.dart';
+import 'package:frontend/features/reports/widgets/common/report_ui.dart';
+import 'package:frontend/features/reports/widgets/tabs/projection_tab.dart';
+import 'package:maplibre/maplibre.dart' as ml;
 
-// ── Türkiye 81 il görüntü adları (DB ASCII → doğru Türkçe) ──────────────────
-const _kDisplayNames = <String, String>{
-  'Adana': 'Adana', 'Adiyaman': 'Adıyaman', 'Afyon': 'Afyonkarahisar',
-  'Agri': 'Ağrı', 'Aksaray': 'Aksaray', 'Amasya': 'Amasya',
-  'Ankara': 'Ankara', 'Antalya': 'Antalya', 'Ardahan': 'Ardahan',
-  'Artvin': 'Artvin', 'Aydin': 'Aydın', 'Balikesir': 'Balıkesir',
-  'Bartin': 'Bartın', 'Batman': 'Batman', 'Bayburt': 'Bayburt',
-  'Bilecik': 'Bilecik', 'Bingol': 'Bingöl', 'Bitlis': 'Bitlis',
-  'Bolu': 'Bolu', 'Burdur': 'Burdur', 'Bursa': 'Bursa',
-  'Canakkale': 'Çanakkale', 'Cankiri': 'Çankırı', 'Corum': 'Çorum',
-  'Denizli': 'Denizli', 'Diyarbakir': 'Diyarbakır', 'Duzce': 'Düzce',
-  'Edirne': 'Edirne', 'Elazig': 'Elazığ', 'Erzincan': 'Erzincan',
-  'Erzurum': 'Erzurum', 'Eskisehir': 'Eskişehir', 'Gaziantep': 'Gaziantep',
-  'Giresun': 'Giresun', 'Gumushane': 'Gümüşhane', 'Hakkari': 'Hakkari',
-  'Hatay': 'Hatay', 'Igdir': 'Iğdır', 'Isparta': 'Isparta',
-  'Istanbul': 'İstanbul', 'Izmir': 'İzmir',
-  'Kahramanmaras': 'Kahramanmaraş', 'Karabuk': 'Karabük',
-  'Karaman': 'Karaman', 'Kars': 'Kars', 'Kastamonu': 'Kastamonu',
-  'Kayseri': 'Kayseri', 'Kilis': 'Kilis', 'Kirikkale': 'Kırıkkale',
-  'Kirklareli': 'Kırklareli', 'Kirsehir': 'Kırşehir',
-  'Kocaeli': 'Kocaeli', 'Konya': 'Konya', 'Kutahya': 'Kütahya',
-  'Malatya': 'Malatya', 'Manisa': 'Manisa', 'Mardin': 'Mardin',
-  'Mersin': 'Mersin', 'Mugla': 'Muğla', 'Mus': 'Muş',
-  'Nevsehir': 'Nevşehir', 'Nigde': 'Niğde', 'Ordu': 'Ordu',
-  'Osmaniye': 'Osmaniye', 'Rize': 'Rize', 'Sakarya': 'Sakarya',
-  'Samsun': 'Samsun', 'Sanliurfa': 'Şanlıurfa', 'Siirt': 'Siirt',
-  'Sinop': 'Sinop', 'Sirnak': 'Şırnak', 'Sivas': 'Sivas',
-  'Tekirdag': 'Tekirdağ', 'Tokat': 'Tokat', 'Trabzon': 'Trabzon',
-  'Tunceli': 'Tunceli', 'Usak': 'Uşak', 'Van': 'Van',
-  'Yalova': 'Yalova', 'Yozgat': 'Yozgat', 'Zonguldak': 'Zonguldak',
-};
-
-// ── Türkiye 7 coğrafi bölge → il listesi (DB adları) ────────────────────────
-const _kRegionMap = <String, List<String>>{
-  'Marmara': ['Istanbul', 'Tekirdag', 'Edirne', 'Kirklareli', 'Canakkale',
-    'Balikesir', 'Bursa', 'Yalova', 'Kocaeli', 'Sakarya', 'Duzce',
-    'Bolu', 'Bilecik'],
-  'Ege': ['Izmir', 'Manisa', 'Afyon', 'Kutahya', 'Usak', 'Denizli',
-    'Aydin', 'Mugla'],
-  'Akdeniz': ['Antalya', 'Isparta', 'Burdur', 'Mersin', 'Adana',
-    'Osmaniye', 'Hatay', 'Kahramanmaras'],
-  'İç Anadolu': ['Ankara', 'Konya', 'Eskisehir', 'Karaman', 'Aksaray',
-    'Nigde', 'Kirsehir', 'Nevsehir', 'Kirikkale', 'Yozgat', 'Sivas',
-    'Corum', 'Kayseri'],
-  'Karadeniz': ['Zonguldak', 'Karabuk', 'Bartin', 'Kastamonu', 'Sinop',
-    'Samsun', 'Ordu', 'Giresun', 'Trabzon', 'Rize', 'Artvin',
-    'Gumushane', 'Amasya', 'Tokat', 'Bayburt'],
-  'Doğu Anadolu': ['Erzurum', 'Erzincan', 'Agri', 'Kars', 'Ardahan',
-    'Igdir', 'Tunceli', 'Elazig', 'Bingol', 'Mus', 'Van', 'Bitlis',
-    'Hakkari', 'Malatya'],
-  'Güneydoğu': ['Gaziantep', 'Kilis', 'Adiyaman', 'Sanliurfa',
-    'Diyarbakir', 'Mardin', 'Sirnak', 'Batman', 'Siirt'],
-};
-
-String _displayName(String raw) => _kDisplayNames[raw] ?? raw;
-
-String _regionOf(String raw) {
-  for (final e in _kRegionMap.entries) {
-    if (e.value.contains(raw)) return e.key;
-  }
-  return 'Diğer';
-}
-
-/// Tab 2 — İl Analizi
-class ProvinceDrillTab extends StatefulWidget {
-  const ProvinceDrillTab({super.key});
-
-  @override
-  State<ProvinceDrillTab> createState() => _ProvinceDrillTabState();
-}
-
-class _ProvinceDrillTabState extends State<ProvinceDrillTab> {
-  final _searchCtrl = TextEditingController();
-  String _search = '';
-  String _regionFilter = 'Tümü';
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-
-  List<ProvinceSummary> _filtered(List<ProvinceSummary> all) {
-    return all.where((p) {
-      final display = _displayName(p.provinceName).toLowerCase();
-      final raw = p.provinceName.toLowerCase();
-      final matchSearch = _search.isEmpty ||
-          display.contains(_search.toLowerCase()) ||
-          raw.contains(_search.toLowerCase());
-      final matchRegion = _regionFilter == 'Tümü' ||
-          _regionOf(p.provinceName) == _regionFilter;
-      return matchSearch && matchRegion;
-    }).toList()
-      ..sort((a, b) => _computeScore(b).compareTo(_computeScore(a)));
-  }
+class ProvinceDrillTab extends StatelessWidget {
+  final String? initialProvince;
+  const ProvinceDrillTab({super.key, this.initialProvince});
 
   @override
   Widget build(BuildContext context) {
-    final vm = context.watch<ReportViewModel>();
-    final theme = context.watch<ThemeViewModel>();
-    final provinces = vm.provinceSummaries;
+    return ChangeNotifierProvider(
+      create: (ctx) => ProvinceDrillViewModel(
+        Provider.of<ApiService>(ctx, listen: false),
+      )..init(initialProvince: initialProvince),
+      child: const _ProvinceDrillBody(),
+    );
+  }
+}
 
-    if (vm.isBusy && provinces.isEmpty) {
-      return const Center(
-          child: CircularProgressIndicator(color: Colors.cyanAccent));
+class _ProvinceDrillBody extends StatelessWidget {
+  const _ProvinceDrillBody();
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<ProvinceDrillViewModel>();
+
+    // Drill-down: Bölge tab'ından gelen pendingProvince varsa o ili seç.
+    // İl listesi yüklenene kadar bekle (contains false → tekrar dener).
+    final nav = context.watch<ReportNavController>();
+    final pendingProv = nav.pendingProvince;
+    if (pendingProv != null && vm.allProvinces.contains(pendingProv)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        nav.consumeProvince();
+        vm.selectProvince(pendingProv);
+      });
     }
-    if (vm.hasError && provinces.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.cloud_off_rounded, color: Colors.orangeAccent, size: 32),
-            const SizedBox(height: 8),
-            Text(
-              vm.errorMessage ?? 'İl verisi yüklenemedi',
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-            const SizedBox(height: 10),
-            TextButton.icon(
-              onPressed: () => vm.init(),
-              icon: const Icon(Icons.refresh_rounded, size: 14),
-              label: const Text('Yeniden Dene'),
-              style: TextButton.styleFrom(foregroundColor: Colors.cyanAccent),
-            ),
-          ],
-        ),
+
+    if (vm.isBusy && vm.allProvinces.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.cyanAccent, strokeWidth: 2),
       );
     }
-    if (provinces.isEmpty) {
-      return const Center(
-        child: Text('İl verisi bulunamadı.',
-            style: TextStyle(color: Colors.white60, fontSize: 14)),
-      );
+    if (vm.hasError && vm.allProvinces.isEmpty) {
+      return _ErrorView(message: vm.errorMessage ?? '', onRetry: () => vm.init());
     }
 
-    final filtered = _filtered(provinces);
-
-    return LayoutBuilder(builder: (context, constraints) {
-      final wide = constraints.maxWidth > 650;
-      if (wide) {
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 240,
-              child: _ProvinceListPanel(
-                provinces: filtered,
-                allCount: provinces.length,
-                vm: vm,
-                theme: theme,
-                searchCtrl: _searchCtrl,
-                regionFilter: _regionFilter,
-                onSearch: (v) => setState(() => _search = v),
-                onRegion: (r) => setState(() => _regionFilter = r),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: _ProvinceDetail(vm: vm, theme: theme)),
-          ],
-        );
-      }
+    return LayoutBuilder(builder: (lctx, cs) {
+      // 2026-05-25 (Fix5): Geniş ekranda (≥1100) Potansiyel + Hava view'ları
+      // yan yana — sub-tab gereksiz olur; her ikisi de aynı anda görünür.
+      // Toolbar sub-tab toggle'ı bu durumda gizlenir (showSubTab=false).
+      final wide = cs.maxWidth >= 1100;
+      // 2026-05-27 (P2.5): Projeksiyon sub-tab eklendi. Projeksiyon her
+      // ekran genişliğinde tam alan ister (chart + KPI grid sıkışmasın);
+      // bu yüzden projection seçiliyse yan-yana layout devre dışı.
+      final showSideBySide =
+          wide && vm.subTab != ProvinceDrillSubTab.projection;
+      // Sub-tab toggle: dar ekranda zaten gerekli; geniş ekranda da
+      // projection seçilebilsin diye gösterilir (Potansiyel/Hava yan-yana
+      // gösteriliyorsa da kullanıcı 3.'ye geçebilsin).
       return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            height: 220,
-            child: _ProvinceListPanel(
-              provinces: filtered,
-              allCount: provinces.length,
-              vm: vm,
-              theme: theme,
-              searchCtrl: _searchCtrl,
-              regionFilter: _regionFilter,
-              onSearch: (v) => setState(() => _search = v),
-              onRegion: (r) => setState(() => _regionFilter = r),
-            ),
+          _Toolbar(vm: vm, showSubTab: true, hideOnSideBySide: showSideBySide),
+          Expanded(
+            child: vm.detailLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.cyanAccent,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : (vm.districts == null
+                    ? const Center(
+                        child: Text('İl seç',
+                            style: TextStyle(color: Colors.white54)))
+                    : (showSideBySide
+                        ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: _PotentialView(
+                                  districts: vm.districts!,
+                                  province: vm.selectedProvince ?? '',
+                                ),
+                              ),
+                              Container(
+                                width: 1,
+                                color: Colors.white.withValues(alpha: 0.08),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: _WeatherView(
+                                  climate: vm.climate,
+                                  province: vm.selectedProvince ?? '',
+                                ),
+                              ),
+                            ],
+                          )
+                        : (switch (vm.subTab) {
+                            ProvinceDrillSubTab.potential => _PotentialView(
+                                districts: vm.districts!,
+                                province: vm.selectedProvince ?? '',
+                              ),
+                            ProvinceDrillSubTab.weather => _WeatherView(
+                                climate: vm.climate,
+                                province: vm.selectedProvince ?? '',
+                              ),
+                            ProvinceDrillSubTab.projection =>
+                              ProvinceProjectionView(
+                                province: vm.selectedProvince ?? '',
+                              ),
+                          }))),
           ),
-          const SizedBox(height: 8),
-          Expanded(child: _ProvinceDetail(vm: vm, theme: theme)),
         ],
       );
     });
   }
 }
 
-// ── Province List Panel ───────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// TOOLBAR — il seçici + sub-tab
+// ─────────────────────────────────────────────────────────────────────────────
 
-class _ProvinceListPanel extends StatelessWidget {
-  final List<ProvinceSummary> provinces;
-  final int allCount;
-  final ReportViewModel vm;
-  final ThemeViewModel theme;
-  final TextEditingController searchCtrl;
-  final String regionFilter;
-  final ValueChanged<String> onSearch;
-  final ValueChanged<String> onRegion;
+class _Toolbar extends StatelessWidget {
+  final ProvinceDrillViewModel vm;
+  /// 2026-05-25 (Fix5): Geniş ekranda sub-tab gereksiz (her iki view yan yana).
+  final bool showSubTab;
 
-  const _ProvinceListPanel({
-    required this.provinces,
-    required this.allCount,
+  /// 2026-05-27 (P2.5): Geniş ekranda Potansiyel+Hava yan yana gösteriliyor;
+  /// bu durumda sadece "Projeksiyon" segmenti görünür çünkü diğer 2'si zaten
+  /// aynı anda ekranda. Kullanıcı projection'a geçince layout otomatik full-width
+  /// olur.
+  final bool hideOnSideBySide;
+  const _Toolbar({
     required this.vm,
-    required this.theme,
-    required this.searchCtrl,
-    required this.regionFilter,
-    required this.onSearch,
-    required this.onRegion,
+    this.showSubTab = true,
+    this.hideOnSideBySide = false,
   });
-
-  static const _regions = [
-    'Tümü', 'Marmara', 'Ege', 'Akdeniz',
-    'İç Anadolu', 'Karadeniz', 'Doğu Anadolu', 'Güneydoğu',
-  ];
 
   @override
   Widget build(BuildContext context) {
-    final selected = vm.selectedProvinceIndex;
-
     return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.black.withValues(alpha: 0.20),
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+      ),
+      child: Row(
+        children: [
+          // İl seçici — Expanded ile uzun il adlarında bile sığacak.
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(8),
+                border:
+                    Border.all(color: Colors.cyanAccent.withValues(alpha: 0.30)),
+              ),
+              child: DropdownButton<String>(
+                value: vm.selectedProvince,
+                isDense: true,
+                isExpanded: true,
+                dropdownColor: const Color(0xFF1C2533),
+                underline: const SizedBox.shrink(),
+                icon: const Icon(Icons.keyboard_arrow_down,
+                    color: Colors.cyanAccent, size: 18),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+                items: vm.allProvinces
+                    .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                    .toList(),
+                onChanged: (p) {
+                  if (p != null) vm.selectProvince(p);
+                },
+              ),
+            ),
+          ),
+          if (showSubTab) ...[
+            const SizedBox(width: 8),
+            _SubTabToggle(
+              active: vm.subTab,
+              onChange: vm.setSubTab,
+              compact: hideOnSideBySide,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SubTabToggle extends StatelessWidget {
+  final ProvinceDrillSubTab active;
+  final ValueChanged<ProvinceDrillSubTab> onChange;
+
+  /// Geniş ekranda Potansiyel+Hava yan yana zaten gösterildiği için
+  /// sadece "Projeksiyon" segmenti gösterilir (P2.5).
+  final bool compact;
+  const _SubTabToggle({
+    required this.active,
+    required this.onChange,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!compact)
+            _seg('Potansiyel', Icons.analytics_outlined,
+                ProvinceDrillSubTab.potential),
+          if (!compact)
+            _seg('Hava', Icons.cloud_outlined, ProvinceDrillSubTab.weather),
+          _seg('Projeksiyon', Icons.auto_graph_rounded,
+              ProvinceDrillSubTab.projection),
+        ],
+      ),
+    );
+  }
+
+  Widget _seg(String label, IconData icon, ProvinceDrillSubTab tab) {
+    final isActive = active == tab;
+    return GestureDetector(
+      onTap: () => onChange(tab),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isActive
+              ? Colors.cyanAccent.withValues(alpha: 0.15)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                size: 13,
+                color: isActive ? Colors.cyanAccent : Colors.white54),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                color: isActive ? Colors.cyanAccent : Colors.white54,
+                fontSize: 11.5,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POTANSİYEL VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PotentialView extends StatelessWidget {
+  final ProvinceDistrictsData districts;
+  final String province;
+  const _PotentialView({required this.districts, required this.province});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$province · ${districts.districtCount} ilçe',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'İlçe bazlı potansiyel analizi · 3 kaynak için en iyi sahalar',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // İlçe haritası — ilçeler en iyi skoruna göre renkli marker.
+          // F4: İlin sınırına hapsedildi; ilçe merkezleri bbox + 0.3° padding
+          // → kullanıcı il dışına pan yapamaz.
+          // 2026-05-26 (J1): Marker'a tıklayınca H4 inline kart açılır;
+          // "Detay" tuşu → `DistrictDetailPage` (İl=>İlçe raporu ile aynı).
+          Builder(builder: (mctx) {
+            final markers = districts.districts
+                .map((d) => ReportMapMarker(
+                      lat: d.lat,
+                      lon: d.lon,
+                      label: d.name,
+                      score: d.bestScore,
+                    ))
+                .toList();
+            ml.LngLatBounds? bounds;
+            if (markers.length >= 2) {
+              double minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+              for (final m in markers) {
+                if (m.lat < minLat) minLat = m.lat;
+                if (m.lat > maxLat) maxLat = m.lat;
+                if (m.lon < minLon) minLon = m.lon;
+                if (m.lon > maxLon) maxLon = m.lon;
+              }
+              bounds = ml.LngLatBounds(
+                longitudeWest: minLon,
+                latitudeSouth: minLat,
+                longitudeEast: maxLon,
+                latitudeNorth: maxLat,
+              );
+            }
+            return ReportMiniMap(
+              height: 280,
+              markers: markers,
+              bounds: bounds,
+              // N4: bounds size'ın %20'si padding. Küçük ilde dar, büyük ilde
+              // geniş — kullanıcı seçili ile odaklı kalır.
+              boundsPaddingRatio: 0.20,
+              districtProvinceFilter: province,
+              markerSize: ReportMarkerSize.compact,
+              onMarkerTap: (m) {
+                // Marker label → DistrictScore (isim üzerinden eşle)
+                final match = districts.districts.firstWhere(
+                  (d) => d.name == m.label,
+                  orElse: () => districts.districts.first,
+                );
+                Navigator.of(mctx).push(
+                  MaterialPageRoute(
+                    builder: (_) => DistrictDetailPage(
+                      district: match,
+                      provinceName: province,
+                    ),
+                  ),
+                );
+              },
+            );
+          }),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _mapLegendDot(const Color(0xFF10B981), 'Yüksek ≥65'),
+              const SizedBox(width: 12),
+              _mapLegendDot(const Color(0xFFF59E0B), 'Orta 45-65'),
+              const SizedBox(width: 12),
+              _mapLegendDot(const Color(0xFFEF4444), 'Düşük <45'),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // 3 kolon best spots
+          LayoutBuilder(builder: (ctx, c) {
+            final cols = [
+              _BestSpotColumn(
+                title: 'En İyi Güneş İlçeleri',
+                resource: 'solar',
+                color: const Color(0xFFF59E0B),
+                icon: Icons.wb_sunny_rounded,
+                spots: districts.bestSpots['solar'] ?? const [],
+              ),
+              _BestSpotColumn(
+                title: 'En İyi Rüzgar İlçeleri',
+                resource: 'wind',
+                color: const Color(0xFF3B82F6),
+                icon: Icons.air_rounded,
+                spots: districts.bestSpots['wind'] ?? const [],
+              ),
+              _BestSpotColumn(
+                title: 'En İyi Hidro İlçeleri',
+                resource: 'hydro',
+                color: const Color(0xFF06B6D4),
+                icon: Icons.water_drop_rounded,
+                spots: districts.bestSpots['hydro'] ?? const [],
+              ),
+            ];
+            if (c.maxWidth >= 880) {
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: cols[0]),
+                    const SizedBox(width: 10),
+                    Expanded(child: cols[1]),
+                    const SizedBox(width: 10),
+                    Expanded(child: cols[2]),
+                  ],
+                ),
+              );
+            }
+            return Column(
+              children: [
+                cols[0],
+                const SizedBox(height: 10),
+                cols[1],
+                const SizedBox(height: 10),
+                cols[2],
+              ],
+            );
+          }),
+
+          const SizedBox(height: 20),
+
+          // İlçe karşılaştırma tablosu — G4: provinceName drill-down için.
+          _DistrictComparisonTable(
+            districts: districts.districts,
+            provinceName: province,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mapLegendDot(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.55),
+            fontSize: 10,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BestSpotColumn extends StatelessWidget {
+  final String title;
+  final String resource;
+  final Color color;
+  final IconData icon;
+  final List<BestSpot> spots;
+
+  const _BestSpotColumn({
+    required this.title,
+    required this.resource,
+    required this.color,
+    required this.icon,
+    required this.spots,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: color.withValues(alpha: 0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Icon(icon, color: color, size: 14),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (spots.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text(
+                  'Uygun saha yok',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.40),
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            )
+          else
+            ...spots.asMap().entries.map(
+                  (e) => _BestSpotCard(
+                    rank: e.key + 1,
+                    spot: e.value,
+                    resource: resource,
+                    color: color,
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BestSpotCard extends StatelessWidget {
+  final int rank;
+  final BestSpot spot;
+  final String resource;
+  final Color color;
+
+  const _BestSpotCard({
+    required this.rank,
+    required this.spot,
+    required this.resource,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(9),
+      decoration: BoxDecoration(
+        color: rank == 1
+            ? color.withValues(alpha: 0.08)
+            : Colors.white.withValues(alpha: 0.02),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: rank == 1
+              ? color.withValues(alpha: 0.30)
+              : Colors.white.withValues(alpha: 0.06),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '#$rank',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  spot.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                spot.score.toStringAsFixed(0),
+                style: TextStyle(
+                  color: color,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Wrap(
+            spacing: 10,
+            runSpacing: 2,
+            children: _detailChips(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _detailChips() {
+    final chips = <Widget>[
+      _chip('${spot.estimatedMw} MW'),
+    ];
+    if (resource == 'solar') {
+      final irr = spot.extra['irradiance_kwh_m2_day'];
+      final area = spot.extra['panel_area_m2'];
+      if (irr != null) chips.add(_chip('$irr kWh/m²'));
+      if (area != null) chips.add(_chip('$area m²'));
+    } else if (resource == 'wind') {
+      final ws = spot.extra['wind_speed_ms'];
+      final hub = spot.extra['hub_height_m'];
+      if (ws != null) chips.add(_chip('$ws m/s'));
+      if (hub != null) chips.add(_chip('${hub}m hub'));
+    } else if (resource == 'hydro') {
+      final flow = spot.extra['flow_rate_m3s'];
+      final head = spot.extra['head_m'];
+      if (flow != null) chips.add(_chip('$flow m³/s'));
+      if (head != null) chips.add(_chip('${head}m düşü'));
+    }
+    return chips;
+  }
+
+  Widget _chip(String text) => Text(
+        text,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.55),
+          fontSize: 10,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// İLÇE KARŞILAŞTIRMA TABLOSU
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 2026-05-25 (G3+G4): StatelessWidget → StatefulWidget.
+/// - Satırlar score'a göre subtle bg renkli (6 ton: emerald/green/lime/amber/
+///   orange/red, alpha 0.04-0.10)
+/// - Her satırın başında checkbox; 2+ seçilince üstte "Karşılaştır (N)"
+///   butonu görünür → `DistrictComparePage` route.
+class _DistrictComparisonTable extends StatefulWidget {
+  final List<DistrictScore> districts;
+  final String? provinceName;
+  const _DistrictComparisonTable({required this.districts, this.provinceName});
+
+  @override
+  State<_DistrictComparisonTable> createState() =>
+      _DistrictComparisonTableState();
+}
+
+class _DistrictComparisonTableState extends State<_DistrictComparisonTable> {
+  // 2026-05-25 (Fix3): 6 sütunlu tablo dar ekranda hücrelerin içeriği
+  // birbirine taşıyordu (özellikle skor cell'in Bar+Text yatay row'u).
+  // Çözüm: minTableWidth=560 sabit + dar ekranda SingleChildScrollView
+  // (horizontal) ile yatay scroll. Geniş ekranda doğal genişlikte kalır.
+  // G4: Checkbox eklendi → minTableWidth 560 → 600.
+  static const double _minTableWidth = 600;
+
+  final Set<String> _selected = {};
+
+  /// 2026-05-26 (J2): İlçeleri her seferinde **Tahmini MW azalan** sıralı
+  /// göster — kullanıcı kapasiteye göre kıyaslamak istiyor.
+  /// Eşit MW'de bestScore desc → isim asc.
+  List<DistrictScore> get _sortedDistricts {
+    final copy = [...widget.districts];
+    copy.sort((a, b) {
+      final mw = b.estimatedMw.compareTo(a.estimatedMw);
+      if (mw != 0) return mw;
+      final score = b.bestScore.compareTo(a.bestScore);
+      if (score != 0) return score;
+      return a.name.compareTo(b.name);
+    });
+    return copy;
+  }
+
+  void _toggle(String name) {
+    setState(() {
+      if (_selected.contains(name)) {
+        _selected.remove(name);
+      } else {
+        _selected.add(name);
+      }
+    });
+  }
+
+  void _openCompare() {
+    final selectedDistricts = _sortedDistricts
+        .where((d) => _selected.contains(d.name))
+        .toList();
+    if (selectedDistricts.length < 2) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ComparePage(
+          title: 'İlçe Karşılaştırması',
+          subtitle: widget.provinceName ?? '',
+          items: selectedDistricts
+              .map((d) => CompareItem(
+                    name: d.name,
+                    subtitle: widget.provinceName ?? '',
+                    bestResource: d.bestResource,
+                    bestScore: d.bestScore,
+                    solarScore: d.solarScore,
+                    windScore: d.windScore,
+                    hydroScore: d.hydroScore,
+                    estimatedMw: d.estimatedMw.toDouble(),
+                  ))
+              .toList(),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(11),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Başlık ──────────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-            child: Row(children: [
-              const Icon(Icons.location_city_rounded,
-                  size: 14, color: Colors.cyanAccent),
-              const SizedBox(width: 6),
-              // 81 il toplam (Türkiye idari taksimatı sabit).
-              // Payda her zaman 81 — bazı illerde son 168 saatte veri
-              // eksikse pay düşer ("79/81" gibi görünür, kullanıcı eksiği fark eder).
-              Text(
-                'İller  ${provinces.length}/81',
-                style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600),
-              ),
-            ]),
-          ),
-
-          // ── Arama ───────────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-            child: TextField(
-              controller: searchCtrl,
-              onChanged: onSearch,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: InputDecoration(
-                hintText: 'İl ara…',
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                prefixIcon: const Icon(Icons.search_rounded,
-                    size: 16, color: Colors.white38),
-                suffixIcon: searchCtrl.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear_rounded,
-                            size: 14, color: Colors.white38),
-                        onPressed: () {
-                          searchCtrl.clear();
-                          onSearch('');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.06),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                isDense: true,
-              ),
-            ),
-          ),
-
-          // ── Bölge Filtresi ───────────────────────────────────────────────────
-          SizedBox(
-            height: 28,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              itemCount: _regions.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 4),
-              itemBuilder: (_, i) {
-                final r = _regions[i];
-                final active = r == regionFilter;
-                return GestureDetector(
-                  onTap: () => onRegion(r),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: active
-                          ? Colors.cyanAccent.withValues(alpha: 0.18)
-                          : Colors.white.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: active
-                            ? Colors.cyanAccent.withValues(alpha: 0.5)
-                            : Colors.transparent,
-                      ),
-                    ),
-                    child: Text(
-                      r,
-                      style: TextStyle(
-                        color: active
-                            ? Colors.cyanAccent
-                            : Colors.white54,
-                        fontSize: 10,
-                        fontWeight: active
-                            ? FontWeight.w700
-                            : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Divider(height: 1, color: Colors.white12),
-
-          // ── Liste ────────────────────────────────────────────────────────────
-          Expanded(
-            child: provinces.isEmpty
-                ? const Center(
-                    child: Text('Sonuç bulunamadı.',
-                        style:
-                            TextStyle(color: Colors.white38, fontSize: 12)))
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: provinces.length,
-                    itemBuilder: (context, idx) {
-                      final p = provinces[idx];
-                      // Selected index from vm refers to index in original list
-                      final origIdx = vm.provinceSummaries.indexOf(p);
-                      final isActive = origIdx == selected;
-                      final score = _computeScore(p);
-                      return _ProvinceListItem(
-                        name: _displayName(p.provinceName),
-                        region: _regionOf(p.provinceName),
-                        score: score,
-                        isActive: isActive,
-                        onTap: () =>
-                            vm.setSelectedProvinceIndex(origIdx),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProvinceListItem extends StatelessWidget {
-  final String name;
-  final String region;
-  final double score;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _ProvinceListItem({
-    required this.name,
-    required this.region,
-    required this.score,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: isActive
-              ? Colors.cyanAccent.withValues(alpha: 0.15)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: isActive
-              ? Border.all(color: Colors.cyanAccent.withValues(alpha: 0.4))
-              : Border.all(color: Colors.transparent),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: TextStyle(
-                      color: isActive
-                          ? Colors.cyanAccent
-                          : Colors.white70,
-                      fontSize: 12,
-                      fontWeight: isActive
-                          ? FontWeight.w700
-                          : FontWeight.normal,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    region,
-                    style: TextStyle(
-                      color: isActive
-                          ? Colors.cyanAccent.withValues(alpha: 0.6)
-                          : Colors.white30,
-                      fontSize: 9,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: _scoreColor(score).withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                score.toStringAsFixed(0),
+          Row(
+            children: [
+              const Text(
+                'İlçe Karşılaştırma Tablosu',
                 style: TextStyle(
-                  color: _scoreColor(score),
-                  fontSize: 10,
+                  color: Colors.white,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-            ),
-          ],
-        ),
+              const SizedBox(width: 8),
+              // G4: 2+ seçilince "Karşılaştır (N)" butonu görünür.
+              if (_selected.length >= 2)
+                GestureDetector(
+                  onTap: _openCompare,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.cyanAccent.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: Colors.cyanAccent.withValues(alpha: 0.50),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.compare_arrows_rounded,
+                            size: 12, color: Colors.cyanAccent),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Karşılaştır (${_selected.length})',
+                          style: const TextStyle(
+                            color: Colors.cyanAccent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              const Spacer(),
+              LayoutBuilder(builder: (lctx, c) {
+                if (c.maxWidth >= _minTableWidth) return const SizedBox.shrink();
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.swipe_rounded,
+                        size: 12,
+                        color: Colors.white.withValues(alpha: 0.40)),
+                    const SizedBox(width: 4),
+                    Text(
+                      'yatay kaydır',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.40),
+                        fontSize: 9.5,
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ],
+          ),
+          const SizedBox(height: 10),
+          LayoutBuilder(builder: (lctx, c) {
+            final needsScroll = c.maxWidth < _minTableWidth;
+            final table = SizedBox(
+              width: needsScroll ? _minTableWidth : c.maxWidth,
+              child: Column(
+                children: [
+                  _tableRow(
+                    isHeader: true,
+                    cells: ['', 'İlçe', 'Güneş', 'Rüzgar', 'Hidro', 'En İyi', 'MW'],
+                  ),
+                  const SizedBox(height: 4),
+                  // J2: Her seferinde MW azalan sıralı.
+                  ..._sortedDistricts.map((d) => _DistrictRow(
+                        district: d,
+                        selected: _selected.contains(d.name),
+                        onToggle: () => _toggle(d.name),
+                        provinceName: widget.provinceName,
+                      )),
+                ],
+              ),
+            );
+            if (!needsScroll) return table;
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: table,
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  // G4: 7 sütun (checkbox + 6 mevcut). flex: 1+3+2+2+2+2+2 = 14, 600px /
+  // 14 ≈ 42px/birim.
+  static Widget _tableRow({
+    required bool isHeader,
+    required List<String> cells,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(width: 28, child: _cell(cells[0], isHeader, center: true)),
+          Expanded(flex: 3, child: _cell(cells[1], isHeader)),
+          Expanded(flex: 2, child: _cell(cells[2], isHeader, center: true)),
+          Expanded(flex: 2, child: _cell(cells[3], isHeader, center: true)),
+          Expanded(flex: 2, child: _cell(cells[4], isHeader, center: true)),
+          Expanded(flex: 2, child: _cell(cells[5], isHeader, center: true)),
+          Expanded(flex: 2, child: _cell(cells[6], isHeader, center: true)),
+        ],
+      ),
+    );
+  }
+
+  static Widget _cell(String text, bool isHeader, {bool center = false}) {
+    return Text(
+      text,
+      textAlign: center ? TextAlign.center : TextAlign.left,
+      style: TextStyle(
+        color: isHeader
+            ? Colors.white.withValues(alpha: 0.45)
+            : Colors.white,
+        fontSize: isHeader ? 9.5 : 12,
+        fontWeight: isHeader ? FontWeight.w600 : FontWeight.w500,
+        letterSpacing: isHeader ? 0.5 : 0,
       ),
     );
   }
 }
 
-// ── Province Detail ───────────────────────────────────────────────────────────
+class _DistrictRow extends StatelessWidget {
+  final DistrictScore district;
+  final bool selected;
+  final VoidCallback onToggle;
+  final String? provinceName;
+  const _DistrictRow({
+    required this.district,
+    required this.selected,
+    required this.onToggle,
+    this.provinceName,
+  });
 
-class _ProvinceDetail extends StatelessWidget {
-  final ReportViewModel vm;
-  final ThemeViewModel theme;
+  static const _resColors = {
+    'solar': Color(0xFFF59E0B),
+    'wind': Color(0xFF3B82F6),
+    'hydro': Color(0xFF06B6D4),
+  };
 
-  const _ProvinceDetail({required this.vm, required this.theme});
+  /// 2026-05-25 (G3): Skora göre 6 ton subtle bg. Kullanıcı isteği: "satırları
+  /// çok hafif renklerle renklendir, 6-7 renk".
+  Color _rowBgColor() {
+    if (selected) {
+      return Colors.cyanAccent.withValues(alpha: 0.10);
+    }
+    final s = district.bestScore;
+    if (s >= 80) return const Color(0xFF10B981).withValues(alpha: 0.08); // emerald
+    if (s >= 70) return const Color(0xFF22C55E).withValues(alpha: 0.06); // green
+    if (s >= 60) return const Color(0xFFA3E635).withValues(alpha: 0.05); // lime
+    if (s >= 50) return const Color(0xFFFBBF24).withValues(alpha: 0.05); // amber
+    if (s >= 40) return const Color(0xFFF59E0B).withValues(alpha: 0.05); // orange
+    return const Color(0xFFEF4444).withValues(alpha: 0.04);              // red
+  }
 
   @override
   Widget build(BuildContext context) {
-    final p = vm.selectedProvinceSummary;
-    if (p == null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.touch_app_outlined,
-                size: 36, color: Colors.white12),
-            const SizedBox(height: 8),
-            const Text('Sol listeden bir il seçin.',
-                style: TextStyle(color: Colors.white38, fontSize: 13)),
-          ],
+    final bestColor = _resColors[district.bestResource] ?? Colors.white54;
+    // G8: Satır tıklama → DistrictDetailPage; checkbox kendi alanında toggle.
+    void openDetail() {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => DistrictDetailPage(
+            district: district,
+            provinceName: provinceName ?? '',
+          ),
         ),
       );
     }
 
-    final displayName = _displayName(p.provinceName);
-    final region = _regionOf(p.provinceName);
-    final score = _computeScore(p);
-    // Yaklaşık finans metrikleri (score bazlı tahmin)
-    final lcoe = (2.8 - (score / 100) * 1.2);
-    final roi = (10 + (score / 100) * 20);
-    final amort = (8 - (score / 100) * 5);
-    final irr = (8 + (score / 100) * 16);
-
-    final solarVal = p.avgRadiation ?? 0;
-    final windVal = p.avgWindSpeed ?? 0;
-    final tempVal = p.avgTemperature ?? 0;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Başlık ──────────────────────────────────────────────────────────
-          _DetailHeader(
-              name: displayName, region: region, score: score),
-          const SizedBox(height: 10),
-
-          // ── Ne anlıyoruz? Açıklama kutusu ───────────────────────────────────
-          _InfoBanner(
-            icon: Icons.lightbulb_outline_rounded,
-            color: Colors.amberAccent,
-            text: 'Bu panel, seçili ilin yenilenebilir enerji '
-                'kurulum potansiyelini göstermektedir. '
-                'Puanlama güneş ışınımı, rüzgar hızı ve '
-                'sıcaklık verilerine göre hesaplanır. '
-                'Finansal tahminler ortalama Türkiye LCOE '
-                'değerleri baz alınarak yaklaşık hesaplanmıştır.',
-          ),
-          const SizedBox(height: 12),
-
-          // ── Ham ölçüm verileri ───────────────────────────────────────────────
-          _SectionTitle(title: 'Ölçüm Verileri',
-              subtitle: 'Son 7 günlük saatlik ortalama'),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _StatChip(
-                icon: Icons.wb_sunny_rounded,
-                label: 'Güneş Işınımı',
-                value: '${solarVal.toStringAsFixed(0)} W/m²',
-                color: Colors.orangeAccent,
-                hint: '800 W/m² üzeri mükemmel güneş potansiyeli',
-              ),
-              _StatChip(
-                icon: Icons.air_rounded,
-                label: 'Rüzgar Hızı',
-                value: '${windVal.toStringAsFixed(1)} m/s',
-                color: Colors.blueAccent,
-                hint: '7+ m/s ticari türbin eşiğidir',
-              ),
-              _StatChip(
-                icon: Icons.thermostat_rounded,
-                label: 'Sıcaklık',
-                value: '${tempVal.toStringAsFixed(1)} °C',
-                color: Colors.redAccent,
-                hint: 'Aşırı sıcak iklim panel verimini düşürür',
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          // ── Finansal tahminler ───────────────────────────────────────────────
-          _SectionTitle(
-            title: 'Finansal Tahminler',
-            subtitle: 'Puan bazlı yaklaşık değerler — proje fizibilite için referans',
-          ),
-          const SizedBox(height: 8),
-          _RoiGrid(lcoe: lcoe, roi: roi, amort: amort, irr: irr),
-          const SizedBox(height: 14),
-
-          // ── Potansiyel radar ─────────────────────────────────────────────────
-          _SectionTitle(
-            title: 'Potansiyel Radar',
-            subtitle: 'Her eksen 0–5 puan arası normalize edilmiş',
-          ),
-          const SizedBox(height: 8),
-          _ProvinceRadarChart(province: p, score: score),
-          const SizedBox(height: 14),
-
-          // ── Faz 1: Kaynak × Pencere Skor Matrisi ─────────────────────────────
-          _SectionTitle(
-            title: 'Kaynak × Zaman Pencere Skorları',
-            subtitle:
-                'province_analysis tek kaynak tablosu — 3 kaynak × 4 pencere',
-          ),
-          const SizedBox(height: 8),
-          _FazBirScoreMatrix(vm: vm),
-          const SizedBox(height: 14),
-
-          // ── Haritada görüntüle ───────────────────────────────────────────────
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () =>
-                  DefaultTabController.of(context).animateTo(4),
-              icon: const Icon(Icons.map_outlined,
-                  size: 16, color: Colors.cyanAccent),
-              label: Text(
-                '$displayName\'ı Haritada Görüntüle',
-                style: const TextStyle(
-                    color: Colors.cyanAccent, fontSize: 12),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(
-                    color: Colors.cyanAccent.withValues(alpha: 0.4)),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // ── Senaryo oluştur ──────────────────────────────────────────────────
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () => showDialog(
-                context: context,
-                builder: (_) => ScenarioCreateDialog(theme: theme),
-              ),
-              icon: const Icon(Icons.add_chart_rounded, size: 16),
-              label: Text(
-                '$displayName için Senaryo Oluştur',
-                style: const TextStyle(fontSize: 12),
-              ),
-              style: FilledButton.styleFrom(
-                backgroundColor:
-                    Colors.deepPurpleAccent.withValues(alpha: 0.18),
-                foregroundColor: Colors.deepPurpleAccent,
-                side: BorderSide(
-                    color: Colors.deepPurpleAccent.withValues(alpha: 0.45)),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Yardımcı Widgetlar ────────────────────────────────────────────────────────
-
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  const _SectionTitle({required this.title, required this.subtitle});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title,
-            style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 12,
-                fontWeight: FontWeight.w700)),
-        Text(subtitle,
-            style: const TextStyle(color: Colors.white38, fontSize: 10)),
-      ],
-    );
-  }
-}
-
-class _InfoBanner extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String text;
-  const _InfoBanner(
-      {required this.icon, required this.color, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(10),
+      margin: const EdgeInsets.only(bottom: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 14, color: color.withValues(alpha: 0.8)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(text,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.75),
-                    fontSize: 11,
-                    height: 1.5)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DetailHeader extends StatelessWidget {
-  final String name;
-  final String region;
-  final double score;
-
-  const _DetailHeader(
-      {required this.name, required this.region, required this.score});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [
-          Colors.cyanAccent.withValues(alpha: 0.08),
-          Colors.blueAccent.withValues(alpha: 0.05),
-        ]),
-        borderRadius: BorderRadius.circular(12),
-        border:
-            Border.all(color: Colors.cyanAccent.withValues(alpha: 0.2)),
+        color: _rowBgColor(),
+        borderRadius: BorderRadius.circular(6),
+        border: selected
+            ? Border.all(
+                color: Colors.cyanAccent.withValues(alpha: 0.55),
+                width: 1,
+              )
+            : null,
       ),
       child: Row(
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800)),
-                const SizedBox(height: 2),
-                Row(children: [
-                  const Icon(Icons.place_outlined,
-                      size: 11, color: Colors.white38),
-                  const SizedBox(width: 3),
-                  Text(region,
-                      style: const TextStyle(
-                          color: Colors.white38, fontSize: 11)),
-                ]),
-              ],
-            ),
-          ),
-          // Puan rozeti
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _scoreColor(score).withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                      color: _scoreColor(score).withValues(alpha: 0.5)),
-                ),
-                child: Text(score.toStringAsFixed(0),
-                    style: TextStyle(
-                        color: _scoreColor(score),
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900)),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                score >= 70
-                    ? '⚡ Yüksek Potansiyel'
-                    : score >= 45
-                        ? '✓ Orta Potansiyel'
-                        : '○ Düşük Potansiyel',
-                style: TextStyle(
-                    color: _scoreColor(score), fontSize: 9),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-  final String hint;
-
-  const _StatChip({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.hint,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: hint,
-      child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Icon(icon, size: 12, color: color),
-              const SizedBox(width: 4),
-              Text(label,
-                  style: TextStyle(
-                      color: color.withValues(alpha: 0.8),
-                      fontSize: 10)),
-            ]),
-            const SizedBox(height: 4),
-            Text(value,
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RoiGrid extends StatelessWidget {
-  final double lcoe;
-  final double roi;
-  final double amort;
-  final double irr;
-
-  const _RoiGrid(
-      {required this.lcoe,
-      required this.roi,
-      required this.amort,
-      required this.irr});
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 8,
-      childAspectRatio: 2.4,
-      children: [
-        _FinCard(
-          label: 'LCOE',
-          value: '${lcoe.toStringAsFixed(2)} ₺/kWh',
-          icon: Icons.bolt_rounded,
-          color: Colors.amberAccent,
-          hint: 'Düzeltilmiş Enerji Maliyeti — '
-              'üretilen her kWh için toplam ömür maliyeti',
-        ),
-        _FinCard(
-          label: 'ROI',
-          value: '%${roi.toStringAsFixed(0)}',
-          icon: Icons.trending_up_rounded,
-          color: Colors.greenAccent,
-          hint: 'Yatırım Getirisi — proje ömrü boyunca '
-              'toplam kâr / başlangıç yatırımı',
-        ),
-        _FinCard(
-          label: 'Amortisman',
-          value: '${amort.toStringAsFixed(1)} yıl',
-          icon: Icons.timer_outlined,
-          color: Colors.blueAccent,
-          hint: 'Geri Ödeme Süresi — yatırımın kendini '
-              'karşılaması için geçen tahmini süre',
-        ),
-        _FinCard(
-          label: 'IRR',
-          value: '%${irr.toStringAsFixed(0)}',
-          icon: Icons.show_chart_rounded,
-          color: Colors.purpleAccent,
-          hint: 'İç Verimlilik Oranı — yatırımın yıllık '
-              'getiri yüzdesi (>12% iyi kabul edilir)',
-        ),
-      ],
-    );
-  }
-}
-
-class _FinCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-  final String hint;
-
-  const _FinCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-    required this.hint,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: hint,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.07),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: color.withValues(alpha: 0.7)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(label,
-                      style: TextStyle(
-                          color: color.withValues(alpha: 0.7),
-                          fontSize: 9,
-                          fontWeight: FontWeight.w600)),
-                  Text(value,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800)),
-                ],
-              ),
-            ),
-            Icon(Icons.info_outline_rounded,
-                size: 11, color: Colors.white.withValues(alpha: 0.2)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProvinceRadarChart extends StatelessWidget {
-  final ProvinceSummary province;
-  final double score;
-
-  const _ProvinceRadarChart(
-      {required this.province, required this.score});
-
-  @override
-  Widget build(BuildContext context) {
-    final solar =
-        ((province.avgRadiation ?? 0) / 800).clamp(0.0, 1.0);
-    final wind =
-        ((province.avgWindSpeed ?? 0) / 10).clamp(0.0, 1.0);
-    final temp =
-        ((province.avgTemperature ?? 0 + 10) / 50).clamp(0.0, 1.0);
-    final cost = (1.0 - score / 100).clamp(0.0, 1.0);
-    final land = (score / 100).clamp(0.0, 1.0);
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(12),
-        border:
-            Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        children: [
-          // Açıklama satırı
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            children: const [
-              _RadarLegend('Güneş', 'Işınım potansiyeli (max 800 W/m²)'),
-              _RadarLegend('Rüzgar', 'Hız potansiyeli (max 10 m/s)'),
-              _RadarLegend('HES', 'Su kaynağı skoru'),
-              _RadarLegend('Maliyet Av.', 'Düşük LCOE (yüksek = avantajlı)'),
-              _RadarLegend('Arazi', 'Genel kurulum skoru'),
-            ],
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 200,
-            child: RadarChart(
-              duration: Duration.zero,
-              RadarChartData(
-                dataSets: [
-                  RadarDataSet(
-                    fillColor: Colors.cyanAccent.withValues(alpha: 0.2),
-                    borderColor: Colors.cyanAccent,
-                    borderWidth: 2,
-                    entryRadius: 3,
-                    dataEntries: [
-                      RadarEntry(value: solar * 5),
-                      RadarEntry(value: wind * 5),
-                      RadarEntry(value: temp * 5),
-                      RadarEntry(value: cost * 5),
-                      RadarEntry(value: land * 5),
-                    ],
+          // G4: Checkbox — kendi tap target'ı, satır tap'ine yayılmaz.
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onToggle,
+            child: SizedBox(
+              width: 28,
+              height: 32,
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: Checkbox(
+                    value: selected,
+                    onChanged: (_) => onToggle(),
+                    visualDensity:
+                        const VisualDensity(horizontal: -4, vertical: -4),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    activeColor: Colors.cyanAccent,
+                    checkColor: Colors.black,
                   ),
-                ],
-                radarBackgroundColor: Colors.transparent,
-                borderData: FlBorderData(show: false),
-                radarBorderData:
-                    const BorderSide(color: Colors.white12, width: 1),
-                tickBorderData:
-                    const BorderSide(color: Colors.white10, width: 0.5),
-                gridBorderData:
-                    const BorderSide(color: Colors.white12, width: 0.5),
-                tickCount: 5,
-                ticksTextStyle:
-                    const TextStyle(color: Colors.transparent, fontSize: 0),
-                getTitle: (index, angle) {
-                  const labels = [
-                    'Güneş', 'Rüzgar', 'HES', 'Maliyet Av.', 'Arazi'
-                  ];
-                  return RadarChartTitle(
-                      text: labels[index], angle: angle);
-                },
-                titleTextStyle:
-                    const TextStyle(color: Colors.white60, fontSize: 11),
-                titlePositionPercentageOffset: 0.2,
+                ),
+              ),
+            ),
+          ),
+          // G8: Diğer alan tap → DistrictDetailPage. InkWell tap propagation
+          // yutar.
+          Expanded(
+            child: InkWell(
+              onTap: openDetail,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 6, vertical: 7),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        district.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Expanded(
+                        flex: 2,
+                        child: _scoreCell(
+                            district.solarScore, _resColors['solar']!)),
+                    Expanded(
+                        flex: 2,
+                        child: _scoreCell(
+                            district.windScore, _resColors['wind']!)),
+                    Expanded(
+                        flex: 2,
+                        child: _scoreCell(
+                            district.hydroScore, _resColors['hydro']!)),
+                    Expanded(
+                      flex: 2,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: bestColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            _resLabel(district.bestResource),
+                            style: TextStyle(
+                              color: bestColor,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        '${district.estimatedMw}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1025,261 +1061,226 @@ class _ProvinceRadarChart extends StatelessWidget {
       ),
     );
   }
-}
 
-class _RadarLegend extends StatelessWidget {
-  final String label;
-  final String description;
-  const _RadarLegend(this.label, this.description);
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: description,
+  Widget _scoreCell(double score, Color color) {
+    // 2026-05-25 (Fix3): Bar width 32→24, sb 5→4 — Expanded(flex:2) içinde
+    // sığsın (mobile'da yatay scroll'la zaten min 560 garanti).
+    return Center(
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 6, height: 6,
-            decoration: BoxDecoration(
-              color: Colors.cyanAccent.withValues(alpha: 0.7),
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text(label,
-              style: const TextStyle(
-                  color: Colors.white38, fontSize: 9)),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-double _computeScore(ProvinceSummary p) {
-  final solarScore =
-      ((p.avgRadiation ?? 0) / 800 * 50).clamp(0.0, 50.0);
-  final windScore =
-      ((p.avgWindSpeed ?? 0) / 10 * 30).clamp(0.0, 30.0);
-  final tempScore =
-      ((p.avgTemperature ?? 15 - 20).abs() < 20 ? 20.0 : 10.0);
-  return (solarScore + windScore + tempScore).clamp(0.0, 100.0);
-}
-
-Color _scoreColor(double score) {
-  if (score >= 70) return Colors.greenAccent;
-  if (score >= 45) return Colors.orangeAccent;
-  return Colors.redAccent;
-}
-
-// ── Faz 1: Kaynak × Pencere Skor Matrisi ─────────────────────────────────────
-//
-// `/analysis/province/{name}` yanıtını 3 satır (wind/solar/hydro) × 4 sütun
-// (1A/3A/6A/Yıl) tabloda gösterir. Renk tonu skora göre.
-
-class _FazBirScoreMatrix extends StatelessWidget {
-  final ReportViewModel vm;
-  const _FazBirScoreMatrix({required this.vm});
-
-  @override
-  Widget build(BuildContext context) {
-    if (vm.isLoadingProvinceAnalysis) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 20),
-        child: Center(
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(
-              color: Colors.purpleAccent,
-              strokeWidth: 2,
-            ),
-          ),
-        ),
-      );
-    }
-    if (vm.provinceAnalysisError != null) {
-      return Padding(
-        padding: const EdgeInsets.all(10),
-        child: Text(
-          'Analiz servisine ulaşılamadı.\n${vm.provinceAnalysisError}',
-          style: const TextStyle(color: Colors.orangeAccent, fontSize: 11),
-        ),
-      );
-    }
-    final detail = vm.provinceAnalysisDetail;
-    if (detail == null) {
-      return const Padding(
-        padding: EdgeInsets.all(10),
-        child: Text(
-          'Bu il için henüz analiz sonucu yok.',
-          style: TextStyle(color: Colors.white38, fontSize: 11),
-        ),
-      );
-    }
-
-    final rows = <(String, Color, ProvinceAnalysisItem?)>[
-      ('Rüzgar', Colors.redAccent, detail.wind),
-      ('Güneş', Colors.orangeAccent, detail.solar),
-      ('Hidro', Colors.lightBlueAccent, detail.hydro),
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white12),
-      ),
-      child: Column(
-        children: [
-          // Başlık satırı
-          Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 10, vertical: 8),
-            child: Row(
-              children: const [
-                SizedBox(
-                  width: 70,
-                  child: Text(
-                    'Kaynak',
-                    style: TextStyle(
-                      color: Colors.white54,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: _HeaderCell(label: '1A'),
-                ),
-                Expanded(
-                  child: _HeaderCell(label: '3A'),
-                ),
-                Expanded(
-                  child: _HeaderCell(label: '6A'),
-                ),
-                Expanded(
-                  child: _HeaderCell(label: 'Yıl'),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: Colors.white12),
-          ...rows.map((r) => _ScoreRow(
-                label: r.$1,
-                color: r.$2,
-                item: r.$3,
-              )),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeaderCell extends StatelessWidget {
-  final String label;
-  const _HeaderCell({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white54,
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-class _ScoreRow extends StatelessWidget {
-  final String label;
-  final Color color;
-  final ProvinceAnalysisItem? item;
-
-  const _ScoreRow({
-    required this.label,
-    required this.color,
-    required this.item,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      child: Row(
-        children: [
           SizedBox(
-            width: 70,
-            child: Row(
+            width: 24,
+            child: Stack(
               children: [
                 Container(
-                  width: 6,
-                  height: 18,
+                  height: 3,
+                  margin: const EdgeInsets.only(top: 6),
                   decoration: BoxDecoration(
-                    color: color,
+                    color: Colors.white.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                FractionallySizedBox(
+                  widthFactor: (score / 100).clamp(0.0, 1.0),
+                  child: Container(
+                    height: 3,
+                    margin: const EdgeInsets.only(top: 6),
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          Expanded(child: _ScoreCell(score: item?.score1m)),
-          Expanded(child: _ScoreCell(score: item?.score3m)),
-          Expanded(child: _ScoreCell(score: item?.score6m)),
-          Expanded(child: _ScoreCell(score: item?.scoreYearly)),
+          const SizedBox(width: 4),
+          Text(
+            score.toStringAsFixed(0),
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _resLabel(String r) => switch (r) {
+        'solar' => 'Güneş',
+        'wind' => 'Rüzgar',
+        'hydro' => 'Hidro',
+        _ => r,
+      };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HAVA VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _WeatherView extends StatelessWidget {
+  final ClimateSeries? climate;
+  final String province;
+  const _WeatherView({required this.climate, required this.province});
+
+  @override
+  Widget build(BuildContext context) {
+    if (climate == null) {
+      return const Center(
+        child: Text('İklim verisi yok',
+            style: TextStyle(color: Colors.white54)),
+      );
+    }
+    final c = climate!;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '$province · Hava Analizi',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Q3: Climate (aylık 10y) — Reports'ta gösterilen aylık
+              // grafikler climatology.monthly_* JSON kolonlarından gelir.
+              ReportSourceBadge(
+                source: c.source,
+                freq: c.source.startsWith('mock')
+                    ? ReportDataFreq.mockTypical
+                    : ReportDataFreq.monthly10y,
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '3 kaynak tipi için meteorolojik göstergeler · 10 yıl ortalaması',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // 4 WeatherStrip
+          LayoutBuilder(builder: (ctx, cc) {
+            final cross = cc.maxWidth >= 760 ? 4 : (cc.maxWidth >= 500 ? 2 : 1);
+            return GridView.count(
+              crossAxisCount: cross,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              childAspectRatio: 2.0,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              children: [
+                WeatherStripCard(
+                  label: 'Güneş Işınımı',
+                  unit: 'kWh/m²·gün',
+                  data: c.irradiance,
+                  color: const Color(0xFFF59E0B),
+                ),
+                WeatherStripCard(
+                  label: 'Rüzgar Hızı',
+                  unit: 'm/s @100m',
+                  data: c.windSpeed,
+                  color: const Color(0xFF3B82F6),
+                ),
+                WeatherStripCard(
+                  label: 'Yağış',
+                  unit: 'mm/ay',
+                  data: c.precipitation,
+                  color: const Color(0xFF06B6D4),
+                ),
+                WeatherStripCard(
+                  label: 'Sıcaklık',
+                  unit: '°C',
+                  data: c.temperature,
+                  color: const Color(0xFFEF4444),
+                ),
+              ],
+            );
+          }),
+
+          const SizedBox(height: 16),
+
+          // Wind rose + river discharge
+          LayoutBuilder(builder: (ctx, cc) {
+            final wide = cc.maxWidth >= 700;
+            final rose = WindRoseCard(rose: c.windRose);
+            final discharge = RiverDischargeCard(discharge: c.riverDischarge);
+            if (wide) {
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: rose),
+                    const SizedBox(width: 12),
+                    Expanded(flex: 2, child: discharge),
+                  ],
+                ),
+              );
+            }
+            return Column(children: [
+              rose,
+              const SizedBox(height: 10),
+              discharge,
+            ]);
+          }),
         ],
       ),
     );
   }
 }
 
-class _ScoreCell extends StatelessWidget {
-  final double? score;
-  const _ScoreCell({required this.score});
+// 2026-05-25 (P2/7): Eski inline `_SourceBadge` shared `ReportSourceBadge`
+// ile değişti — Region/Province/Santral'da tek widget kullanılıyor.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ERROR
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ErrorView extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  const _ErrorView({required this.message, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
-    if (score == null) {
-      return const Center(
-        child: Text(
-          '—',
-          style: TextStyle(color: Colors.white24, fontSize: 11),
-        ),
-      );
-    }
-    final col = _scoreColor(score!);
     return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: col.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(
-          score!.toStringAsFixed(1),
-          style: TextStyle(
-            color: col,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.cloud_off_rounded, color: Colors.white38, size: 36),
+          const SizedBox(height: 10),
+          Text(
+            message,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.55),
+              fontSize: 12,
+            ),
           ),
-        ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded, size: 14),
+            label: const Text('Tekrar dene'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.cyanAccent.withValues(alpha: 0.15),
+              foregroundColor: Colors.cyanAccent,
+              elevation: 0,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -146,9 +146,16 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
   bool _projectionExpanded = true;
   bool _choroplethExpanded = true;
   bool _pinExpanded        = true;
+  bool _pinVisualExpanded  = true;
   bool _satelliteExpanded  = false;
   bool _windExpanded       = true;
   bool _effectsExpanded    = true;
+
+  // 2026-05-17 — Pin görsel stili (gelecek özellik placeholder).
+  // Şu an sadece 'Yuvarlak' aktif. V3 Tipi ve 3D Santral 'YAKINDA' badge'li.
+  // İleride pin marker render'ı bu seçime göre değişir
+  // (PinMarkerStyle enum + MapViewMapLibre.setPinMarkerStyle).
+  int _pinVisualStyle = 0; // 0=Yuvarlak, 1=V3 Tipi, 2=3D Santral
 
   ThemeViewModel get theme => widget.theme;
   MapViewModel   get vm    => widget.vm;
@@ -233,6 +240,14 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
               );
             },
           ),
+          // M-B.2/3 — ML İklim Projeksiyon Haritası (gelecek tahmini choropleth)
+          _toolButton(
+            'ML Projeksiyon',
+            Icons.auto_graph_rounded,
+            Colors.purpleAccent,
+            vm.mlProjectionPanelOpen,
+            globeActive ? null : vm.toggleMlProjectionPanel,
+          ),
           // Aşama I — PostGIS MVT vektör katmanları (3 toggle)
           _toolButton(
             'Su Kaynakları',
@@ -248,13 +263,10 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
             vm.showRestrictedZoneLayer,
             globeActive ? null : vm.toggleRestrictedZoneLayer,
           ),
-          _toolButton(
-            'İletim Hatları',
-            Icons.electrical_services_rounded,
-            Colors.amberAccent,
-            vm.showEnergyCorridorLayer,
-            globeActive ? null : vm.toggleEnergyCorridorLayer,
-          ),
+          // 2026-05-17 — 'İletim Hatları' butonu kaldırıldı (pin sistemi
+          // refactor sırasında kullanıcı isteğiyle UI'dan çıkarıldı). VM
+          // tarafındaki `toggleEnergyCorridorLayer`/`showEnergyCorridorLayer`
+          // geriye uyum için durmaktadır.
         ],
 
         const SizedBox(height: 10),
@@ -388,6 +400,30 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                 ],
 
                 const SizedBox(height: 10),
+                // ── Pin Görseli (gelecek özellik placeholder) ────────
+                // 2026-05-17 — Kullanıcı isteği: pin marker stili seçimi.
+                // Şu an sadece 'Yuvarlak' aktif; V3 Tipi ve 3D Santral
+                // YAKINDA. PinMarkerStyle enum + harita widget sync
+                // ilerideki sprint'te.
+                _SectionHeader(
+                  title: 'Pin Görseli',
+                  expanded: _pinVisualExpanded,
+                  theme: theme,
+                  onToggle: () => setState(
+                      () => _pinVisualExpanded = !_pinVisualExpanded),
+                ),
+                if (_pinVisualExpanded) ...[
+                  const SizedBox(height: 6),
+                  _pinVisualOpt(0, 'Yuvarlak', Icons.circle, Colors.tealAccent),
+                  _pinVisualOpt(1, 'V3 Tipi', Icons.location_on_outlined,
+                      Colors.amberAccent,
+                      disabled: true, badge: 'YAKINDA'),
+                  _pinVisualOpt(2, '3D Santral', Icons.view_in_ar_outlined,
+                      Colors.deepPurpleAccent,
+                      disabled: true, badge: 'YAKINDA'),
+                ],
+
+                const SizedBox(height: 10),
                 // ── Uydu Katmanları ───────────────────────────────────
                 _SectionHeader(
                   title: 'Uydu Katmanları', expanded: _satelliteExpanded, theme: theme,
@@ -489,7 +525,7 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                     badge: _threeDEffectsEnabled ? '3D' : 'YAKINDA',
                     disabled: !_threeDEffectsEnabled,
                   ),
-                  // 3D Arazi — demo dondurmasında devre dışı.
+                  // 3D Arazi — Sprint S2: AWS Terrarium CDN (terrarium PNG).
                   _effectRow(
                     '3D Arazi',
                     Icons.terrain_outlined,
@@ -498,6 +534,159 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                     _threeDEffectsEnabled ? vm.toggleShow3DTerrain : null,
                     badge: _threeDEffectsEnabled ? 'DEM' : 'YAKINDA',
                     disabled: !_threeDEffectsEnabled,
+                  ),
+                  // 2026-05-17 S2 — Exaggeration slider: terrain aktifken
+                  // dağların ne kadar abartılı görüneceğini ayarlar.
+                  if (_threeDEffectsEnabled && vm.show3DTerrain) ...[
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      Icon(Icons.height, size: 12, color: theme.secondaryTextColor),
+                      const SizedBox(width: 4),
+                      Text('Yükseklik Abartısı',
+                          style: TextStyle(color: theme.secondaryTextColor, fontSize: 10)),
+                      const Spacer(),
+                      Text('${vm.terrainExaggeration.toStringAsFixed(1)}×',
+                          style: TextStyle(
+                              color: Colors.teal,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600)),
+                    ]),
+                    SliderTheme(
+                      data: SliderThemeData(
+                        trackHeight: 2,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                        activeTrackColor: Colors.teal,
+                        inactiveTrackColor: theme.secondaryTextColor.withValues(alpha: 0.2),
+                        thumbColor: Colors.teal,
+                        overlayColor: Colors.teal.withAlpha(40),
+                      ),
+                      child: Slider(
+                        value: vm.terrainExaggeration,
+                        min: 1.0,
+                        max: 3.0,
+                        divisions: 20,  // 0.1'lik adım
+                        onChanged: vm.setTerrainExaggeration,
+                      ),
+                    ),
+                    // 2026-05-19 — Hillshade gölge yoğunluğu slider.
+                    // Dağların kabartma algısını arttırır (gölge/highlight).
+                    const SizedBox(height: 2),
+                    Row(children: [
+                      Icon(Icons.invert_colors, size: 12, color: theme.secondaryTextColor),
+                      const SizedBox(width: 4),
+                      Text('Gölge Yoğunluğu',
+                          style: TextStyle(color: theme.secondaryTextColor, fontSize: 10)),
+                      const Spacer(),
+                      Text(vm.hillshadeIntensity == 0
+                              ? 'kapalı'
+                              : '${(vm.hillshadeIntensity * 100).toStringAsFixed(0)}%',
+                          style: TextStyle(
+                              color: Colors.deepOrangeAccent,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600)),
+                    ]),
+                    SliderTheme(
+                      data: SliderThemeData(
+                        trackHeight: 2,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                        activeTrackColor: Colors.deepOrangeAccent,
+                        inactiveTrackColor: theme.secondaryTextColor.withValues(alpha: 0.2),
+                        thumbColor: Colors.deepOrangeAccent,
+                        overlayColor: Colors.deepOrangeAccent.withAlpha(40),
+                      ),
+                      child: Slider(
+                        value: vm.hillshadeIntensity,
+                        min: 0.0,
+                        max: 1.5,
+                        divisions: 15,  // 0.1'lik adım
+                        onChanged: vm.setHillshadeIntensity,
+                      ),
+                    ),
+                  ],
+                ],
+
+                // 2026-05-27 (O1): İzohips contour overlay toggle + opacity.
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(
+                    child: Text('İzohips (Kontur Çizgileri)',
+                        style: TextStyle(color: theme.textColor, fontSize: 12)),
+                  ),
+                  Transform.scale(
+                    scale: 0.75,
+                    child: Switch(
+                      value: vm.showContour,
+                      onChanged: vm.setContourEnabled,
+                      activeColor: const Color(0xFF8B4513), // toprak rengi
+                    ),
+                  ),
+                ]),
+                if (vm.showContour) ...[
+                  Row(children: [
+                    Text('Görünürlük',
+                        style: TextStyle(
+                            color: theme.secondaryTextColor, fontSize: 11)),
+                    const Spacer(),
+                    Text('${(vm.contourOpacity * 100).toStringAsFixed(0)}%',
+                        style: const TextStyle(
+                            color: Color(0xFF8B4513),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600)),
+                  ]),
+                  SliderTheme(
+                    data: SliderThemeData(
+                      trackHeight: 2,
+                      thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 6),
+                      overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 10),
+                      activeTrackColor: const Color(0xFF8B4513),
+                      inactiveTrackColor:
+                          theme.secondaryTextColor.withValues(alpha: 0.2),
+                      thumbColor: const Color(0xFF8B4513),
+                      overlayColor: const Color(0xFF8B4513).withAlpha(40),
+                    ),
+                    child: Slider(
+                      value: vm.contourOpacity,
+                      min: 0.0,
+                      max: 1.0,
+                      divisions: 20,
+                      onChanged: vm.setContourOpacity,
+                    ),
+                  ),
+                  // O2: Kaynak seçici — OpenTopoMap (raster) vs kendi MVT.
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Row(
+                      children: [
+                        Text('Kaynak',
+                            style: TextStyle(
+                                color: theme.secondaryTextColor,
+                                fontSize: 11)),
+                        const Spacer(),
+                        _ContourSourceToggle(
+                          value: vm.contourSource,
+                          onChanged: vm.setContourSource,
+                          theme: theme,
+                        ),
+                      ],
+                    ),
+                  ),
+                  // O1.5/O2: Attribution chip — kaynağa göre.
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 4),
+                    child: Text(
+                      vm.contourSource == 'self'
+                          ? '© SRRP / SRTM (NASA)'
+                          : '© OpenTopoMap (CC-BY-SA)',
+                      style: TextStyle(
+                        color: theme.secondaryTextColor.withValues(alpha: 0.55),
+                        fontSize: 9,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
                   ),
                 ],
               ],
@@ -586,6 +775,65 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
             color: active ? theme.textColor : theme.secondaryTextColor, fontSize: 12))),
           if (active) const Icon(Icons.check_rounded, size: 13, color: Colors.deepPurpleAccent),
         ])),
+    );
+  }
+
+  /// Pin görsel stili seçim satırı (radio benzeri). Disabled olanlar tıklanmaz.
+  Widget _pinVisualOpt(
+    int value,
+    String label,
+    IconData icon,
+    Color color, {
+    bool disabled = false,
+    String? badge,
+  }) {
+    final active = _pinVisualStyle == value;
+    return Opacity(
+      opacity: disabled ? 0.42 : 1.0,
+      child: InkWell(
+        onTap: disabled ? null : () => setState(() => _pinVisualStyle = value),
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: active ? color.withValues(alpha: 0.18) : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                    color: active ? color : color.withValues(alpha: 0.3)),
+              ),
+              child: Icon(icon,
+                  size: 13, color: active ? color : color.withValues(alpha: 0.5)),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(label,
+                    style: TextStyle(
+                        color: active ? theme.textColor : theme.secondaryTextColor,
+                        fontSize: 12))),
+            if (badge != null) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.secondaryTextColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(badge,
+                    style: TextStyle(
+                        color: theme.secondaryTextColor,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold)),
+              ),
+            ],
+            if (active && badge == null)
+              Icon(Icons.check_circle_rounded, size: 14, color: color),
+          ]),
+        ),
+      ),
     );
   }
 
@@ -720,6 +968,10 @@ class _WeatherTimeModeSelector extends StatelessWidget {
     WeatherTimeWindow.sixMonth,
     WeatherTimeWindow.yearly,
     WeatherTimeWindow.season,
+    // 2026-05-28: Uzun pencereler (ayda bir precompute). "⚡" subtitle ile işaretli.
+    WeatherTimeWindow.twoYear,
+    WeatherTimeWindow.fiveYear,
+    WeatherTimeWindow.tenYear,
   ];
 
   IconData _iconFor(WeatherTimeWindow w) {
@@ -735,6 +987,10 @@ class _WeatherTimeModeSelector extends StatelessWidget {
         return Icons.calendar_today;
       case WeatherTimeWindow.season:
         return Icons.eco_outlined;
+      case WeatherTimeWindow.twoYear:
+      case WeatherTimeWindow.fiveYear:
+      case WeatherTimeWindow.tenYear:
+        return Icons.history_toggle_off;
       case WeatherTimeWindow.custom:
         return Icons.edit_calendar;
     }
@@ -751,11 +1007,17 @@ class _WeatherTimeModeSelector extends StatelessWidget {
       case WeatherTimeWindow.threeMonth:
         return 'son 90 gün';
       case WeatherTimeWindow.sixMonth:
-        return 'son 180 gün';
+        return 'son 180 gün ⚡';
       case WeatherTimeWindow.yearly:
-        return 'son 365 gün';
+        return 'son 365 gün ⚡';
       case WeatherTimeWindow.season:
-        return '365 g + mevsim';
+        return '365 g + mevsim ⚡';
+      case WeatherTimeWindow.twoYear:
+        return 'son 2 yıl ⚡';
+      case WeatherTimeWindow.fiveYear:
+        return 'son 5 yıl ⚡';
+      case WeatherTimeWindow.tenYear:
+        return 'son 10 yıl ⚡';
       case WeatherTimeWindow.custom:
         return 'manuel aralık';
     }
@@ -928,6 +1190,63 @@ class _WeatherTimeModeSelector extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// O2 — İzohips kaynak seçici (OpenTopoMap raster vs self-hosted MVT).
+/// Kompakt iki-segmentli toggle.
+class _ContourSourceToggle extends StatelessWidget {
+  final String value; // 'opentopo' | 'self'
+  final ValueChanged<String> onChanged;
+  final ThemeViewModel theme;
+
+  const _ContourSourceToggle({
+    required this.value,
+    required this.onChanged,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: theme.secondaryTextColor.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _seg('OpenTopo', 'opentopo'),
+          _seg('Kendi', 'self'),
+        ],
+      ),
+    );
+  }
+
+  Widget _seg(String label, String key) {
+    final active = value == key;
+    return GestureDetector(
+      onTap: () => onChanged(key),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: active
+              ? const Color(0xFF8B4513).withValues(alpha: 0.85)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? Colors.white : theme.secondaryTextColor,
+            fontSize: 9.5,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
     );
   }
 }

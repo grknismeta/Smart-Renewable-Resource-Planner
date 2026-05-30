@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
 
 import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/core/theme/app_theme.dart';
 
-import 'package:frontend/features/pins/dialogs/add_pin_dialog.dart';
 import 'package:frontend/features/pins/dialogs/analysis_dialog.dart';
-import 'package:frontend/features/pins/dialogs/pin_details_dialog.dart';
 export 'package:frontend/features/pins/dialogs/add_pin_dialog.dart';
 export 'package:frontend/features/pins/dialogs/pin_details_dialog.dart';
 export 'package:frontend/features/pins/dialogs/analysis_dialog.dart';
@@ -34,19 +31,14 @@ class MapDialogs {
     );
   }
 
-  /// Pin aksiyonları için dialog gösterir (New Details Dialog)
-  static void showPinActionsDialog(BuildContext context, Pin pin) {
-    PinDetailsDialog.show(context, pin);
-  }
+  // (Kaldırıldı 2026-05-08) Eski `showPinActionsDialog` API'si artık yok.
+  // PinDetails V2 bottom card pattern'a geçti — `MapScreen._showPinDialog`
+  // doğrudan setState ile overlay açar.
 
-  /// Yeni pin ekleme dialog'u gösterir
-  static void showAddPinDialog(
-    BuildContext context,
-    LatLng point,
-    String pinType,
-  ) {
-    AddPinDialog.show(context, point, pinType);
-  }
+  // (Kaldırıldı 2026-05-08) Eski `showAddPinDialog` API'si artık yok.
+  // Pin ekleme V2 bottom card pattern'a geçti — `MapScreen._checkGeoSuitability`
+  // doğrudan setState ile overlay açar. AddPinDialog widget'ı `Dialog` değil,
+  // `Container` (bottom card) — `showDialog` çağrısı kalmadı.
 
   /// Hesaplama sonucu dialog'u gösterir
   static void showCalculationResultDialog(

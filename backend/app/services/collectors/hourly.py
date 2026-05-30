@@ -72,6 +72,11 @@ def process_response(response, city: dict) -> List[HourlyWeatherData]:
         # için "Merkez" kaydı gerekli.
         _district = city.get("district") or "Merkez"
         _city_name = city.get("province", city["name"])
+        # 2026-05-24: city_name Türkçe canonical (Balikesir → Balıkesir).
+        # Mevcut tablo karışık format AMA province_aliases bidirectional
+        # match ediyor. Yeni satırlar canonical olsun ki tutarsızlık birikmesin.
+        from app.services.province_aliases import to_canonical
+        _city_name = to_canonical(_city_name)
         record = HourlyWeatherData(
             city_name=_city_name,
             district_name=_district,

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"/>
+  <title>SRRP — Yaratıcı Yön Keşfi</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="tokens.css"/>
+  <style>
+    body { margin: 0; background: #0B0E14; font-family: ui-sans-serif, system-ui; }
+    * { box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="ios-frame.jsx"></script>
+  <script type="text/babel" src="turbine-3d.jsx"></script>
+  <script type="text/babel" src="creative-directions.jsx"></script>
+
+  <script type="text/babel">
+    const App = () => (
+      <DesignCanvas title="SRRP — Yaratıcı Yön Keşfi" subtitle="3D animasyonlu pin'ler + 2 farklı UI dili. Hangisini sevdin? — beyaz alana sürükleyebilir, çift tıklayarak fullscreen yapabilirsin">
+        {/* Hero / context note */}
+        <DCSection id="intro" title="00 · Notlar">
+          <DCArtboard id="note" label="Açıklama" width={900} height={420}>
+            <div style={{ width: 900, height: 420, padding: 44, background: '#11141C', color: '#E8EAEE', font: '400 15px/1.6 ui-sans-serif, system-ui' }}>
+              <div style={{ font: '700 28px/1.2 ui-sans-serif, system-ui', marginBottom: 16 }}>İki yaratıcı yön — yan yana</div>
+              <p style={{ color: '#9BA1AE', maxWidth: 720 }}>
+                Her yön için 1 desktop key screen ve 1 mobil mockup hazırladım. Pin'ler <b style={{ color: '#fff' }}>gerçekten 3D ve animasyonlu</b> — kanatlar dönüyor, güneş panelleri parıldıyor, su çarkı çalışıyor. CSS 3D transformları ile yapıldı; Flutter'da <b style={{ color: '#fff' }}>Rive</b> veya <b style={{ color: '#fff' }}>CustomPainter + AnimationController</b> ile aynı sonucu alırsın.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginTop: 32 }}>
+                <div style={{ borderLeft: '3px solid #00FFB4', paddingLeft: 18 }}>
+                  <div style={{ font: '700 11px/1 JetBrains Mono, monospace', color: '#00FFB4', letterSpacing: 2, marginBottom: 8 }}>YÖN 01</div>
+                  <div style={{ font: '700 22px/1.2 ui-sans-serif, system-ui', marginBottom: 6 }}>Mission Control</div>
+                  <div style={{ color: '#9BA1AE', fontSize: 13.5, lineHeight: 1.55 }}>Brutalist, terminal estetiği, neon yeşil. Pilot HUD'u gibi: scanlines, hedef kilidi, monospace tipografi, komut satırı tarzı kontroller. Ciddi, teknik, "kontrol odası" hissi.</div>
+                </div>
+                <div style={{ borderLeft: '3px solid #FFB48A', paddingLeft: 18 }}>
+                  <div style={{ font: 'italic 500 13px/1 "Instrument Serif", serif', color: '#FFB48A', letterSpacing: 1, marginBottom: 8 }}>Yön 02</div>
+                  <div style={{ font: '500 24px/1.2 "Instrument Serif", serif', marginBottom: 6, letterSpacing: -0.3 }}>Living <span style={{ fontStyle: 'italic' }}>Atlas</span></div>
+                  <div style={{ color: '#9BA1AE', fontSize: 13.5, lineHeight: 1.55 }}>Editorial / atlas / şiirsel. Yumuşak gradyanlar, glassmorphism, serif tipografi, drift eden parçacıklar. Sakin, prestijli, "Apple Weather meets National Geographic" hissi.</div>
+                </div>
+              </div>
+            </div>
+          </DCArtboard>
+        </DCSection>
+
+        {/* Yön 1 */}
+        <DCSection id="mc" title="01 · Mission Control · Desktop + Mobile">
+          <DCArtboard id="mc-desktop" label="Mission Control · Desktop 1440×900" width={1440} height={900}>
+            <MissionControlScreen/>
+          </DCArtboard>
+          <DCArtboard id="mc-mobile" label="Mission Control · iPhone" width={430} height={930}>
+            <IOSDevice width={390} height={844} dark>
+              <MissionControlMobile/>
+            </IOSDevice>
+          </DCArtboard>
+        </DCSection>
+
+        {/* Yön 2 */}
+        <DCSection id="la" title="02 · Living Atlas · Desktop + Mobile">
+          <DCArtboard id="la-desktop" label="Living Atlas · Desktop 1440×900" width={1440} height={900}>
+            <LivingAtlasScreen/>
+          </DCArtboard>
+          <DCArtboard id="la-mobile" label="Living Atlas · iPhone" width={430} height={930}>
+            <IOSDevice width={390} height={844} dark>
+              <LivingAtlasMobile/>
+            </IOSDevice>
+          </DCArtboard>
+        </DCSection>
+
+        {/* 3D pin closeups */}
+        <DCSection id="pins" title="03 · 3D Pin yakın çekim (animasyonlu)">
+          <DCArtboard id="pin-wind" label="Rüzgar — kanatlar dönüyor" width={260} height={260}>
+            <div style={{ width: 260, height: 260, background: 'radial-gradient(ellipse at center, #1a2f25 0%, #000 70%)', display: 'grid', placeItems: 'center' }}>
+              <Turbine3D type="wind" size={140} cf={0.4} glow label="BANDIRMA-7"/>
+            </div>
+          </DCArtboard>
+          <DCArtboard id="pin-solar" label="Güneş — paneller parıldıyor" width={260} height={260}>
+            <div style={{ width: 260, height: 260, background: 'radial-gradient(ellipse at center, #2a1d10 0%, #000 70%)', display: 'grid', placeItems: 'center' }}>
+              <Turbine3D type="solar" size={140} irradiance={5.7} glow label="KONYA-12"/>
+            </div>
+          </DCArtboard>
+          <DCArtboard id="pin-hydro" label="Hidro — çark + akan su" width={260} height={260}>
+            <div style={{ width: 260, height: 260, background: 'radial-gradient(ellipse at center, #102a2a 0%, #000 70%)', display: 'grid', placeItems: 'center' }}>
+              <Turbine3D type="hydro" size={140} flow={1.2} glow label="TRABZON-3"/>
+            </div>
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+    );
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

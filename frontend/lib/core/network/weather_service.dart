@@ -230,6 +230,29 @@ class WeatherService extends BaseService {
     throw Exception('Animasyon verisi alınamadı');
   }
 
+  /// T-6: Uzun pencere zaman simülasyonu (precompute). 2y/5y/10y haftalık/aylık
+  /// frame'ler `thematic_timeseries`'ten anında okunur — aynı animation şekli.
+  /// [period]: 'month' | 'week' ; [years]: 1-10 ; [scope]: province | district.
+  Future<Map<String, dynamic>> fetchAnimationPrecomputed({
+    required String metric,
+    String period = 'month',
+    int years = 5,
+    String scope = 'district',
+  }) async {
+    final uri = Uri.parse('$baseUrl/weather/animation-precomputed').replace(
+      queryParameters: {
+        'metric': metric,
+        'period': period,
+        'years': '$years',
+        'scope': scope,
+      },
+    );
+    final response = await _cachedGet(uri, ttl: const Duration(hours: 6));
+    final data = processResponse(response);
+    if (data is Map<String, dynamic>) return data;
+    throw Exception('Precompute animasyon verisi alınamadı');
+  }
+
   // ── Rapor Dashboard metodları ──────────────────────────────────────────────
 
   /// DB'de kayıtlı yıllar listesi (zaman aralığı seçici için).
@@ -346,18 +369,33 @@ class WeatherService extends BaseService {
     String mode = 'current',
     String? season,
   }) async {
+    // 2026-05-28: Ağır pencereler (sixMonth/yearly/season/twoYear/fiveYear/
+    // tenYear) ayda bir precompute edilir → thematic-precomputed endpoint'ten
+    // anında okunur. Her istekte milyonlarca satır taranmaz.
+    const precomputed = {
+      'sixMonth', 'yearly', 'season', 'twoYear', 'fiveYear', 'tenYear',
+    };
+    if (precomputed.contains(mode)) {
+      final params = <String, String>{'mode': mode, 'level': 'district'};
+      if (season != null) params['season'] = season;
+      final uri = Uri.parse('$baseUrl/weather/thematic-precomputed')
+          .replace(queryParameters: params);
+      final response = await _cachedGet(uri, ttl: const Duration(hours: 6));
+      if (response.statusCode == 200) {
+        return Map<String, dynamic>.from(processResponse(response));
+      }
+      return {};
+    }
+
     final params = <String, String>{'hours': '$hours', 'mode': mode};
     if (season != null) params['season'] = season;
     final uri = Uri.parse('$baseUrl/weather/district-choropleth')
         .replace(queryParameters: params);
     // current/latest: 5 dk cache (son saat sık güncellenir)
-    // yearly/season: 60 dk cache (uzun pencere, güncelleme frekansı düşük)
     // average: 10 dk cache
     final Duration ttl;
     if (mode == 'current' || mode == 'latest') {
       ttl = const Duration(minutes: 5);
-    } else if (mode == 'yearly' || mode == 'season') {
-      ttl = const Duration(minutes: 60);
     } else {
       ttl = const Duration(minutes: 10);
     }

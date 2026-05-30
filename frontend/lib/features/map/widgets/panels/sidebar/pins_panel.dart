@@ -6,7 +6,7 @@ import 'package:frontend/data/models/pin_model.dart';
 import 'package:frontend/features/map/viewmodels/map_view_model.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
 import 'package:frontend/core/network/api_service.dart';
-import 'package:frontend/features/map/dialogs/map_dialogs.dart';
+import 'package:frontend/features/pins/controllers/pin_flow_controller.dart';
 
 /// Sidebar'da pin listesini gösteren panel
 /// Sidebar'da pin listesini gösteren panel
@@ -294,7 +294,16 @@ class _PinsPanelState extends State<PinsPanel> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: () => MapDialogs.showPinActionsDialog(context, pin),
+          // 2026-05-09 Strategic Reset: PinFlowController doğrudan tetiklenir.
+          onTap: () {
+            try {
+              Provider.of<PinFlowController>(context, listen: false)
+                  .openPinDetail(pin);
+            } catch (_) {
+              // Controller injected değilse fallback (geriye uyum)
+              widget.mapViewModel.openPinDetail(pin);
+            }
+          },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(

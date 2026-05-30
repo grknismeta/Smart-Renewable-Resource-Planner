@@ -77,6 +77,12 @@ git_files.txt
 tree_structure.txt
 *.sql
 
+# 2026-05-17 Sprint S2 — DEM dosyaları silindi (785 MB).
+# Yükseklik artık Open-Meteo Elevation API + AWS Terrarium CDN (frontend).
+# Bkz: BACKEND-PLAN-2026-05-17.md S2
+backend/data/dem/
+backend/data/dem/*
+
 # Obsidian (knowledge vault) — kişisel ayarları commit etme, paylaşılan ayarları tut
 docs/knowledge/srrp-knowledge/.obsidian/workspace.json
 docs/knowledge/srrp-knowledge/.obsidian/workspace-mobile.json

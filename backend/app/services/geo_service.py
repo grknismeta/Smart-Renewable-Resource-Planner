@@ -152,13 +152,80 @@ class GeoService:
             logger.warning("[geo_service] location_info hatası: %s", e)
             return {"province": "", "district": ""}
 
-    # ── Terrain (elevation/slope) ──────────────────────────────────────────
+    # ── Terrain (elevation/slope) — Open-Meteo Elevation API ──────────────
+    # 2026-05-17 Sprint S2 — DEM .tif'ten kurtulduk. Open-Meteo Elevation
+    # ücretsiz API (10K istek/gün). Tek istekte 5 nokta batch:
+    # ana nokta + 4 komşu (kuzey/güney/doğu/batı) → slope hesabı.
+    # Redis cache TTL 7 gün (terrain neredeyse hiç değişmez).
+
+    _ELEVATION_API_URL = "https://api.open-meteo.com/v1/elevation"
+    _ELEVATION_CACHE_TTL = 7 * 24 * 3600  # 7 gün
+    _SLOPE_OFFSET_DEG = 0.001  # ≈111m kuzey-güney; doğu-batı enlem-bağımlı
 
     def _get_terrain_data(self, lat: float, lon: float) -> tuple[float, float]:
-        """DEM'den yükseklik + eğim. Şu an stub — rio-tiler entegrasyonu
-        ayrı sprint."""
-        # TODO (B-7): rio-tiler ile lokal DEM tile sorgusu
-        return 0.0, 0.0
+        """Open-Meteo Elevation API'den yükseklik + 4 komşu noktadan slope.
+
+        Returns:
+            (elevation_m, slope_degrees) — API hata ise (0.0, 0.0) fallback.
+        """
+        from app.services.redis_cache import cache_get, cache_set
+        import math
+        import requests
+
+        # 100m precision round (0.001° ≈ 111m). Aynı bölgeye birden fazla pin
+        # için tek API çağrısı yeter.
+        lat_r = round(lat, 3)
+        lon_r = round(lon, 3)
+        cache_key = f"elevation:{lat_r}:{lon_r}"
+
+        cached = cache_get(cache_key)
+        if cached and isinstance(cached, dict):
+            return (
+                float(cached.get("elevation", 0.0)),
+                float(cached.get("slope", 0.0)),
+            )
+
+        try:
+            # 5 nokta batch: [ana, N, S, E, W]
+            # E/W offset enlem-bağımlı: lon_offset = lat_offset / cos(lat)
+            lat_offset = self._SLOPE_OFFSET_DEG
+            lon_offset = lat_offset / max(math.cos(math.radians(lat_r)), 0.1)
+
+            lats = f"{lat_r},{lat_r + lat_offset},{lat_r - lat_offset},{lat_r},{lat_r}"
+            lons = f"{lon_r},{lon_r},{lon_r},{lon_r + lon_offset},{lon_r - lon_offset}"
+
+            resp = requests.get(
+                self._ELEVATION_API_URL,
+                params={"latitude": lats, "longitude": lons},
+                timeout=5,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            elevations = data.get("elevation", [])
+            if not elevations or len(elevations) < 1:
+                return 0.0, 0.0
+
+            ana = float(elevations[0])
+            slope_deg = 0.0
+            if len(elevations) >= 5:
+                # Slope: ana noktada max gradient (kuzey-güney / doğu-batı)
+                # |∂h/∂x| ≈ (N-S) / 2*dist, dist ≈ 111m (0.001°)
+                dist_ns = 111.0 * lat_offset * 1000  # m
+                dist_ew = 111.0 * lon_offset * 1000 * math.cos(math.radians(lat_r))
+                grad_ns = (float(elevations[1]) - float(elevations[2])) / max(dist_ns, 1)
+                grad_ew = (float(elevations[3]) - float(elevations[4])) / max(dist_ew, 1)
+                slope_rad = math.atan(math.sqrt(grad_ns**2 + grad_ew**2))
+                slope_deg = math.degrees(slope_rad)
+
+            cache_set(
+                cache_key,
+                {"elevation": ana, "slope": round(slope_deg, 2)},
+                ttl_seconds=self._ELEVATION_CACHE_TTL,
+            )
+            return ana, round(slope_deg, 2)
+        except Exception as e:
+            logger.warning("[geo] Elevation API hatası (%.4f, %.4f): %s", lat, lon, e)
+            return 0.0, 0.0
 
     # ── Solar analizi (GES) ────────────────────────────────────────────────
 
@@ -195,14 +262,18 @@ class GeoService:
             else:
                 notes.append(f"⚠️ İletim hattı {corridor_m/1000:.1f}km uzakta — ek hat maliyeti")
 
-        # 4. Eğim (DEM hazır olunca) — şu an stub
+        # 4. Eğim — Sprint S2: Open-Meteo Elevation gerçek değer
         if slope > 35:
             suitable = False
             reasons.append(f"Çok dik yamaç (Eğim: {slope:.1f}°)")
+        elif slope > 25:
+            notes.append(f"⛰️ Orta-dik yamaç (Eğim: {slope:.1f}°) — montaj maliyeti artabilir")
+        elif slope > 5:
+            notes.append(f"📐 Eğim {slope:.1f}° — kabul edilebilir")
 
         if suitable:
             notes.append("☀️ GES için uygun arazi — çatı, açık alan, fabrika/devlet binası dahil")
-        notes.append("ℹ️ Orman/landuse + DEM eğim kontrolleri pasif (OSM/DEM import bekliyor)")
+        notes.append("ℹ️ Orman/landuse kontrolleri pasif (S3 OSM import bekliyor)")
         return {"suitable": suitable, "reasons": reasons, "notes": notes}
 
     # ── Wind analizi (RES) ─────────────────────────────────────────────────
@@ -210,8 +281,8 @@ class GeoService:
     def _analyze_wind(self, lat: float, lon: float, slope: float) -> dict:
         """RES — şartlı: yerleşim/orman/su/askeri uzak, dik olmayan yer.
 
-        Mevcut DB tabloları: water (yasak), restricted (yasak), corridor (mesafe).
-        Yerleşim 1500m + orman + dik yamaç kontrolleri OSM/DEM import bekliyor.
+        Mevcut DB tabloları: water (yasak), restricted (yasak), corridor (mesafe),
+        populated_areas (2026-05-27 N3 — yerleşim/ticari/okul yasak), DEM (eğim).
         """
         reasons = []
         notes = []
@@ -228,6 +299,42 @@ class GeoService:
         if zone:
             suitable = False
             reasons.append(f"Yasaklı bölge: {zone}")
+
+        # 2b. 2026-05-27 (N3) — Yaşam alanı (OSM residential/commercial/retail/
+        # school polygon). Türbin gürültüsü + gölge flicker + güvenlik mesafesi
+        # → şehir/kasaba/köy yerleşim alanına RES kurulmaz.
+        pop_type = self._populated_type_at(lat, lon)
+        if pop_type:
+            suitable = False
+            label = {
+                "residential": "yerleşim alanı",
+                "commercial": "ticari bölge",
+                "retail": "perakende/AVM bölgesi",
+                "school": "okul/kampüs alanı",
+            }.get(pop_type, pop_type)
+            reasons.append(
+                f"Yaşam alanı içinde ({label}) — RES kurulamaz "
+                "(gürültü/gölge/güvenlik mesafesi)"
+            )
+
+        # 2c. 2026-05-27 (N3.2) — Bina yoğunluğu fallback (büyük şehir
+        # merkezleri OSM'de `place=city` ile işaretli, landuse=residential
+        # ile değil → 2b kapsam dışı kalır). 100m yarıçapta ≥5 bina varsa
+        # "yoğun yaşam alanı" sayılır. Kırsalda tek-iki ev bloklamaz.
+        #
+        # Threshold seçimi (gerçek koordinat testlerinde):
+        #   Taksim 11, Kadıköy 139, İzmir Konak 74 → bloklar ✓
+        #   Ankara Kızılay 6, Antalya 8, Konya 9 → bloklar ✓ (≥5)
+        #   Kayseri 4 → bloklamaz (OSM Türkiye coverage gap)
+        #   Tuz Gölü/Toroslar 0 → kırsal ✓
+        if not pop_type:  # Zaten polygon ile bloklandıysa tekrar etme
+            building_n = self._building_count_within(lat, lon, radius_m=100)
+            if building_n is not None and building_n >= 5:
+                suitable = False
+                reasons.append(
+                    f"Yoğun yapılaşma — 100m'de {building_n} bina (RES "
+                    "gürültü/güvenlik mesafesi gerektirir)"
+                )
 
         # 3. Eğim — aşırı dik (>40°) olmaz, hafif (10-25°) ideal
         if slope > 40:
@@ -247,9 +354,62 @@ class GeoService:
                 notes.append(f"⚠️ İletim hattı {corridor_m/1000:.1f}km — yüksek hat maliyeti")
 
         if suitable:
-            notes.append("🌬️ RES kurulumuna engel görülmedi (yerleşim/orman kontrolleri pasif)")
-        notes.append("ℹ️ Yerleşim 1500m + orman + DEM eğim kontrolleri OSM/DEM import bekliyor")
+            notes.append("🌬️ RES kurulumuna engel görülmedi")
+        notes.append(f"⛰️ Yükseklik kontrol edildi (eğim {slope:.1f}°)")
         return {"suitable": suitable, "reasons": reasons, "notes": notes}
+
+    # ── Yardımcı: yaşam alanı (N3) ─────────────────────────────────────────
+
+    @staticmethod
+    def _populated_type_at(lat: float, lon: float) -> Optional[str]:
+        """Koordinat OSM yaşam alanı (residential/commercial/retail/school)
+        polygon'u içindeyse feature_type döner; aksi None.
+
+        Tablo `populated_areas` yoksa exception yutulur, None döner — yani
+        veri import edilmemişse RES'i bloklamaz (graceful degrade).
+        """
+        sql = text("""
+            SELECT feature_type FROM populated_areas
+            WHERE ST_Contains(geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
+            LIMIT 1
+        """)
+        try:
+            with _engine.connect() as c:
+                v = c.execute(sql, {"lat": lat, "lon": lon}).scalar()
+                return str(v) if v else None
+        except Exception as e:
+            # Tablo yoksa relation not found exception — silent skip.
+            logger.debug("[geo_service] _populated_type_at: %s", e)
+            return None
+
+    @staticmethod
+    def _building_count_within(
+        lat: float, lon: float, radius_m: int = 100,
+    ) -> Optional[int]:
+        """Verilen yarıçap (metre) içinde `buildings_footprint` centroid
+        sayısı. Tablo yoksa None döner (RES kontrolü graceful skip).
+
+        2026-05-27 (N3.2): Büyük şehir merkezleri (Taksim, Kızılay vs.) OSM
+        `place=city` relation ile işaretli, landuse=residential ile değil
+        → populated_areas eksik kalıyor. Bina yoğunluğu fallback bunu çözer.
+        """
+        sql = text("""
+            SELECT COUNT(*) FROM buildings_footprint
+            WHERE ST_DWithin(
+                geom::geography,
+                ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography,
+                :r
+            )
+        """)
+        try:
+            with _engine.connect() as c:
+                v = c.execute(sql, {
+                    "lat": lat, "lon": lon, "r": radius_m,
+                }).scalar()
+                return int(v) if v is not None else 0
+        except Exception as e:
+            logger.debug("[geo_service] _building_count_within: %s", e)
+            return None
 
     # ── Hydro analizi (HES) ────────────────────────────────────────────────
 
@@ -278,7 +438,7 @@ class GeoService:
                 "reasons": [],
                 "notes": [
                     "💧 Nehir kıyısı: HES kurulumu için ideal (akış halinde su mevcut)",
-                    f"⛰️ Yükseklik: {elevation:.0f} m" if elevation else "ℹ️ Yükseklik DEM bekleniyor",
+                    f"⛰️ Yükseklik: {elevation:.0f} m" if elevation else "⛰️ Yükseklik bilgisi alınamadı (Open-Meteo API)",
                 ],
             }
 

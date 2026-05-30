@@ -77,14 +77,20 @@ class TimeSimulationController extends ChangeNotifier {
   late DateTime _startDate;
   late DateTime _endDate;
   String _metric = 'wind';        // wind | temperature | radiation
-  String _interval = 'daily';     // daily | hourly
+  String _interval = 'daily';     // daily | hourly | weekly | monthly
   double _speedFps = 5.0;
+  // T-6: uzun pencere (weekly/monthly precompute) için kaç yıl geriye.
+  int _yearsWindow = 5;           // 2 | 5 | 10
 
   DateTime get startDate => _startDate;
   DateTime get endDate => _endDate;
   String get metric => _metric;
   String get interval => _interval;
   double get speedFps => _speedFps;
+  int get yearsWindow => _yearsWindow;
+
+  /// weekly/monthly = uzun pencere precompute modu (tarih aralığı yok, N yıl).
+  bool get isLongWindow => _interval == 'weekly' || _interval == 'monthly';
 
   // ── DB max tarih (range bilgisi) ────────────────────────────────────────
   DateTime? _dataDailyMin, _dataDailyMax;
@@ -111,6 +117,8 @@ class TimeSimulationController extends ChangeNotifier {
 
   /// Tarih validasyon — kullanıcıya UI'da uyarı göstermek için.
   String? get dateRangeError {
+    // Uzun pencere (weekly/monthly) precompute → tarih aralığı kullanılmaz.
+    if (isLongWindow) return null;
     if (!_endDate.isAfter(_startDate) && !_endDate.isAtSameMomentAs(_startDate)) {
       return 'Bitiş tarihi başlangıçtan önce olamaz';
     }
@@ -169,6 +177,14 @@ class TimeSimulationController extends ChangeNotifier {
         _startDate = _endDate.subtract(const Duration(days: 30));
       }
     }
+    notifyListeners();
+  }
+
+  /// T-6: uzun pencere yıl seçimi (2/5/10). weekly/monthly modda kullanılır.
+  void setYearsWindow(int y) {
+    final clamped = (y <= 2) ? 2 : (y <= 5 ? 5 : 10);
+    if (_yearsWindow == clamped) return;
+    _yearsWindow = clamped;
     notifyListeners();
   }
 
@@ -258,13 +274,25 @@ class TimeSimulationController extends ChangeNotifier {
         '-${d.day.toString().padLeft(2, '0')}';
 
     try {
-      final data = await _api.weather.fetchAnimationData(
-        start: fmt(_startDate),
-        end: fmt(_endDate),
-        metric: _metric,
-        interval: _interval,
-        format: 'districts',
-      );
+      // T-6: uzun pencere (weekly/monthly) → precompute endpoint (anında).
+      final Map<String, dynamic> data;
+      if (isLongWindow) {
+        data = await _api.weather.fetchAnimationPrecomputed(
+          metric: _metric,
+          period: _interval == 'weekly' ? 'week' : 'month',
+          years: _yearsWindow,
+          // weekly sadece il bazında precompute edildi → backend province'a zorlar
+          scope: _interval == 'weekly' ? 'province' : 'district',
+        );
+      } else {
+        data = await _api.weather.fetchAnimationData(
+          start: fmt(_startDate),
+          end: fmt(_endDate),
+          metric: _metric,
+          interval: _interval,
+          format: 'districts',
+        );
+      }
       // Stale fetch guard
       if (seq != _fetchSeq) return;
 

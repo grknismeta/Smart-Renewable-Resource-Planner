@@ -257,6 +257,68 @@ def update_pin(
         )
     return updated_pin
 
+
+@router.get("/{pin_id}/generation")
+def get_pin_generation(
+    pin_id: int,
+    period: str = "month",
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_active_user),
+):
+    """Pin'in kurulduğundan beri üretim geçmişi.
+
+    Sprint S1 — climatology mimarisi dinamik tarafı. Manisa örneği:
+    skor sürekli değişmez ama bu pin kurulduğu tarihten itibaren saatlik
+    veri × power curve ile gerçek üretim hesaplanır.
+
+    Args:
+        period: today | week | month | year | total | range
+        start, end: period=range ise ISO datetime (YYYY-MM-DD)
+
+    Saatlik veri varsa (son 2 yıl) gerçek hesap, eski tarihler için
+    climatology hourly_typical_profile ile interpolasyon.
+    """
+    from datetime import datetime as _dt
+    from app.services.pin_generation_service import (
+        compute_pin_generation,
+        generation_to_dict,
+    )
+
+    user_id = cast(int, current_user.id)
+    pin = db.query(models.Pin).filter(
+        models.Pin.id == pin_id,
+        models.Pin.owner_id == user_id,
+    ).first()
+    if not pin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pin bulunamadı veya bu kullanıcıya ait değil.",
+        )
+
+    custom_start = None
+    custom_end = None
+    if period == "range":
+        if not start or not end:
+            raise HTTPException(
+                status_code=400,
+                detail="period='range' için start ve end (YYYY-MM-DD) zorunlu.",
+            )
+        try:
+            custom_start = _dt.fromisoformat(start)
+            custom_end = _dt.fromisoformat(end)
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=f"Tarih formatı: {ve}")
+
+    try:
+        result = compute_pin_generation(pin, period, custom_start, custom_end)
+        return generation_to_dict(result)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Generation hesaplama hatası: {e}")
+
 @router.post("/calculate", response_model=PinCalculationResponse)
 async def calculate_pin_potential(
     pin_data: PinBase, 

@@ -15,9 +15,13 @@ from collections import defaultdict
 from pydantic import BaseModel
 
 from app.db.database import SystemSessionLocal
-from app.db.models import HourlyWeatherData, WeatherData
+from app.db.models import (
+    HourlyWeatherData, WeatherData, ThematicAggregate, ThematicTimeseries,
+)
 from app.core.constants import TURKEY_CITIES, CITY_TO_REGION, PROVINCE_GEO_TO_CODE, _PROVINCE_DB_CODES
-from app.core.time_window import resolve_time_window, MODE_REGEX, SEASON_REGEX
+from app.core.time_window import (
+    resolve_time_window, MODE_REGEX, SEASON_REGEX, PRECOMPUTED_MODES,
+)
 from app.services.redis_cache import cache_get, cache_set
 
 router = APIRouter(
@@ -25,6 +29,198 @@ router = APIRouter(
     tags=["weather"],
     responses={404: {"description": "Not found"}},
 )
+
+
+# ── Precompute Tematik Pencere (2026-05-28, T-4) ─────────────────────────────
+
+
+@router.get("/thematic-precomputed", summary="Ağır tematik pencere (precompute)")
+def thematic_precomputed(
+    mode: str = Query(
+        ...,
+        regex="^(sixMonth|yearly|season|twoYear|fiveYear|tenYear)$",
+        description="Ayda bir precompute edilen ağır modlar",
+    ),
+    season: str | None = Query(default=None, regex=SEASON_REGEX),
+    level: str = Query("district", regex="^(province|district)$"),
+):
+    """`thematic_aggregate` tablosundan choropleth verisi (anında).
+
+    Ağır pencereler (6ay/yıl/mevsim/2y/5y/10y) `build_thematic_aggregates.py`
+    aylık batch ile önceden hesaplanır; bu endpoint sadece okur — her istekte
+    milyonlarca satır taranmaz.
+
+    **Yanıt = district-choropleth ile aynı şekil** (drop-in): üst seviye
+    `{"İl|İlçe": {"wind":.., "solar":.., "temp":..}, "_meta": {...}}`. Frontend
+    render path'i değişmeden çalışır.
+    """
+    if mode not in PRECOMPUTED_MODES:
+        raise HTTPException(status_code=400, detail=f"mode precompute değil: {mode}")
+    if mode == "season" and not season:
+        raise HTTPException(
+            status_code=400, detail="mode=season için season zorunlu")
+
+    season_key = season if mode == "season" else "-"
+    cache_key = f"weather:thematic-pre:{mode}:{season_key}:{level}"
+    cached = cache_get(cache_key)
+    if cached:
+        return cached
+
+    with SystemSessionLocal() as db:
+        rows = (
+            db.query(
+                ThematicAggregate.location_key,
+                ThematicAggregate.metric,
+                ThematicAggregate.value,
+            )
+            .filter(
+                ThematicAggregate.scope == level,
+                ThematicAggregate.mode == mode,
+                ThematicAggregate.season == season_key,
+                ThematicAggregate.value.isnot(None),
+            )
+            .all()
+        )
+
+    # {location: {wind, solar, temp}} — district-choropleth ile aynı şekil
+    out: dict = {}
+    for loc, metric, value in rows:
+        out.setdefault(loc, {"wind": None, "solar": None, "temp": None})
+        out[loc][metric] = round(float(value), 3)
+
+    # İl fallback: ilçe anahtarı GADM ile eşleşmezse frontend il (NAME_1)
+    # değerine düşer. İl değerlerini tüm alias varyantlarıyla ekle ki GADM
+    # NAME_1 yazımı tutsun (siyah delik önleme).
+    try:
+        from app.services.province_aliases import province_aliases, to_canonical
+        with SystemSessionLocal() as db2:
+            prov_rows = (
+                db2.query(
+                    ThematicAggregate.location_key,
+                    ThematicAggregate.metric,
+                    ThematicAggregate.value,
+                )
+                .filter(
+                    ThematicAggregate.scope == "province",
+                    ThematicAggregate.mode == mode,
+                    ThematicAggregate.season == season_key,
+                    ThematicAggregate.value.isnot(None),
+                )
+                .all()
+            )
+        prov_map: dict = {}
+        for pname, metric, value in prov_rows:
+            prov_map.setdefault(pname, {"wind": None, "solar": None, "temp": None})
+            prov_map[pname][metric] = round(float(value), 3)
+        for pname, vals in prov_map.items():
+            # province adı + canonical + tüm alias varyantları aynı değeri gösterir.
+            # to_canonical: 'Afyon'→'Afyonkarahisar', 'K. Maras'→'Kahramanmaraş'.
+            keys = {pname}
+            try:
+                canon = to_canonical(pname)
+                keys.add(canon)
+                keys.update(province_aliases(pname))
+                keys.update(province_aliases(canon))
+            except Exception:
+                pass
+            for k in keys:
+                # district key'leri ezme (sadece il-seviyesi fallback ekle)
+                out.setdefault(k, vals)
+    except Exception as e:
+        logger.debug("province fallback eklenemedi: %s", e)
+
+    out["_meta"] = {
+        "data_timestamp": datetime.now().isoformat(),
+        "precomputed": True,
+        "mode": mode,
+        "season": season_key if mode == "season" else None,
+        "level": level,
+        "location_count": len(out) - 1 if out else 0,
+    }
+    cache_set(cache_key, out, ttl_seconds=24 * 3600)
+    return out
+
+
+# ── Precompute Zaman Simülasyonu (T-6) ───────────────────────────────────────
+
+
+# Animasyon metrik adı → thematic_timeseries metric
+_ANIM_METRIC_MAP = {"wind": "wind", "temperature": "temp", "radiation": "solar"}
+
+
+@router.get("/animation-precomputed", summary="Uzun pencere zaman simülasyonu (precompute)")
+def animation_precomputed(
+    metric: str = Query("wind", regex="^(wind|temperature|radiation)$"),
+    period: str = Query("month", regex="^(month|week)$"),
+    years: int = Query(5, ge=1, le=10, description="Son N yıl"),
+    scope: str = Query("district", regex="^(province|district)$"),
+):
+    """`thematic_timeseries`'ten hafta/ay başına frame'ler (anında).
+
+    2y/5y/10y zaman simülasyonu — her ay/hafta için ayrı frame. `/weather/
+    animation` ile **aynı yanıt şekli** (drop-in): `{frames:[{ts, vals:{...}}],
+    metric_min, metric_max, total_frames}`. Time simulation controller değişmez.
+
+    weekly sadece il bazında precompute edilir (ilçe×haftalık pratik değil) →
+    period=week istenirse scope province'a zorlanır.
+    """
+    ts_metric = _ANIM_METRIC_MAP[metric]
+    eff_scope = "province" if period == "week" else scope
+
+    from datetime import date as _date
+    cutoff = _date.today().replace(day=1)
+    # N yıl öncesinin ayın 1'i
+    try:
+        cutoff = cutoff.replace(year=cutoff.year - years)
+    except ValueError:
+        cutoff = cutoff.replace(year=cutoff.year - years, day=1)
+
+    cache_key = f"weather:anim-pre:{ts_metric}:{period}:{years}:{eff_scope}"
+    cached = cache_get(cache_key)
+    if cached:
+        return cached
+
+    with SystemSessionLocal() as db:
+        rows = (
+            db.query(
+                ThematicTimeseries.period_start,
+                ThematicTimeseries.location_key,
+                ThematicTimeseries.value,
+            )
+            .filter(
+                ThematicTimeseries.scope == eff_scope,
+                ThematicTimeseries.metric == ts_metric,
+                ThematicTimeseries.period_type == period,
+                ThematicTimeseries.period_start >= cutoff,
+                ThematicTimeseries.value.isnot(None),
+            )
+            .order_by(ThematicTimeseries.period_start)
+            .all()
+        )
+
+    frames_map: dict = {}
+    all_vals = []
+    for ps, loc, val in rows:
+        ts_key = ps.isoformat()
+        frames_map.setdefault(ts_key, {})[loc] = round(float(val), 3)
+        all_vals.append(float(val))
+
+    frames = [
+        {"ts": ts, "vals": vals}
+        for ts, vals in sorted(frames_map.items())
+    ]
+    result = {
+        "metric": metric,
+        "interval": period,
+        "scope": eff_scope,
+        "precomputed": True,
+        "total_frames": len(frames),
+        "metric_min": round(min(all_vals), 3) if all_vals else None,
+        "metric_max": round(max(all_vals), 3) if all_vals else None,
+        "frames": frames,
+    }
+    cache_set(cache_key, result, ttl_seconds=12 * 3600)
+    return result
 
 
 def _ascii_normalize(name: str) -> str:

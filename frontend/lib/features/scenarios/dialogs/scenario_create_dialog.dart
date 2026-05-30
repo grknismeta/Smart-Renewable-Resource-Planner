@@ -5,6 +5,7 @@ import 'package:frontend/data/models/scenario_model.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 import 'package:frontend/core/theme/app_theme.dart';
+import 'package:frontend/shared/widgets/srrp_date_picker.dart';
 
 class ScenarioCreateDialog extends StatefulWidget {
   final ThemeViewModel theme;
@@ -253,12 +254,14 @@ class _ScenarioCreateDialogState extends State<ScenarioCreateDialog> {
                         color: theme.textColor,
                         size: 20,
                       ),
+                      // N5: SrrpDatePicker (year/month/day grid)
                       onTap: () async {
-                        final picked = await showDatePicker(
+                        final picked = await showSrrpDatePicker(
                           context: context,
                           initialDate: _startDate ?? DateTime.now(),
                           firstDate: DateTime(2020),
                           lastDate: DateTime(2030),
+                          title: 'Başlangıç Tarihi',
                         );
                         if (picked != null) {
                           setState(() => _startDate = picked);
@@ -288,12 +291,14 @@ class _ScenarioCreateDialogState extends State<ScenarioCreateDialog> {
                         color: theme.textColor,
                         size: 20,
                       ),
+                      // N5: SrrpDatePicker
                       onTap: () async {
-                        final picked = await showDatePicker(
+                        final picked = await showSrrpDatePicker(
                           context: context,
                           initialDate: _endDate ?? DateTime.now(),
                           firstDate: _startDate ?? DateTime(2020),
                           lastDate: DateTime(2030),
+                          title: 'Bitiş Tarihi',
                         );
                         if (picked != null) {
                           setState(() => _endDate = picked);

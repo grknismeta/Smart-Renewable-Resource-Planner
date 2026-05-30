@@ -6,31 +6,47 @@ import 'package:frontend/core/network/api_service.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
 import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
 import 'package:frontend/features/pins/viewmodels/pin_dialog_viewmodel.dart';
+import 'package:frontend/features/pins/controllers/pin_flow_controller.dart';
 import 'package:frontend/features/map/viewmodels/map_viewmodel.dart';
 
 import 'package:frontend/data/models/scenario_model.dart';
 import 'package:frontend/shared/widgets/themed_inputs.dart';
 import 'package:frontend/features/pins/widgets/equipment_selector.dart';
+import 'package:frontend/features/pins/widgets/pin_panel_shell.dart';
+import 'package:frontend/features/pins/widgets/advanced_settings_panel.dart';
 import 'package:frontend/shared/widgets/dialog_base.dart';
 import 'package:frontend/features/map/dialogs/map_dialogs.dart'; // For error dialog
 
+/// Pin Ekleme Formu — V2 pattern (floating bottom card / mobile bottom sheet).
+///
+/// 2026-05-08 — `Dialog`/`showDialog` modal yerine artık map_screen Stack
+/// overlay'i tarafından state-based render edilir. Harita asla bloklanmaz;
+/// kullanıcı arkadaki konumu görerek formu doldurur.
+///
+/// Kabuk: web (≥600px) ortada-alta floating, mobile <600px tam genişlik
+/// bottom-anchored. Aynı widget responsive — tek codebase.
+///
+/// `onClose` callback'i caller (map_screen) sağlar; close button → setState ile
+/// `_pinFormPoint = null` set eder. Dış `barrier` yok — kullanıcı haritada
+/// pan/zoom yapabilir, harita üzerine tıklamak formu kapatmaz.
 class AddPinDialog extends StatefulWidget {
   final LatLng point;
   final String initialPinType;
+  final VoidCallback onClose;
+
+  /// 2026-05-26 (K1): Floating draggable card için header drag callback'leri.
+  /// PinFlowOverlay tarafından sağlanır; PinPanelShell'e iletilir.
+  final ValueChanged<Offset>? onDragDelta;
+  final VoidCallback? onDragEnd;
 
   const AddPinDialog({
     super.key,
     required this.point,
     required this.initialPinType,
+    required this.onClose,
+    this.onDragDelta,
+    this.onDragEnd,
   });
-
-  static void show(BuildContext context, LatLng point, String pinType) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AddPinDialog(point: point, initialPinType: pinType),
-    );
-  }
 
   @override
   State<AddPinDialog> createState() => _AddPinDialogState();
@@ -43,6 +59,14 @@ class _AddPinDialogState extends State<AddPinDialog> {
   final TextEditingController _flowRateController = TextEditingController();
   final TextEditingController _headHeightController = TextEditingController();
   final TextEditingController _basinAreaController = TextEditingController();
+  // 2026-05-17 Sprint B — Advanced parametre controller'ları
+  final TextEditingController _panelTiltController = TextEditingController();
+  final TextEditingController _panelAzimuthController = TextEditingController();
+  final TextEditingController _panelPowerWController = TextEditingController();
+  final TextEditingController _hubHeightController = TextEditingController();
+  final TextEditingController _rotorDiameterController = TextEditingController();
+  final TextEditingController _ratedPowerKwController = TextEditingController();
+  bool _advancedExpanded = false;
   int? _selectedScenarioId;
 
   bool _isCheckingSuitability = true;
@@ -50,17 +74,43 @@ class _AddPinDialogState extends State<AddPinDialog> {
   String _suitabilityMessage = "Konum analiz ediliyor...";
   List<String> _suitabilityReasons = [];
 
+  /// 2026-05-26 (N2): "Kaydet" tıklandıktan sonra spinner durumu.
+  /// `mapViewModel.addPin` + `analyzePin` + `addPinsToScenario` zinciri
+  /// 3-5 saniye sürebiliyor; eski hâl: kullanıcı butona basıyor, ekranda
+  /// hiçbir değişiklik yok → tekrar tıklıyor → duplicate.
+  bool _isSaving = false;
+
+  /// 2026-05-09 Sprint 4 Madde 3: Backend'den gelen tip-aware geo result
+  /// cache. Tip değişiminde re-API yerine cache'den yeniden değerlendirme.
+  Map<String, dynamic>? _lastGeoResult;
+  String? _lastEvaluatedType;
+
+  // 2026-05-09 Faz B: Reverse geocode (il/ilçe header) PinPanelShell'e taşındı.
+
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: 'Yeni Kaynak');
-    _panelAreaController = TextEditingController(text: '10.0');
-    
+    // 2026-05-26 (M3): "Yeni Kaynak" yerine kullanıcının pin sayısına göre
+    // otomatik numara — "Yeni Kaynak #3" gibi. Çoklu "Yeni Kaynak" görünüm
+    // sorunu çözülür. Tipe göre kısa etiket: GES / RES / HES.
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
+    final pinCount = mapViewModel.pins.length;
+    final typeShort = switch (widget.initialPinType) {
+      'Güneş Paneli' => 'GES',
+      'Rüzgar Türbini' => 'RES',
+      'Hidroelektrik' => 'HES',
+      _ => 'Kaynak',
+    };
+    _nameController =
+        TextEditingController(text: 'Yeni $typeShort #${pinCount + 1}');
+    _panelAreaController = TextEditingController(text: '10.0');
+
     _viewModel = PinDialogViewModel(
       mapViewModel,
       widget.initialPinType,
     );
+    // Tip değişiminde suitability'i yeniden değerlendir (cache'den).
+    _viewModel.addListener(_onViewModelChanged);
 
     // Load scenarios and initial equipments
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -68,6 +118,14 @@ class _AddPinDialogState extends State<AddPinDialog> {
       _viewModel.loadInitialData();
       _checkSuitability();
     });
+  }
+
+  void _onViewModelChanged() {
+    // Tip değiştiyse: cache'den re-evaluate (yeni API call yok)
+    if (_viewModel.selectedType != _lastEvaluatedType &&
+        _lastGeoResult != null) {
+      _evaluateSuitabilityForType(_viewModel.selectedType, _lastGeoResult!);
+    }
   }
 
   Future<void> _checkSuitability() async {
@@ -82,44 +140,82 @@ class _AddPinDialogState extends State<AddPinDialog> {
     if (!mounted) return;
 
     if (result != null) {
-      final bool suitable = result['suitable'] ?? false;
-      String message = result['recommendation'] ?? "";
-      List<String> reasons = [];
-      
-      // Detaylı nedenleri al
-      if (!suitable) {
-        final solar = result['solar_details'];
-        final wind = result['wind_details'];
-        if (solar != null && solar['reasons'] != null) {
-          for (var r in solar['reasons']) { reasons.add("Güneş: $r"); }
-        }
-        if (wind != null && wind['reasons'] != null) {
-          for (var r in wind['reasons']) { reasons.add("Rüzgar: $r"); }
-        }
-      }
-
-      setState(() {
-        _isCheckingSuitability = false;
-        _isSuitable = suitable;
-        _suitabilityMessage = message.isNotEmpty ? message : (suitable ? "Kurulum için uygun." : "Bu konuma kurulum yapılamaz.");
-        _suitabilityReasons = reasons;
-      });
+      _lastGeoResult = result;
+      _evaluateSuitabilityForType(_viewModel.selectedType, result);
     } else {
       setState(() {
         _isCheckingSuitability = false;
         _isSuitable = false; // Güvenli taraf: Analiz yapılamazsa izin verme
         _suitabilityMessage = "Analiz sunucusuna ulaşılamadı.";
+        _suitabilityReasons = [];
       });
     }
   }
 
+  /// 2026-05-09 Sprint 4 Madde 3: Tip-aware suitability değerlendirme.
+  /// Backend response `solar_details / wind_details / hydro_details` döner;
+  /// seçilen tipin bayrağına göre form'u `suitable / unsuitable` çevirir.
+  /// Tip değiştirilince yeni API call yapmadan cache'den yeniden değerlendirir.
+  void _evaluateSuitabilityForType(String pinType, Map<String, dynamic> result) {
+    // Tipe göre backend detail key
+    final detailKey = pinType == 'Güneş Paneli'
+        ? 'solar_details'
+        : pinType == 'Rüzgar Türbini'
+            ? 'wind_details'
+            : 'hydro_details';
+    final typeLabel = pinType == 'Güneş Paneli'
+        ? 'GES'
+        : pinType == 'Rüzgar Türbini'
+            ? 'RES'
+            : 'HES';
+
+    final detail = result[detailKey] as Map<String, dynamic>?;
+    final bool typeSuitable;
+    final List<String> reasons = [];
+    final String message;
+
+    if (detail != null) {
+      typeSuitable = detail['suitable'] ?? false;
+      if (!typeSuitable && detail['reasons'] != null) {
+        for (final r in (detail['reasons'] as List)) {
+          reasons.add(r.toString());
+        }
+      }
+      message = typeSuitable
+          ? '$typeLabel için uygun arazi.'
+          : '$typeLabel için uygun değil.';
+    } else {
+      // Backend tip-aware detail yoksa genel `suitable` flag'ine düş
+      typeSuitable = result['suitable'] ?? false;
+      message = result['recommendation']?.toString() ??
+          (typeSuitable
+              ? '$typeLabel için uygun.'
+              : '$typeLabel için kontrol edilemedi.');
+    }
+
+    setState(() {
+      _isCheckingSuitability = false;
+      _isSuitable = typeSuitable;
+      _suitabilityMessage = message;
+      _suitabilityReasons = reasons;
+      _lastEvaluatedType = pinType;
+    });
+  }
+
   @override
   void dispose() {
+    _viewModel.removeListener(_onViewModelChanged);
     _nameController.dispose();
     _panelAreaController.dispose();
     _flowRateController.dispose();
     _headHeightController.dispose();
     _basinAreaController.dispose();
+    _panelTiltController.dispose();
+    _panelAzimuthController.dispose();
+    _panelPowerWController.dispose();
+    _hubHeightController.dispose();
+    _rotorDiameterController.dispose();
+    _ratedPowerKwController.dispose();
     _viewModel.dispose();
     super.dispose();
   }
@@ -189,67 +285,32 @@ class _AddPinDialogState extends State<AddPinDialog> {
       value: _viewModel,
       child: Consumer<PinDialogViewModel>(
         builder: (context, viewModel, child) {
-          return Dialog(
-            backgroundColor: theme.cardColor,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            insetPadding: const EdgeInsets.all(16),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Header
-                    MapDialogHeader(
-                      title: 'Yeni Kaynak Ekle',
-                      icon: viewModel.selectedType == 'Güneş Paneli'
-                          ? Icons.wb_sunny
-                          : viewModel.selectedType == 'HES'
-                              ? Icons.water
-                              : Icons.wind_power,
-                      color: viewModel.selectedType == 'Güneş Paneli'
-                          ? Colors.orange
-                          : viewModel.selectedType == 'HES'
-                              ? const Color(0xFF1DB954)
-                              : Colors.blue,
-                      onClose: () => Navigator.of(context).pop(),
-                      theme: theme,
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Location Info
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: theme.backgroundColor.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: theme.secondaryTextColor.withValues(alpha: 0.1),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.location_on,
-                            size: 16,
-                            color: theme.secondaryTextColor,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '${widget.point.latitude.toStringAsFixed(4)}, ${widget.point.longitude.toStringAsFixed(4)}',
-                            style: TextStyle(
-                              color: theme.secondaryTextColor,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    const SizedBox(height: 12),
+          // 2026-05-09 Faz B: Kabuk artık `PinPanelShell`'de (composition
+          // pattern). Header (tip ikonu + il/ilçe + close), gradient,
+          // responsive boyut, scroll wrapper — shell yönetir. Burada sadece
+          // form body kalır.
+          final typeColor = viewModel.selectedType == 'Güneş Paneli'
+              ? Colors.orange
+              : viewModel.selectedType == 'HES'
+                  ? const Color(0xFF1DB954)
+                  : Colors.blueAccent;
+          final typeIcon = viewModel.selectedType == 'Güneş Paneli'
+              ? Icons.wb_sunny
+              : viewModel.selectedType == 'HES'
+                  ? Icons.water
+                  : Icons.wind_power;
+          return PinPanelShell(
+            point: widget.point,
+            accentColor: typeColor,
+            typeIcon: typeIcon,
+            title: 'Yeni Kaynak Ekle',
+            onClose: widget.onClose,
+            onDragDelta: widget.onDragDelta,
+            onDragEnd: widget.onDragEnd,
+            body: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
                     // Suitability Status Widget
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
@@ -312,18 +373,8 @@ class _AddPinDialogState extends State<AddPinDialog> {
                     ),
                     const SizedBox(height: 20),
 
-                    // Panel Area Input (Only for Solar)
-                    if (viewModel.selectedType == 'Güneş Paneli') ...[
-                      const SizedBox(height: 20),
-                      ThemedTextField(
-                        label: 'Panel Alanı (m²) - Örn: 10',
-                        isNumber: true,
-                        onChanged: (val) => viewModel.setPanelArea(val),
-                        controller: _panelAreaController,
-                        theme: theme,
-                      ),
-                    ],
-                    const SizedBox(height: 20),
+                    // 2026-05-17 Sprint B — Panel Alanı ana formdan kaldırıldı,
+                    // Gelişmiş Ayarlar > GES bloğuna taşındı.
 
                     // Scenario Selector
                     ThemedDropdown<int?>(
@@ -376,74 +427,94 @@ class _AddPinDialogState extends State<AddPinDialog> {
                     _buildTypeSelector(theme, viewModel),
                     const SizedBox(height: 20),
 
-                    // HES-specific fields
-                    if (viewModel.selectedType == 'HES') ...[
-                      ThemedTextField(
-                        controller: _flowRateController,
-                        label: 'Debi (m³/s) - Opsiyonel',
-                        isNumber: true,
-                        onChanged: (val) => viewModel.setFlowRate(val),
-                        theme: theme,
+                    // Equipment Selector — RES ve GES için ana formda;
+                    // HES'te gizli (kullanıcı isteği: HES için seçim yok).
+                    // 2026-05-17 Sprint B kararı.
+                    if (viewModel.selectedType != 'HES') ...[
+                      Text(
+                        viewModel.selectedType == 'Güneş Paneli'
+                            ? 'Panel Modeli'
+                            : 'Türbin Modeli',
+                        style: TextStyle(
+                          color: theme.secondaryTextColor,
+                          fontSize: 12,
+                        ),
                       ),
-                      const SizedBox(height: 12),
-                      ThemedTextField(
-                        controller: _headHeightController,
-                        label: 'Düşü Yüksekliği (m) - Opsiyonel',
-                        isNumber: true,
-                        onChanged: (val) => viewModel.setHeadHeight(val),
+                      const SizedBox(height: 8),
+                      EquipmentSelectorWidget(
+                        equipments: viewModel.availableEquipments,
+                        selectedEquipmentId: viewModel.selectedEquipmentId,
+                        isLoading: viewModel.isLoadingEquipments,
                         theme: theme,
+                        onChanged: (id) {
+                          if (id != null) viewModel.selectEquipment(id);
+                        },
                       ),
-                      const SizedBox(height: 12),
-                      ThemedTextField(
-                        controller: _basinAreaController,
-                        label: 'Havza Alanı (km²) - Opsiyonel',
-                        isNumber: true,
-                        onChanged: (val) => viewModel.setBasinArea(val),
-                        theme: theme,
-                      ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
                     ],
 
-                    // Equipment Selector
-                    Text(
-                      viewModel.selectedType == 'Güneş Paneli'
-                          ? 'Panel Modeli'
-                          : viewModel.selectedType == 'HES'
-                              ? 'Türbin Tipi (Opsiyonel)'
-                              : 'Türbin Modeli',
-                      style: TextStyle(
-                        color: theme.secondaryTextColor,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    EquipmentSelectorWidget(
-                      equipments: viewModel.availableEquipments,
-                      selectedEquipmentId: viewModel.selectedEquipmentId,
-                      isLoading: viewModel.isLoadingEquipments,
-                      theme: theme,
-                      onChanged: (id) {
-                        if (id != null) viewModel.selectEquipment(id);
-                      },
-                    ),
+                    // 2026-05-17 Sprint B — Gelişmiş Ayarlar expandable.
+                    // Tipe göre manuel parametre alanları. Aynı pop-up içinde
+                    // genişler/daralır (kullanıcı seçimi: expandable).
+                    _buildAdvancedSettings(theme, viewModel),
 
                     const SizedBox(height: 32),
 
                     // Action Buttons
+                    // N2: _isSaving zinciri tetikler — addPin + analyze +
+                    // scenario ekleme tamamlanana kadar buton spinner+disabled.
                     MapDialogActionButtons(
                       theme: theme,
-                      onCancel: () => Navigator.of(context).pop(),
-                      onSave: (viewModel.canSubmit && !_isCheckingSuitability && _isSuitable) ? () => _handleSave(context, viewModel) : null,
-                      isSaving: viewModel.isSubmitting,
+                      onCancel: _isSaving ? () {} : widget.onClose,
+                      onSave: (viewModel.canSubmit &&
+                              !_isCheckingSuitability &&
+                              _isSuitable &&
+                              !_isSaving)
+                          ? () => _handleSave(context, viewModel)
+                          : null,
+                      isSaving: viewModel.isSubmitting || _isSaving,
                     ),
-                  ],
-                ),
-              ),
+              ],
             ),
           );
         },
       ),
     );
+  }
+
+  /// 2026-05-17 Sprint B — Tip-aware Gelişmiş Ayarlar paneli.
+  /// Pop-up içi expandable: header tıklanınca alanlar açılır/kapanır.
+  /// Boş bırakılan alanlar backend'de default'a düşer (Sprint A migration
+  /// sonrası gerçek payload'a eklenir).
+  Widget _buildAdvancedSettings(ThemeViewModel theme, PinDialogViewModel vm) {
+    return AdvancedSettingsPanel(
+      theme: theme,
+      vm: vm,
+      expanded: _advancedExpanded,
+      onToggle: () => setState(() => _advancedExpanded = !_advancedExpanded),
+      panelAreaController: _panelAreaController,
+      panelTiltController: _panelTiltController,
+      panelAzimuthController: _panelAzimuthController,
+      panelPowerWController: _panelPowerWController,
+      hubHeightController: _hubHeightController,
+      rotorDiameterController: _rotorDiameterController,
+      ratedPowerKwController: _ratedPowerKwController,
+      flowRateController: _flowRateController,
+      headHeightController: _headHeightController,
+      basinAreaController: _basinAreaController,
+    );
+  }
+
+  /// 2026-05-17 — Form içi tip değiştirme hem `PinDialogViewModel` (form
+  /// state için) hem `PinFlowController` (suitability layers sync için)
+  /// çağırır. Aksi halde RES→GES geçişinde tematik harita güncellenmez.
+  void _changeTypeSynced(PinDialogViewModel vm, String newType) {
+    vm.changeType(newType);
+    try {
+      Provider.of<PinFlowController>(context, listen: false).changeType(newType);
+    } catch (_) {
+      // PinFlowController scope dışında ise sessiz geç (testler vs).
+    }
   }
 
   Widget _buildTypeSelector(ThemeViewModel theme, PinDialogViewModel viewModel) {
@@ -463,7 +534,7 @@ class _AddPinDialogState extends State<AddPinDialog> {
             label: 'Güneş Paneli',
             icon: Icons.wb_sunny_outlined,
             isSelected: viewModel.selectedType == 'Güneş Paneli',
-            onTap: () => viewModel.changeType('Güneş Paneli'),
+            onTap: () => _changeTypeSynced(viewModel, 'Güneş Paneli'),
             activeColor: Colors.orange,
           ),
           _buildSegmentButton(
@@ -471,7 +542,7 @@ class _AddPinDialogState extends State<AddPinDialog> {
             label: 'Rüzgar Türbini',
             icon: Icons.wind_power_outlined,
             isSelected: viewModel.selectedType == 'Rüzgar Türbini',
-            onTap: () => viewModel.changeType('Rüzgar Türbini'),
+            onTap: () => _changeTypeSynced(viewModel, 'Rüzgar Türbini'),
             activeColor: Colors.blue,
           ),
           _buildSegmentButton(
@@ -479,7 +550,7 @@ class _AddPinDialogState extends State<AddPinDialog> {
             label: 'HES',
             icon: Icons.water_outlined,
             isSelected: viewModel.selectedType == 'HES',
-            onTap: () => viewModel.changeType('HES'),
+            onTap: () => _changeTypeSynced(viewModel, 'HES'),
             activeColor: const Color(0xFF1DB954), // Spotify yeşili
           ),
         ],
@@ -549,14 +620,17 @@ class _AddPinDialogState extends State<AddPinDialog> {
       return;
     }
 
-    // Capacity calculation logic inside ViewModel or here? 
+    // Capacity calculation logic inside ViewModel or here?
     // ViewModel has calculatePotential but addPin is in MapViewModel.
     // We should call MapViewModel.addPin here.
-    
+
     final mapViewModel = Provider.of<MapViewModel>(context, listen: false);
     final capacityMw = viewModel.getSelectedCapacityMw();
-    
+
     if (capacityMw == null) return;
+
+    // N2: Spinner — kaydet zinciri ~3-5 sn alıyor.
+    setState(() => _isSaving = true);
 
     try {
       // 1. Pini ekle (backend'e 'Hidroelektrik' gönder, 'HES' değil)
@@ -570,6 +644,13 @@ class _AddPinDialogState extends State<AddPinDialog> {
         flowRate: viewModel.flowRate > 0 ? viewModel.flowRate : null,
         headHeight: viewModel.headHeight > 0 ? viewModel.headHeight : null,
         basinAreaKm2: viewModel.basinAreaKm2 > 0 ? viewModel.basinAreaKm2 : null,
+        // 2026-05-17 Sprint A — Gelişmiş Ayarlar manuel parametreler
+        panelTilt: viewModel.panelTilt,
+        panelAzimuth: viewModel.panelAzimuth,
+        panelPowerW: viewModel.panelPowerW,
+        hubHeight: viewModel.hubHeight,
+        rotorDiameter: viewModel.rotorDiameter,
+        ratedPowerKw: viewModel.ratedPowerKw,
       );
 
       // 2. Senaryo seçiliyse ona da ekle
@@ -583,8 +664,27 @@ class _AddPinDialogState extends State<AddPinDialog> {
         }
       }
 
+      // 3. 2026-05-17 — Otomatik analiz: pin eklendikten sonra hemen
+      // /pins/{id}/analyze çağır → kullanıcı pine tıkladığında "Güncelle"
+      // basmadan veri hazır olsun. Eski davranış: pin oluşur, analiz boş;
+      // sonraki pin eklenince önceki pin'in analizi geliyordu (timing bug).
       if (context.mounted) {
-        Navigator.of(context).pop();
+        try {
+          final api = Provider.of<ApiService>(context, listen: false);
+          await api.resource.analyzePin(newPin.id);
+          // Pin listesini yenile — yeni analiz bilgisi gelsin
+          if (context.mounted) {
+            await Provider.of<MapViewModel>(context, listen: false).fetchPins();
+          }
+        } catch (e) {
+          debugPrint('[AddPin] otomatik analiz hatası: $e');
+          // Sessiz geç — pin yine de eklenmiş, kullanıcı sonra manuel
+          // "Güncelle" basabilir.
+        }
+      }
+
+      if (context.mounted) {
+        widget.onClose();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -598,6 +698,15 @@ class _AddPinDialogState extends State<AddPinDialog> {
       if (context.mounted) {
         MapDialogs.showErrorDialog(context, e.toString());
       }
+    } finally {
+      // N2: Spinner sönsün (success → widget zaten kapanmış olsa bile
+      // mounted kontrolü ile setState güvenli).
+      if (mounted) setState(() => _isSaving = false);
     }
   }
+
+  // 2026-05-09 Faz B: `_buildLocationTitle` ve `_buildSeasonalInfoChip` artık
+  // kullanılmıyor — header (il/ilçe + koordinat) PinPanelShell tarafından
+  // yönetiliyor. Mevsim chip kullanıcı isteğine göre Sprint 4'te shell'in
+  // `trailing` parametresi olarak geri eklenebilir.
 }

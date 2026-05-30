@@ -58,7 +58,10 @@ class EnergyOutputWidget extends StatelessWidget {
           ),
         ],
       ),
-      padding: const EdgeInsets.all(20),
+      // L3 (2026-05-26): padding 20 → 14, başlık fontSize 20 → 15, Text
+      // Expanded'a alındı + ellipsis. 300px kart genişliğinde Row taşıyordu
+      // ("Enerji Üretim Tahmini" çok uzun + 28px ikon + 40px padding).
+      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -72,20 +75,24 @@ class EnergyOutputWidget extends StatelessWidget {
                 color: result.resourceType == 'Güneş Paneli'
                     ? Colors.orange
                     : Colors.blue,
-                size: 28,
+                size: 22,
               ),
-              const SizedBox(width: 12),
-              Text(
-                'Enerji Üretim Tahmini',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: theme.textColor,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Enerji Üretim Tahmini',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: theme.textColor,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
 
           // Yıllık Üretim (Ana Gösterge)
           _buildPrimaryOutputCard(
@@ -404,18 +411,19 @@ class EnergyOutputWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withValues(alpha: 0.3), width: 2),
       ),
-      padding: const EdgeInsets.all(16),
+      // L3: padding 16 → 12, ikon 32 → 22, sayı 28 → 20 (300px karta uysun)
+      padding: const EdgeInsets.all(12),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.2),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: color, size: 32),
+            child: Icon(icon, color: color, size: 22),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -423,19 +431,20 @@ class EnergyOutputWidget extends StatelessWidget {
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 12,
                     color: theme.secondaryTextColor,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   _formatEnergy(value),
                   style: TextStyle(
-                    fontSize: 28,
+                    fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: color,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -458,24 +467,28 @@ class EnergyOutputWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withValues(alpha: 0.3), width: 1.5),
       ),
-      padding: const EdgeInsets.all(14),
+      // L3: secondary kartlar yan yana 2 sütun → her biri ~125px.
+      // padding 14 → 10, ikon 24 → 18, label/sayı font'u küçük.
+      padding: const EdgeInsets.all(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 8),
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 6),
           Text(
             label,
-            style: TextStyle(fontSize: 12, color: theme.secondaryTextColor),
+            style: TextStyle(fontSize: 11, color: theme.secondaryTextColor),
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           Text(
             _formatEnergy(value),
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 15,
               fontWeight: FontWeight.bold,
               color: color,
             ),
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

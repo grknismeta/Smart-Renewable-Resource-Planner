@@ -1,8 +1,19 @@
 ---
 tags: [concept, platform, critical]
-updated: 2026-04-18
+updated: 2026-05-08
 related: [MapViewModel, MapViewMaplibreNative, MapViewMaplibreWeb, SelectionModes]
 ---
+
+> **🛑 PRE-FLIGHT CHECK (Claude için):** Harita / state ile ilgili her fix yapmadan önce
+> şu üç dosyayı **birlikte** taramalısın:
+> 1. `frontend/lib/features/map/viewmodels/map_viewmodel.dart` (VM — paylaşılan)
+> 2. `frontend/lib/features/map/widgets/map_view_maplibre_web.dart` (Web)
+> 3. `frontend/lib/features/map/widgets/map_view_maplibre_native.dart` (Native/Mobil)
+>
+> Eğer fix sadece `web.dart` veya sadece `index.html`'de yapılıyorsa **yetersizdir**.
+> VM seviyesinde çözülemeyen şey her iki adapter'da paralel uygulanmalı. Aksi halde
+> kullanıcı mobilde fark eder ve tekrar bildirir. Bu kuralı yazıya dökmek zorunda
+> kalan benim — Claude'un default davranışı **web öncelikli**, bu hatalı.
 
 # Platform Consistency (Web ↔ Mobil)
 

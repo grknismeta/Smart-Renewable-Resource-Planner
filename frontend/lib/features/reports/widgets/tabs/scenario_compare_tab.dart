@@ -1,52 +1,68 @@
 // lib/features/reports/widgets/tabs/scenario_compare_tab.dart
-import 'package:fl_chart/fl_chart.dart';
+//
+// SENARYO TAB — Sprint R4 v3
+//
+// Davranış:
+//   • Default: tek senaryo detay (üretim + finans + pin listesi)
+//   • "Kıyasla" butonu → compareMode → ekran 2'ye bölünür, 2 senaryo yan yana
+//
+// Veri:
+//   - GET /scenarios                  → liste
+//   - POST /scenarios/{id}/calculate  → result_data (üretim breakdown)
+//   - GET /scenarios/{id}/financials  → CAPEX/NPV/IRR/LCOE/payback/cashflow
+//
+// Senaryolar "Senaryo" sayfasından oluşturulur; bu tab onları raporlar.
+
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'package:frontend/core/theme/app_theme.dart';
-import 'package:frontend/core/utils/format_utils.dart';
+import 'package:maplibre/maplibre.dart' as ml;
+
+import 'package:frontend/core/network/api_service.dart';
+import 'package:frontend/data/models/financial_metrics.dart';
 import 'package:frontend/data/models/scenario_model.dart';
-import 'package:frontend/features/scenarios/viewmodels/scenario_viewmodel.dart';
+import 'package:frontend/features/reports/pages/scenario_compare_page.dart';
+import 'package:frontend/features/reports/viewmodels/report_nav_controller.dart';
+import 'package:frontend/features/reports/viewmodels/scenario_report_viewmodel.dart';
+import 'package:frontend/features/reports/widgets/common/report_mini_map.dart';
+import 'package:frontend/features/reports/widgets/dialogs/scenario_edit_dialog.dart';
 
-/// Tab 3 — Senaryo Karşılaştırma
-/// A vs B seçici + metrik grid + RadarChart
-class ScenarioCompareTab extends StatefulWidget {
-  const ScenarioCompareTab({super.key});
-
-  @override
-  State<ScenarioCompareTab> createState() => _ScenarioCompareTabState();
-}
-
-class _ScenarioCompareTabState extends State<ScenarioCompareTab> {
-  int? _idA;
-  int? _idB;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final scenarios =
-        Provider.of<ScenarioViewModel>(context, listen: false).scenarios;
-    if (scenarios.length >= 2 && _idA == null) {
-      _idA = scenarios[0].id;
-      _idB = scenarios[1].id;
-    } else if (scenarios.length == 1 && _idA == null) {
-      _idA = scenarios[0].id;
-    }
-  }
+class ScenarioCompareTab extends StatelessWidget {
+  /// Senaryo panelinden açıldığında otomatik seçilecek senaryo.
+  final int? initialScenarioId;
+  const ScenarioCompareTab({super.key, this.initialScenarioId});
 
   @override
   Widget build(BuildContext context) {
-    final vm = context.watch<ScenarioViewModel>();
-    context.watch<ThemeViewModel>();
-    final scenarios = vm.scenarios;
+    return ChangeNotifierProvider(
+      create: (ctx) => ScenarioReportViewModel(
+        Provider.of<ApiService>(ctx, listen: false),
+      )..init(initialScenarioId: initialScenarioId),
+      child: const _ScenarioBody(),
+    );
+  }
+}
 
-    if (scenarios.isEmpty) {
+class _ScenarioBody extends StatelessWidget {
+  const _ScenarioBody();
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<ScenarioReportViewModel>();
+
+    if (vm.isBusy && vm.scenarios.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.cyanAccent, strokeWidth: 2),
+      );
+    }
+    if (vm.scenarios.isEmpty) {
       return const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.compare_arrows_rounded,
-                color: Colors.white24, size: 48),
+            Icon(Icons.compare_arrows_rounded, color: Colors.white24, size: 48),
             SizedBox(height: 12),
             Text(
               'Henüz senaryo oluşturulmadı.\nSenaryo sayfasından yeni senaryo ekleyin.',
@@ -58,96 +74,163 @@ class _ScenarioCompareTabState extends State<ScenarioCompareTab> {
       );
     }
 
-    final scenA = scenarios.cast<Scenario?>().firstWhere(
-        (s) => s?.id == _idA,
-        orElse: () => null);
-    final scenB = scenarios.cast<Scenario?>().firstWhere(
-        (s) => s?.id == _idB,
-        orElse: () => null);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Toolbar(vm: vm),
+        Expanded(
+          // G7: compareMode kaldırıldı; tek panel + "Kıyasla" → ayrı sayfa.
+          child: _SinglePanelScroll(vm: vm, scenarioId: vm.idA),
+        ),
+      ],
+    );
+  }
+}
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+// ─────────────────────────────────────────────────────────────────────────────
+// TOOLBAR
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Toolbar extends StatelessWidget {
+  final ScenarioReportViewModel vm;
+  const _Toolbar({required this.vm});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.20),
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+      ),
+      // 2026-05-25 (G7): Eski compareMode toggle (ekran 2'ye böl) kaldırıldı.
+      // "Kıyasla" butonu artık doğrudan ScenarioComparePage'i push eder —
+      // gerçek diff sayfası açılır, geri tuşu çalışır.
+      child: Row(
         children: [
-          // ── Senaryo Seçici ────────────────────────────────────────────────
-          _ScenarioPicker(
-            scenarios: scenarios,
-            idA: _idA,
-            idB: _idB,
-            onChangeA: (id) => setState(() => _idA = id),
-            onChangeB: (id) => setState(() => _idB = id),
+          Expanded(
+            child: _ScenarioDropdown(
+              label: 'Senaryo',
+              color: Colors.cyanAccent,
+              scenarios: vm.scenarios,
+              selectedId: vm.idA,
+              onChanged: (id) => vm.selectA(id),
+            ),
           ),
-          const SizedBox(height: 16),
-
-          // ── Metrik Karşılaştırma ───────────────────────────────────────────
-          if (scenA != null || scenB != null) ...[
-            _MetricGrid(scenA: scenA, scenB: scenB),
-            const SizedBox(height: 16),
-          ],
-
-          // ── Radar Karşılaştırma ────────────────────────────────────────────
-          if (scenA != null && scenB != null) ...[
-            _CompareRadarChart(scenA: scenA, scenB: scenB),
-          ],
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () {
+              if (vm.idA == null) return;
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ChangeNotifierProvider.value(
+                    value: vm,
+                    child: ScenarioComparePage(
+                      initialIdA: vm.idA,
+                      initialIdB: vm.idB,
+                    ),
+                  ),
+                ),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(8),
+                border:
+                    Border.all(color: Colors.white.withValues(alpha: 0.15)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.compare_arrows_rounded,
+                      size: 14, color: Colors.white70),
+                  SizedBox(width: 5),
+                  Text(
+                    'Kıyasla',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-// ── Senaryo Seçici ────────────────────────────────────────────────────────────
+// 2026-05-25 (Fix3): Eski tek-Row toolbar yapısı LayoutBuilder ile değişti
+// — compact (mobile compareMode) Column halinde stacklenir.
 
-class _ScenarioPicker extends StatelessWidget {
+class _ScenarioDropdown extends StatelessWidget {
+  final String label;
+  final Color color;
   final List<Scenario> scenarios;
-  final int? idA, idB;
-  final ValueChanged<int?> onChangeA, onChangeB;
+  final int? selectedId;
+  final ValueChanged<int> onChanged;
 
-  const _ScenarioPicker({
+  const _ScenarioDropdown({
+    required this.label,
+    required this.color,
     required this.scenarios,
-    required this.idA,
-    required this.idB,
-    required this.onChangeA,
-    required this.onChangeB,
+    required this.selectedId,
+    required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(
-          child: _PickerCard(
-            label: 'Senaryo A',
-            color: Colors.blueAccent,
-            scenarios: scenarios,
-            selected: idA,
-            onChanged: onChangeA,
+        Text(
+          label.toUpperCase(),
+          style: TextStyle(
+            color: color.withValues(alpha: 0.7),
+            fontSize: 8,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.6,
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Column(
-            children: [
-              const Icon(Icons.compare_arrows_rounded,
-                  color: Colors.white38, size: 24),
-              const Text(
-                'VS',
-                style: TextStyle(
-                  color: Colors.white38,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+        const SizedBox(height: 2),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(color: color.withValues(alpha: 0.30)),
           ),
-        ),
-        Expanded(
-          child: _PickerCard(
-            label: 'Senaryo B',
-            color: Colors.orangeAccent,
-            scenarios: scenarios,
-            selected: idB,
-            onChanged: onChangeB,
+          child: DropdownButton<int>(
+            value: selectedId,
+            isDense: true,
+            dropdownColor: const Color(0xFF1C2533),
+            underline: const SizedBox.shrink(),
+            icon: Icon(Icons.keyboard_arrow_down, color: color, size: 16),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            items: scenarios
+                .map((s) => DropdownMenuItem(
+                      value: s.id,
+                      child: Text(
+                        s.name,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ))
+                .toList(),
+            onChanged: (id) {
+              if (id != null) onChanged(id);
+            },
           ),
         ),
       ],
@@ -155,163 +238,368 @@ class _ScenarioPicker extends StatelessWidget {
   }
 }
 
-class _PickerCard extends StatelessWidget {
-  final String label;
-  final Color color;
-  final List<Scenario> scenarios;
-  final int? selected;
-  final ValueChanged<int?> onChanged;
+// 2026-05-25 (G7): Eski `_CompareView` (ekran 2'ye böl) silindi. Karşılaştırma
+// artık ayrı sayfada (ScenarioComparePage) — gerçek diff görselleştirme.
 
-  const _PickerCard({
-    required this.label,
-    required this.color,
-    required this.scenarios,
-    required this.selected,
-    required this.onChanged,
+// ─────────────────────────────────────────────────────────────────────────────
+// SINGLE PANEL
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SinglePanelScroll extends StatelessWidget {
+  final ScenarioReportViewModel vm;
+  final int? scenarioId;
+  // 2026-05-25 (G7): compareMode silindi → accent default cyanAccent;
+  // _CompareView'da kullanılan A/B renk ayrımı artık ScenarioComparePage'de.
+  final Color accent;
+
+  const _SinglePanelScroll({
+    required this.vm,
+    required this.scenarioId,
+    // ignore: unused_element_parameter
+    this.accent = Colors.cyanAccent,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (scenarioId == null) {
+      return const Center(
+        child: Text('Senaryo seç', style: TextStyle(color: Colors.white38)),
+      );
+    }
+    final scenario = scenarioId == vm.idA ? vm.scenarioA : vm.scenarioB;
+    if (scenario == null) {
+      return const Center(
+        child: Text('Senaryo bulunamadı', style: TextStyle(color: Colors.white38)),
+      );
+    }
+    final financials = vm.financialsFor(scenarioId!);
+    final loadingFin = vm.isLoadingFinancials(scenarioId!);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(14),
+      child: _ScenarioDetailPanel(
+        scenario: scenario,
+        financials: financials,
+        loadingFinancials: loadingFin,
+        accent: accent,
+        busy: vm.isBusy,
+        // 2026-05-27 (Q1): Hata yakala → SnackBar ile kullanıcıya net mesaj
+        // göster. Eski hâl: setError sessiz, kullanıcı "Hesapla"ya bastıktan
+        // sonra hiçbir feedback yok, neden hesaplanmadığı belirsiz.
+        onRecalculate: () async {
+          try {
+            await vm.recalculate(scenarioId!);
+          } catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Senaryo hesaplanamadı: $e'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            }
+          }
+        },
+      ),
+    );
+  }
+}
+
+class _ScenarioDetailPanel extends StatelessWidget {
+  final Scenario scenario;
+  final FinancialMetrics? financials;
+  final bool loadingFinancials;
+  final Color accent;
+  final bool busy;
+  final VoidCallback onRecalculate;
+
+  const _ScenarioDetailPanel({
+    required this.scenario,
+    required this.financials,
+    required this.loadingFinancials,
+    required this.accent,
+    required this.busy,
+    required this.onRecalculate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final result = scenario.resultData;
+    final hasResult = result != null && result.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _Header(scenario: scenario, accent: accent),
+        const SizedBox(height: 12),
+
+        // 2026-05-25 (Fix6): Senaryo pin'lerinin mini haritası — coğrafi dağılım
+        // görsel olarak anlaşılsın. Pin tıklayınca Santral tab'ı (4) açılır.
+        _ScenarioPinMap(scenarioId: scenario.id, accent: accent),
+        const SizedBox(height: 12),
+
+        // Üretim özeti
+        if (hasResult)
+          _ProductionSummary(result: result, accent: accent)
+        else
+          _NotCalculated(busy: busy, onRecalculate: onRecalculate),
+        const SizedBox(height: 12),
+
+        // Finans
+        if (loadingFinancials)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.cyanAccent),
+              ),
+            ),
+          )
+        else if (financials != null) ...[
+          _FinancialCards(metrics: financials!),
+          const SizedBox(height: 12),
+          _CashflowChart(metrics: financials!, accent: accent),
+          const SizedBox(height: 12),
+          _PinList(metrics: financials!),
+        ],
+      ],
+    );
+  }
+}
+
+// ── Header ───────────────────────────────────────────────────────────────────
+
+class _Header extends StatelessWidget {
+  final Scenario scenario;
+  final Color accent;
+  const _Header({required this.scenario, required this.accent});
+
+  // 2026-05-25 (G5+G6): Senaryoyu düzenle dialog'u — name, description, start/
+  // end date, pin listesi (checkbox). Submit → ScenarioReportViewModel.update.
+  Future<void> _openEdit(BuildContext context) async {
+    final vm = context.read<ScenarioReportViewModel>();
+    final allPins = vm.allPins;
+    final result = await showDialog<ScenarioEditResult>(
+      context: context,
+      builder: (_) => ScenarioEditDialog(
+        scenario: scenario,
+        allPins: allPins,
+      ),
+    );
+    if (result != null) {
+      await vm.updateScenarioFields(
+        scenario.id,
+        name: result.name,
+        description: result.description,
+        startDate: result.startDate,
+        endDate: result.endDate,
+        pinIds: result.pinIds,
+      );
+    }
+  }
+
+  String _fmtDate(DateTime? d) => d == null
+      ? '—'
+      : '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [accent.withValues(alpha: 0.10), Colors.transparent],
+        ),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: accent.withValues(alpha: 0.30)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration:
-                    BoxDecoration(color: color, shape: BoxShape.circle),
+              Icon(Icons.calendar_view_month_rounded, color: accent, size: 16),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  scenario.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+              // 2026-05-25 (G5+G6): Düzenle butonu — dialog ile name/date/pin
+              // hepsi düzenlenebilir, submit sonrası otomatik recalculate.
+              InkWell(
+                onTap: () => _openEdit(context),
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: accent.withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit_rounded, size: 12, color: accent),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Düzenle',
+                        style: TextStyle(
+                          color: accent,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
+          if (scenario.description != null &&
+              scenario.description!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              scenario.description!,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 11,
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
-          DropdownButton<int>(
-            value: selected,
-            isExpanded: true,
-            dropdownColor: const Color(0xFF1C2533),
-            underline: const SizedBox.shrink(),
-            icon: Icon(Icons.keyboard_arrow_down,
-                color: color.withValues(alpha: 0.7), size: 16),
-            hint: const Text('Seçiniz',
-                style: TextStyle(color: Colors.white38, fontSize: 12)),
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-            items: scenarios
-                .map((s) => DropdownMenuItem<int>(
-                      value: s.id,
-                      child: Text(
-                        s.name,
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 12),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ))
-                .toList(),
-            onChanged: onChanged,
+          // 2026-05-25 (G6): metaChip'ler tıklanabilir → düzenle dialog'unu açar.
+          Wrap(
+            spacing: 14,
+            runSpacing: 4,
+            children: [
+              _metaChip(
+                Icons.push_pin_outlined,
+                '${scenario.pinIds.length} santral',
+                onTap: () => _openEdit(context),
+              ),
+              _metaChip(
+                Icons.date_range_rounded,
+                // N1 (2026-05-26): end_date null → "Süresiz" → senaryo
+                // bugüne kadar üretmeye devam ediyor.
+                scenario.endDate == null
+                    ? '${_fmtDate(scenario.startDate)} – Süresiz'
+                    : '${_fmtDate(scenario.startDate)} – ${_fmtDate(scenario.endDate)}',
+                onTap: () => _openEdit(context),
+              ),
+              if (scenario.batteryCapacityKwh != null &&
+                  scenario.batteryCapacityKwh! > 0)
+                _metaChip(
+                  Icons.battery_charging_full_rounded,
+                  '${scenario.batteryCapacityKwh!.toStringAsFixed(0)} kWh depolama',
+                ),
+            ],
           ),
         ],
       ),
     );
   }
+
+  Widget _metaChip(IconData icon, String text, {VoidCallback? onTap}) {
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 11, color: Colors.white.withValues(alpha: 0.45)),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.65),
+            fontSize: 10.5,
+          ),
+        ),
+        if (onTap != null) ...[
+          const SizedBox(width: 3),
+          Icon(Icons.edit_outlined,
+              size: 10, color: Colors.white.withValues(alpha: 0.35)),
+        ],
+      ],
+    );
+    if (onTap == null) return content;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+        child: content,
+      ),
+    );
+  }
 }
 
-// ── Metrik Grid ───────────────────────────────────────────────────────────────
+// ── Üretim özeti ─────────────────────────────────────────────────────────────
 
-class _MetricGrid extends StatelessWidget {
-  final Scenario? scenA;
-  final Scenario? scenB;
+class _ProductionSummary extends StatelessWidget {
+  final Map<String, dynamic> result;
+  final Color accent;
+  const _ProductionSummary({required this.result, required this.accent});
 
-  const _MetricGrid({required this.scenA, required this.scenB});
+  double _d(String k) => (result[k] as num?)?.toDouble() ?? 0;
+  int _i(String k) => (result[k] as num?)?.toInt() ?? 0;
 
   @override
   Widget build(BuildContext context) {
-    final aData = scenA?.resultData ?? {};
-    final bData = scenB?.resultData ?? {};
-
-    final metrics = [
-      _Metric(
-        label: 'Güneş Üretimi',
-        icon: Icons.wb_sunny_rounded,
-        aVal: (aData['total_solar_kwh'] as num?)?.toDouble() ?? 0,
-        bVal: (bData['total_solar_kwh'] as num?)?.toDouble() ?? 0,
-        unit: 'kWh',
-        higherIsBetter: true,
-        format: FormatUtils.formatEnergy,
-      ),
-      _Metric(
-        label: 'Rüzgar Üretimi',
-        icon: Icons.air_rounded,
-        aVal: (aData['total_wind_kwh'] as num?)?.toDouble() ?? 0,
-        bVal: (bData['total_wind_kwh'] as num?)?.toDouble() ?? 0,
-        unit: 'kWh',
-        higherIsBetter: true,
-        format: FormatUtils.formatEnergy,
-      ),
-      _Metric(
-        label: 'HES Üretimi',
-        icon: Icons.water_rounded,
-        aVal: (aData['total_hydro_kwh'] as num?)?.toDouble() ?? 0,
-        bVal: (bData['total_hydro_kwh'] as num?)?.toDouble() ?? 0,
-        unit: 'kWh',
-        higherIsBetter: true,
-        format: FormatUtils.formatEnergy,
-      ),
-      _Metric(
-        label: 'Toplam Üretim',
-        icon: Icons.bolt_rounded,
-        aVal: _totalKwh(aData),
-        bVal: _totalKwh(bData),
-        unit: 'kWh',
-        higherIsBetter: true,
-        format: FormatUtils.formatEnergy,
-      ),
-      _Metric(
-        label: 'Pin Sayısı',
-        icon: Icons.push_pin_rounded,
-        aVal: (scenA?.pinIds.length ?? 0).toDouble(),
-        bVal: (scenB?.pinIds.length ?? 0).toDouble(),
-        unit: 'adet',
-        higherIsBetter: true,
-        format: (v) => v.toStringAsFixed(0),
-      ),
-    ];
+    final totalKwh = _d('total_kwh');
+    final solar = _d('total_solar_kwh');
+    final wind = _d('total_wind_kwh');
+    final hydro = _d('total_hydro_kwh');
+    final total = solar + wind + hydro;
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(12),
-        border:
-            Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Text(
+            'TAHMİNİ YILLIK ÜRETİM',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
             children: [
-              Icon(Icons.analytics_rounded,
-                  size: 14, color: Colors.white54),
-              SizedBox(width: 6),
               Text(
-                'Metrik Karşılaştırması',
+                _fmtEnergy(totalKwh),
                 style: TextStyle(
-                  color: Colors.white54,
+                  color: accent,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                _energyUnit(totalKwh),
+                style: const TextStyle(
+                  color: Colors.white70,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -319,182 +607,132 @@ class _MetricGrid extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          // Header
-          _MetricRow(
-            label: 'Metrik',
-            aText: scenA?.name ?? 'A',
-            bText: scenB?.name ?? 'B',
-            isHeader: true,
-          ),
-          const Divider(height: 12, color: Colors.white12),
-          ...metrics.map((m) => _MetricRow(
-                label: m.label,
-                aText: scenA != null ? m.format(m.aVal) : '-',
-                bText: scenB != null ? m.format(m.bVal) : '-',
-                isHeader: false,
-                aIsBetter: scenA != null &&
-                    scenB != null &&
-                    m.higherIsBetter
-                    ? m.aVal > m.bVal
-                    : m.aVal < m.bVal,
-                bIsBetter: scenA != null &&
-                    scenB != null &&
-                    m.higherIsBetter
-                    ? m.bVal > m.aVal
-                    : m.bVal < m.aVal,
-              )),
-        ],
-      ),
-    );
-  }
-
-  static double _totalKwh(Map<String, dynamic> d) {
-    return ((d['total_solar_kwh'] as num?)?.toDouble() ?? 0) +
-        ((d['total_wind_kwh'] as num?)?.toDouble() ?? 0) +
-        ((d['total_hydro_kwh'] as num?)?.toDouble() ?? 0);
-  }
-}
-
-class _Metric {
-  final String label;
-  final IconData icon;
-  final double aVal, bVal;
-  final String unit;
-  final bool higherIsBetter;
-  final String Function(double) format;
-
-  const _Metric({
-    required this.label,
-    required this.icon,
-    required this.aVal,
-    required this.bVal,
-    required this.unit,
-    required this.higherIsBetter,
-    required this.format,
-  });
-}
-
-class _MetricRow extends StatelessWidget {
-  final String label, aText, bText;
-  final bool isHeader;
-  final bool aIsBetter, bIsBetter;
-
-  const _MetricRow({
-    required this.label,
-    required this.aText,
-    required this.bText,
-    this.isHeader = false,
-    this.aIsBetter = false,
-    this.bIsBetter = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (isHeader) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          children: [
-            Expanded(
-                flex: 3,
-                child: Text(label,
-                    style: const TextStyle(
-                        color: Colors.white38,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700))),
-            Expanded(
-                flex: 2,
-                child: Text(aText,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        color: Colors.blueAccent,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700))),
-            Expanded(
-                flex: 2,
-                child: Text(bText,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        color: Colors.orangeAccent,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700))),
-          ],
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: Text(label,
-                style: const TextStyle(
-                    color: Colors.white60, fontSize: 11)),
-          ),
-          Expanded(
-            flex: 2,
-            child: _ValueCell(
-                text: aText,
-                isBetter: aIsBetter,
-                baseColor: Colors.blueAccent),
-          ),
-          Expanded(
-            flex: 2,
-            child: _ValueCell(
-                text: bText,
-                isBetter: bIsBetter,
-                baseColor: Colors.orangeAccent),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ValueCell extends StatelessWidget {
-  final String text;
-  final bool isBetter;
-  final Color baseColor;
-
-  const _ValueCell(
-      {required this.text,
-      required this.isBetter,
-      required this.baseColor});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isBetter ? Colors.greenAccent : baseColor;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 3),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(6),
-        border: isBetter
-            ? Border.all(color: Colors.greenAccent.withValues(alpha: 0.3))
-            : null,
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (isBetter) ...[
-            const Icon(Icons.arrow_upward_rounded,
-                size: 10, color: Colors.greenAccent),
-            const SizedBox(width: 2),
-          ],
-          Flexible(
-            child: Text(
-              text,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                fontWeight:
-                    isBetter ? FontWeight.w700 : FontWeight.normal,
+          // 3 kaynak breakdown bar
+          if (total > 0) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: SizedBox(
+                height: 8,
+                child: Row(
+                  children: [
+                    if (solar > 0)
+                      Expanded(
+                        flex: (solar / total * 1000).round(),
+                        child: Container(color: const Color(0xFFF59E0B)),
+                      ),
+                    if (wind > 0)
+                      Expanded(
+                        flex: (wind / total * 1000).round(),
+                        child: Container(color: const Color(0xFF3B82F6)),
+                      ),
+                    if (hydro > 0)
+                      Expanded(
+                        flex: (hydro / total * 1000).round(),
+                        child: Container(color: const Color(0xFF06B6D4)),
+                      ),
+                  ],
+                ),
               ),
-              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 14,
+              runSpacing: 4,
+              children: [
+                _resLegend('Güneş', solar, _i('solar_count'),
+                    const Color(0xFFF59E0B)),
+                _resLegend('Rüzgar', wind, _i('wind_count'),
+                    const Color(0xFF3B82F6)),
+                _resLegend('Hidro', hydro, _i('hydro_count'),
+                    const Color(0xFF06B6D4)),
+              ],
+            ),
+            // 2026-05-25 (P1/4): Aylık breakdown bar chart — backend monthly_
+            // breakdown alanı varsa göster.
+            if (result['monthly_breakdown'] is List) ...[
+              const SizedBox(height: 12),
+              const Divider(color: Colors.white12, height: 1),
+              const SizedBox(height: 10),
+              _MonthlyBreakdownChart(
+                breakdown: List<Map<String, dynamic>>.from(
+                  (result['monthly_breakdown'] as List).map(
+                    (e) => Map<String, dynamic>.from(e as Map),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _resLegend(String label, double kwh, int count, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          '$label ($count) · ${_fmtEnergy(kwh)} ${_energyUnit(kwh)}',
+          style: const TextStyle(color: Colors.white70, fontSize: 10.5),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Hesaplanmamış senaryo ────────────────────────────────────────────────────
+
+class _NotCalculated extends StatelessWidget {
+  final bool busy;
+  final VoidCallback onRecalculate;
+  const _NotCalculated({required this.busy, required this.onRecalculate});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.calculate_outlined, color: Colors.orange, size: 28),
+          const SizedBox(height: 8),
+          const Text(
+            'Bu senaryo henüz hesaplanmamış',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ElevatedButton.icon(
+            onPressed: busy ? null : onRecalculate,
+            icon: busy
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.black54),
+                  )
+                : const Icon(Icons.play_arrow_rounded, size: 16),
+            label: Text(busy ? 'Hesaplanıyor...' : 'Şimdi Hesapla'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.black87,
+              elevation: 0,
             ),
           ),
         ],
@@ -503,160 +741,577 @@ class _ValueCell extends StatelessWidget {
   }
 }
 
-// ── Compare Radar Chart ───────────────────────────────────────────────────────
+// ── Finans kartları ──────────────────────────────────────────────────────────
 
-class _CompareRadarChart extends StatelessWidget {
-  final Scenario scenA;
-  final Scenario scenB;
-
-  const _CompareRadarChart(
-      {required this.scenA, required this.scenB});
+class _FinancialCards extends StatelessWidget {
+  final FinancialMetrics metrics;
+  const _FinancialCards({required this.metrics});
 
   @override
   Widget build(BuildContext context) {
-    final aData = scenA.resultData ?? {};
-    final bData = scenB.resultData ?? {};
+    final cards = [
+      ('CAPEX', _fmtMoney(metrics.capexTotal), 'Toplam yatırım',
+          const Color(0xFFF59E0B)),
+      ('NPV (25y)', _fmtMoney(metrics.npvUsd),
+          metrics.npvUsd >= 0 ? 'Pozitif — kârlı' : 'Negatif',
+          metrics.npvUsd >= 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
+      ('IRR', metrics.irrPct != null
+          ? '%${metrics.irrPct!.toStringAsFixed(1)}'
+          : '—', 'İç verim oranı', Colors.cyanAccent),
+      ('LCOE', '\$${metrics.lcoeUsdPerKwh.toStringAsFixed(3)}', 'Birim maliyet/kWh',
+          const Color(0xFFA855F7)),
+      ('Geri Ödeme', '${metrics.paybackPeriodYears.toStringAsFixed(1)} yıl',
+          'Yatırım amortismanı', const Color(0xFF3B82F6)),
+      ('CO₂ Önleme', '${metrics.annualCo2AvoidedTons.toStringAsFixed(0)} t/yıl',
+          'Yıllık emisyon', const Color(0xFF34D399)),
+    ];
+    return LayoutBuilder(builder: (ctx, c) {
+      final cross = c.maxWidth >= 480 ? 3 : 2;
+      return GridView.count(
+        crossAxisCount: cross,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        childAspectRatio: 1.55,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        children: cards
+            .map((c) => _finCard(c.$1, c.$2, c.$3, c.$4))
+            .toList(),
+      );
+    });
+  }
 
-    double norm(double v, double max) => (v / max).clamp(0.0, 1.0) * 5;
+  Widget _finCard(String label, String value, String sub, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: color.withValues(alpha: 0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 8.5,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            sub,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.40),
+              fontSize: 9,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-    final aTotal = _total(aData);
-    final bTotal = _total(bData);
-    final maxTotal = (aTotal > bTotal ? aTotal : bTotal).clamp(1.0, double.infinity);
+// ── Cashflow chart ───────────────────────────────────────────────────────────
 
-    final aSolar = (aData['total_solar_kwh'] as num?)?.toDouble() ?? 0;
-    final bSolar = (bData['total_solar_kwh'] as num?)?.toDouble() ?? 0;
-    final maxSolar =
-        (aSolar > bSolar ? aSolar : bSolar).clamp(1.0, double.infinity);
+class _CashflowChart extends StatelessWidget {
+  final FinancialMetrics metrics;
+  final Color accent;
+  const _CashflowChart({required this.metrics, required this.accent});
 
-    final aWind = (aData['total_wind_kwh'] as num?)?.toDouble() ?? 0;
-    final bWind = (bData['total_wind_kwh'] as num?)?.toDouble() ?? 0;
-    final maxWind =
-        (aWind > bWind ? aWind : bWind).clamp(1.0, double.infinity);
-
-    final aHydro = (aData['total_hydro_kwh'] as num?)?.toDouble() ?? 0;
-    final bHydro = (bData['total_hydro_kwh'] as num?)?.toDouble() ?? 0;
-    final maxHydro =
-        (aHydro > bHydro ? aHydro : bHydro).clamp(1.0, double.infinity);
-
-    final aPins = scenA.pinIds.length.toDouble();
-    final bPins = scenB.pinIds.length.toDouble();
-    final maxPins =
-        (aPins > bPins ? aPins : bPins).clamp(1.0, double.infinity);
-
+  @override
+  Widget build(BuildContext context) {
+    final cum = metrics.cumulativeCashflows;
+    if (cum.isEmpty) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(12),
-        border:
-            Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.radar_rounded,
-                  size: 14, color: Colors.white54),
-              const SizedBox(width: 6),
-              const Text(
-                'Radar Karşılaştırması',
-                style: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              // Legend
-              _LegendDot(color: Colors.blueAccent, label: scenA.name),
-              const SizedBox(width: 12),
-              _LegendDot(color: Colors.orangeAccent, label: scenB.name),
-            ],
+          const Text(
+            'Kümülatif Nakit Akışı',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 240,
-            child: RadarChart(
-              duration: Duration.zero,
-              RadarChartData(
-                dataSets: [
-                  RadarDataSet(
-                    fillColor: Colors.blueAccent.withValues(alpha: 0.15),
-                    borderColor: Colors.blueAccent,
-                    borderWidth: 2,
-                    entryRadius: 3,
-                    dataEntries: [
-                      RadarEntry(value: norm(aTotal, maxTotal)),
-                      RadarEntry(value: norm(aSolar, maxSolar)),
-                      RadarEntry(value: norm(aWind, maxWind)),
-                      RadarEntry(value: norm(aHydro, maxHydro)),
-                      RadarEntry(value: norm(aPins, maxPins)),
-                    ],
-                  ),
-                  RadarDataSet(
-                    fillColor:
-                        Colors.orangeAccent.withValues(alpha: 0.15),
-                    borderColor: Colors.orangeAccent,
-                    borderWidth: 2,
-                    entryRadius: 3,
-                    dataEntries: [
-                      RadarEntry(value: norm(bTotal, maxTotal)),
-                      RadarEntry(value: norm(bSolar, maxSolar)),
-                      RadarEntry(value: norm(bWind, maxWind)),
-                      RadarEntry(value: norm(bHydro, maxHydro)),
-                      RadarEntry(value: norm(bPins, maxPins)),
-                    ],
-                  ),
-                ],
-                radarBackgroundColor: Colors.transparent,
-                borderData: FlBorderData(show: false),
-                radarBorderData: const BorderSide(
-                    color: Colors.white12, width: 1),
-                tickBorderData: const BorderSide(
-                    color: Colors.white10, width: 0.5),
-                gridBorderData: const BorderSide(
-                    color: Colors.white12, width: 0.5),
-                tickCount: 5,
-                ticksTextStyle: const TextStyle(
-                    color: Colors.transparent, fontSize: 0),
-                getTitle: (index, angle) {
-                  const labels = [
-                    'Toplam',
-                    'Güneş',
-                    'Rüzgar',
-                    'HES',
-                    'Pin',
-                  ];
-                  return RadarChartTitle(
-                    text: labels[index],
-                    angle: angle,
-                  );
-                },
-                titleTextStyle: const TextStyle(
-                    color: Colors.white60, fontSize: 11),
-                titlePositionPercentageOffset: 0.2,
-              ),
+          const SizedBox(height: 2),
+          Text(
+            '${metrics.projectLifetimeYears} yıl · başabaş ${metrics.paybackPeriodYears.toStringAsFixed(1)}. yıl',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 10,
+            ),
+          ),
+          const SizedBox(height: 10),
+          AspectRatio(
+            aspectRatio: 2.6,
+            child: CustomPaint(
+              painter: _CashflowPainter(cumulative: cum, accent: accent),
+              size: Size.infinite,
             ),
           ),
         ],
       ),
     );
   }
-
-  static double _total(Map<String, dynamic> d) {
-    return ((d['total_solar_kwh'] as num?)?.toDouble() ?? 0) +
-        ((d['total_wind_kwh'] as num?)?.toDouble() ?? 0) +
-        ((d['total_hydro_kwh'] as num?)?.toDouble() ?? 0);
-  }
 }
 
-class _LegendDot extends StatelessWidget {
-  final Color color;
-  final String label;
-  const _LegendDot({required this.color, required this.label});
+class _CashflowPainter extends CustomPainter {
+  final List<double> cumulative;
+  final Color accent;
+  _CashflowPainter({required this.cumulative, required this.accent});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (cumulative.length < 2) return;
+    const padL = 36.0, padR = 8.0, padT = 8.0, padB = 18.0;
+    final w = size.width - padL - padR;
+    final h = size.height - padT - padB;
+
+    final minV = math.min(0.0, cumulative.reduce(math.min));
+    final maxV = math.max(0.0, cumulative.reduce(math.max));
+    final range = (maxV - minV).abs() < 1 ? 1.0 : (maxV - minV);
+
+    double xFor(int i) => padL + i / (cumulative.length - 1) * w;
+    double yFor(double v) => padT + h - (v - minV) / range * h;
+
+    // Sıfır çizgisi
+    final zeroY = yFor(0);
+    canvas.drawLine(
+      Offset(padL, zeroY),
+      Offset(size.width - padR, zeroY),
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.20)
+        ..strokeWidth = 1,
+    );
+
+    // Çizgi
+    final path = Path();
+    for (var i = 0; i < cumulative.length; i++) {
+      final x = xFor(i);
+      final y = yFor(cumulative[i]);
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = accent
+        ..strokeWidth = 2.2
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Başabaş noktası (sıfırı geçtiği yer)
+    for (var i = 1; i < cumulative.length; i++) {
+      if (cumulative[i - 1] < 0 && cumulative[i] >= 0) {
+        canvas.drawCircle(
+          Offset(xFor(i), yFor(cumulative[i])),
+          3.5,
+          Paint()..color = const Color(0xFF10B981),
+        );
+        break;
+      }
+    }
+
+    // Y ekseni etiketleri (min / 0 / max)
+    final labelStyle = TextStyle(
+      color: Colors.white.withValues(alpha: 0.40),
+      fontSize: 8,
+    );
+    void yLabel(double v) {
+      final tp = TextPainter(
+        text: TextSpan(text: _fmtMoneyShort(v), style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(padL - tp.width - 3, yFor(v) - 5));
+    }
+
+    yLabel(maxV);
+    if (minV < 0) yLabel(minV);
+
+    // X ekseni — yıl etiketleri (her 5 yıl)
+    for (var i = 0; i < cumulative.length; i += 5) {
+      final tp = TextPainter(
+        text: TextSpan(text: '$i', style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(xFor(i) - tp.width / 2, size.height - padB + 3));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CashflowPainter old) =>
+      old.cumulative != cumulative || old.accent != accent;
+}
+
+// ── Pin listesi ──────────────────────────────────────────────────────────────
+
+class _PinList extends StatelessWidget {
+  final FinancialMetrics metrics;
+  const _PinList({required this.metrics});
 
   @override
   Widget build(BuildContext context) {
+    if (metrics.perPin.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Santraller (${metrics.perPin.length})',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...metrics.perPin.map((p) => _PinRow(detail: p)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 2026-05-25 (G5): Pin satırı tıklanabilir — Santral tab'a drill-down.
+/// `ReportNavController.requestPin` ile pin id taşır, sonra tab 4'e geçer.
+class _PinRow extends StatelessWidget {
+  final PinFinanceDetail detail;
+  const _PinRow({required this.detail});
+
+  Color get _color => switch (detail.type.toLowerCase()) {
+        'güneş paneli' || 'solar' => const Color(0xFFF59E0B),
+        'rüzgar türbini' || 'wind' => const Color(0xFF3B82F6),
+        'hidroelektrik' || 'hydro' => const Color(0xFF06B6D4),
+        _ => Colors.white54,
+      };
+
+  void _openSantral(BuildContext context) {
+    context.read<ReportNavController>().requestPin(detail.pinId);
+    DefaultTabController.of(context).animateTo(4);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // VM'den pin adını/şehrini bulmaya çalış (PinFinanceDetail sadece id +
+    // type + capacity verir). Yoksa "Pin #N" fallback.
+    final vm = context.watch<ScenarioReportViewModel>();
+    final pin = vm.allPins.cast<dynamic>().firstWhere(
+          (p) => p.id == detail.pinId,
+          orElse: () => null,
+        );
+    final displayName = pin == null
+        ? 'Pin #${detail.pinId}'
+        : (pin.name as String? ?? 'Pin #${detail.pinId}');
+    final city = pin?.city as String?;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: InkWell(
+        onTap: () => _openSantral(context),
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.02),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: _color.withValues(alpha: 0.12)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: _color,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (city != null && city.isNotEmpty)
+                      Text(
+                        city,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.40),
+                          fontSize: 9.5,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Text(
+                '${detail.capacityMw.toStringAsFixed(1)} MW',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.65),
+                  fontSize: 10.5,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '${_fmtEnergy(detail.annualKwh)} ${_energyUnit(detail.annualKwh)}',
+                style: TextStyle(
+                  color: _color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 14,
+                color: Colors.white.withValues(alpha: 0.35),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Format helper'ları
+// ─────────────────────────────────────────────────────────────────────────────
+
+String _fmtEnergy(double kwh) {
+  if (kwh >= 1e9) return (kwh / 1e9).toStringAsFixed(2);
+  if (kwh >= 1e6) return (kwh / 1e6).toStringAsFixed(1);
+  if (kwh >= 1e3) return (kwh / 1e3).toStringAsFixed(1);
+  return kwh.toStringAsFixed(0);
+}
+
+String _energyUnit(double kwh) {
+  if (kwh >= 1e9) return 'TWh';
+  if (kwh >= 1e6) return 'GWh';
+  if (kwh >= 1e3) return 'MWh';
+  return 'kWh';
+}
+
+String _fmtMoney(double usd) {
+  final abs = usd.abs();
+  final sign = usd < 0 ? '-' : '';
+  if (abs >= 1e6) return '$sign\$${(abs / 1e6).toStringAsFixed(1)}M';
+  if (abs >= 1e3) return '$sign\$${(abs / 1e3).toStringAsFixed(0)}K';
+  return '$sign\$${abs.toStringAsFixed(0)}';
+}
+
+String _fmtMoneyShort(double usd) {
+  final abs = usd.abs();
+  final sign = usd < 0 ? '-' : '';
+  if (abs >= 1e6) return '$sign${(abs / 1e6).toStringAsFixed(0)}M';
+  if (abs >= 1e3) return '$sign${(abs / 1e3).toStringAsFixed(0)}K';
+  return '$sign${abs.toStringAsFixed(0)}';
+}
+
+// ── Senaryo pin haritası ────────────────────────────────────────────────────
+
+/// 2026-05-25 (Fix6): ScenarioReportViewModel'dan senaryo pin'lerini lat/lon
+/// ile alır ve ReportMiniMap üzerinde tipine göre renkli marker olarak gösterir.
+/// Pin'in bbox'una hapsedilir (bounds), tıklayınca Santral tab'ına yönlendirir.
+class _ScenarioPinMap extends StatelessWidget {
+  final int scenarioId;
+  final Color accent;
+  const _ScenarioPinMap({required this.scenarioId, required this.accent});
+
+  // 2026-05-25 (Fix6): Marker rengini pin tipinden alma yardımcısı —
+  // şimdilik ReportMiniMap score-based renk kullandığı için kullanılmıyor;
+  // ilerde marker.color desteği eklenince devreye alınacak.
+  // ignore: unused_element
+  Color _colorFor(String type) {
+    switch (type) {
+      case 'Güneş Paneli':
+        return const Color(0xFFF59E0B);
+      case 'Rüzgar Türbini':
+        return const Color(0xFF3B82F6);
+      case 'Hidroelektrik':
+        return const Color(0xFF06B6D4);
+      default:
+        return accent;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<ScenarioReportViewModel>();
+    final pins = vm.pinsForScenario(scenarioId);
+    if (pins.isEmpty) {
+      // 2026-05-25 (Polish2): pinsLoaded=false ise loading; true ise gerçekten
+      // empty. Eskiden ikisi de "Bu senaryoya bağlı pin yok" gösteriyordu.
+      final isLoading = !vm.pinsLoaded;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Row(
+          children: [
+            if (isLoading) ...[
+              const SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  color: Colors.cyanAccent,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Pin lokasyonları yükleniyor...',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 11,
+                ),
+              ),
+            ] else ...[
+              Icon(Icons.map_outlined,
+                  size: 14, color: Colors.white.withValues(alpha: 0.40)),
+              const SizedBox(width: 8),
+              Text(
+                'Bu senaryoya bağlı pin yok',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+    // Tipe göre renkli marker'lar — score her marker için 70 sabit
+    // (skor değil tip vurgusu önemli; renk type'tan geliyor zaten).
+    final markers = pins
+        .map((p) => ReportMapMarker(
+              lat: p.latitude,
+              lon: p.longitude,
+              label: p.name,
+              score: 70,
+            ))
+        .toList();
+    // Bbox = pin koordinatları
+    ml.LngLatBounds? bounds;
+    if (pins.length >= 2) {
+      double minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+      for (final p in pins) {
+        if (p.latitude < minLat) minLat = p.latitude;
+        if (p.latitude > maxLat) maxLat = p.latitude;
+        if (p.longitude < minLon) minLon = p.longitude;
+        if (p.longitude > maxLon) maxLon = p.longitude;
+      }
+      bounds = ml.LngLatBounds(
+        longitudeWest: minLon,
+        latitudeSouth: minLat,
+        longitudeEast: maxLon,
+        latitudeNorth: maxLat,
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.location_on_rounded, size: 14, color: accent),
+            const SizedBox(width: 6),
+            Text(
+              'Pin Dağılımı (${pins.length})',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Spacer(),
+            // Mini lejant — kaynak tiplerinin renkleri
+            _typeChip('Güneş', const Color(0xFFF59E0B)),
+            const SizedBox(width: 4),
+            _typeChip('Rüzgar', const Color(0xFF3B82F6)),
+            const SizedBox(width: 4),
+            _typeChip('Hidro', const Color(0xFF06B6D4)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ReportMiniMap(
+          height: 220,
+          markers: markers,
+          bounds: bounds,
+          boundsPadding: 0.5,
+          // Pin tipini renge yansıtmak için fixedColor değil, score-color hili.
+          // Daha doğru renklendirme için marker tipini score değil renge map'le:
+          // ReportMiniMap'in _colorFor 0-100 score üstünden renk veriyor — biz
+          // tipe göre renkli istiyoruz. Quick hack: type listemden çek ve
+          // fixedColor null olsun (skor bazlı palette). İlerde tipe-göre renk
+          // için ReportMiniMap'e marker.color desteği eklenebilir.
+          onMarkerTap: (m) {
+            // 2026-05-25 (Polish1): Marker tıkla → ReportNavController.requestPin
+            // ile Santral tab'a id yaz + tab 4'e geç → SantralBody pendingPinId'yi
+            // tüketip pin'i seçer.
+            final tapped = pins.firstWhere(
+              (p) =>
+                  (p.latitude - m.lat).abs() < 1e-6 &&
+                  (p.longitude - m.lon).abs() < 1e-6,
+              orElse: () => pins.first,
+            );
+            context.read<ReportNavController>().requestPin(tapped.id);
+            DefaultTabController.of(context).animateTo(4);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _typeChip(String label, Color color) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -665,11 +1320,158 @@ class _LegendDot extends StatelessWidget {
           height: 8,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        const SizedBox(width: 4),
-        Text(label,
-            style: TextStyle(color: color, fontSize: 10),
-            overflow: TextOverflow.ellipsis),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.55),
+            fontSize: 9.5,
+          ),
+        ),
       ],
     );
   }
+}
+
+// ── Aylık üretim breakdown ──────────────────────────────────────────────────
+
+/// 2026-05-25 (P1/4): Stacked bar chart — 12 ay × 3 kaynak (solar/wind/hydro).
+/// Backend `monthly_breakdown` listesinden çizilir; climatology profilinden
+/// türetilmiş orantısal dağılım (kesin değil — yıllık toplamı 12 aya bölmek
+/// için kullanışlı yaklaşım).
+class _MonthlyBreakdownChart extends StatelessWidget {
+  final List<Map<String, dynamic>> breakdown;
+  const _MonthlyBreakdownChart({required this.breakdown});
+
+  static const _months = [
+    'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
+    'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.bar_chart_rounded,
+                size: 13, color: Colors.cyanAccent),
+            const SizedBox(width: 6),
+            Text(
+              'Aylık Üretim Dağılımı',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              'climatology profilinden',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.35),
+                fontSize: 9,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        AspectRatio(
+          aspectRatio: 3.0,
+          child: CustomPaint(
+            painter: _MonthlyBreakdownPainter(
+              breakdown: breakdown,
+              months: _months,
+            ),
+            size: Size.infinite,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MonthlyBreakdownPainter extends CustomPainter {
+  final List<Map<String, dynamic>> breakdown;
+  final List<String> months;
+  _MonthlyBreakdownPainter({required this.breakdown, required this.months});
+
+  static const _colSolar = Color(0xFFF59E0B);
+  static const _colWind = Color(0xFF3B82F6);
+  static const _colHydro = Color(0xFF06B6D4);
+
+  double _d(Map<String, dynamic> m, String k) =>
+      (m[k] as num?)?.toDouble() ?? 0.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (breakdown.isEmpty) return;
+    const padBottom = 14.0;
+    const padTop = 8.0;
+    final w = size.width;
+    final h = size.height - padBottom - padTop;
+
+    // Max toplam aylık üretim — bar yüksekliği için referans
+    double maxTotal = 0;
+    for (final m in breakdown) {
+      final t = _d(m, 'total_kwh');
+      if (t > maxTotal) maxTotal = t;
+    }
+    if (maxTotal <= 0) return;
+
+    final barW = w / 12;
+    for (var i = 0; i < math.min(breakdown.length, 12); i++) {
+      final m = breakdown[i];
+      final solar = _d(m, 'solar_kwh');
+      final wind = _d(m, 'wind_kwh');
+      final hydro = _d(m, 'hydro_kwh');
+      final total = solar + wind + hydro;
+      if (total <= 0) {
+        // Sadece ay etiketi
+        _paintMonthLabel(canvas, size, i, barW, padBottom);
+        continue;
+      }
+      final barH = (total / maxTotal * h).clamp(2.0, h);
+      final x = i * barW + barW * 0.18;
+      final bw = barW * 0.64;
+      // Stack: hydro alt, wind orta, solar üst (renk vurgusu için)
+      double yStart = padTop + h - barH;
+      final segments = <(double, Color)>[
+        (hydro / total * barH, _colHydro),
+        (wind / total * barH, _colWind),
+        (solar / total * barH, _colSolar),
+      ];
+      for (final seg in segments) {
+        if (seg.$1 <= 0) continue;
+        canvas.drawRect(
+          Rect.fromLTWH(x, yStart, bw, seg.$1),
+          Paint()..color = seg.$2,
+        );
+        yStart += seg.$1;
+      }
+      _paintMonthLabel(canvas, size, i, barW, padBottom);
+    }
+  }
+
+  void _paintMonthLabel(
+      Canvas canvas, Size size, int i, double barW, double padBottom) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: months[i],
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.50),
+          fontSize: 8.5,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final x = i * barW + barW / 2 - tp.width / 2;
+    tp.paint(canvas, Offset(x, size.height - padBottom + 1));
+  }
+
+  @override
+  bool shouldRepaint(covariant _MonthlyBreakdownPainter old) =>
+      old.breakdown != breakdown;
 }

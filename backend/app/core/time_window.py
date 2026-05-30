@@ -37,18 +37,35 @@ SEASON_MONTHS: dict[str, list[int]] = {
 }
 
 # Mod → gün sayısı (yearly tabanlı season hariç). current ayrı dallanır.
+# 2026-05-28: twoYear/fiveYear/tenYear uzun pencereler eklendi (precompute).
 MODE_DAYS: dict[str, int] = {
     "week": 7,
     "month": 30,
     "threeMonth": 90,
     "sixMonth": 180,
     "yearly": 365,
+    "twoYear": 730,
+    "fiveYear": 1825,
+    "tenYear": 3650,
 }
 
-VALID_MODES = {"current", "week", "month", "threeMonth", "sixMonth", "yearly", "season"}
+VALID_MODES = {
+    "current", "week", "month", "threeMonth", "sixMonth", "yearly", "season",
+    "twoYear", "fiveYear", "tenYear",
+}
+
+# Ayda bir precompute edilen ("ağır") modlar — her istekte hesaplanmaz,
+# thematic_aggregate tablosundan okunur. build_thematic_aggregates.py doldurur.
+# Kısa modlar (current/week/month/threeMonth) on-demand kalır (sık değişir, ucuz).
+PRECOMPUTED_MODES = {
+    "sixMonth", "yearly", "season", "twoYear", "fiveYear", "tenYear",
+}
 
 # Endpoint Query regex'lerinde kullanmak için ortak pattern.
-MODE_REGEX = "^(current|week|month|threeMonth|sixMonth|yearly|season)$"
+MODE_REGEX = (
+    "^(current|week|month|threeMonth|sixMonth|yearly|season"
+    "|twoYear|fiveYear|tenYear)$"
+)
 SEASON_REGEX = "^(winter|spring|summer|autumn)$"
 
 

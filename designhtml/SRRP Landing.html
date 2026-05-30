@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>SRRP — Türkiye'nin Yenilenebilir Atlası</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="tokens.css"/>
+  <style>
+    html { background: #06080C; }
+    body { background: transparent; color: #E8EAEE; overflow-x: hidden; font-family: "Inter", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    ::selection { background: rgba(20,184,166,.4); color: #fff; }
+
+    /* ── image-slot dark theme overrides ──────────────────────────── */
+    image-slot { color: rgba(255,255,255,.5); }
+    image-slot::part(frame) { background: linear-gradient(135deg, rgba(255,255,255,.04), rgba(255,255,255,.01)); }
+    image-slot::part(ring) { border-color: rgba(255,255,255,.10); border-style: dashed; }
+    image-slot[data-over]::part(frame) { background: rgba(20,184,166,.08); }
+    image-slot[data-over]::part(ring) { border-color: #2DD4BF; }
+
+    /* ── flowing background filmstrip ─────────────────────────────── */
+    .bg-stage {
+      position: fixed; inset: 0; z-index: -1; overflow: hidden;
+      pointer-events: none; /* the overlay above re-enables for slots */
+      background: #06080C;
+    }
+    .bg-stage .columns { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; pointer-events: auto; }
+    .bg-col { position: relative; overflow: hidden; }
+    .bg-track { display: flex; flex-direction: column; gap: 0; will-change: transform; }
+    .bg-track > * { width: 100%; height: 64vh; display: block; }
+    .bg-track image-slot { width: 100% !important; height: 100% !important; }
+    .bg-track image-slot::part(frame) { border-radius: 0 !important; }
+
+    @keyframes drift-up-a { from { transform: translateY(0); } to { transform: translateY(-50%); } }
+    @keyframes drift-down-a { from { transform: translateY(-50%); } to { transform: translateY(0); } }
+    .drift-a { animation: drift-up-a 90s linear infinite; }
+    .drift-b { animation: drift-down-a 120s linear infinite; }
+    .drift-c { animation: drift-up-a 105s linear infinite; }
+
+    /* dark overlay so text remains readable */
+    .bg-overlay {
+      position: absolute; inset: 0; pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(6,8,12,.88) 0%, rgba(6,8,12,.62) 30%, rgba(6,8,12,.62) 70%, rgba(6,8,12,.92) 100%),
+        radial-gradient(ellipse at 50% 50%, transparent 0%, rgba(6,8,12,.5) 80%);
+    }
+    .bg-grain {
+      position: absolute; inset: 0; pointer-events: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      mix-blend-mode: overlay;
+    }
+    /* divider verticals between columns */
+    .bg-divider { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.04); }
+
+    /* hero cover slot */
+    .hero-cover {
+      position: absolute; inset: 0; z-index: 0; overflow: hidden;
+    }
+    .hero-cover image-slot { width: 100% !important; height: 100% !important; }
+    .hero-cover image-slot::part(frame) { border-radius: 0 !important; }
+    .hero-cover-overlay {
+      position: absolute; inset: 0; pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(6,8,12,.55) 0%, rgba(6,8,12,.35) 35%, rgba(6,8,12,.85) 100%),
+        radial-gradient(ellipse at 30% 50%, transparent 0%, rgba(6,8,12,.65) 75%);
+    }
+
+    /* card image — small slot at top of card */
+    .card-img {
+      position: relative; width: calc(100% + 56px); margin: -32px -28px 24px;
+      height: 180px; overflow: hidden;
+    }
+    .card-img image-slot { width: 100% !important; height: 100% !important; }
+    .card-img image-slot::part(frame) { border-radius: 0 !important; }
+    .card-img::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(180deg, transparent 50%, rgba(6,8,12,.9));
+    }
+    .serif { font-family: "Instrument Serif", "Times New Roman", serif; font-weight: 400; letter-spacing: -0.01em; }
+    .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+    .reveal { opacity: 0; transform: translateY(28px); transition: opacity 1s cubic-bezier(.22,.61,.36,1), transform 1s cubic-bezier(.22,.61,.36,1); }
+    .reveal.in { opacity: 1; transform: translateY(0); }
+    .reveal-d2 { transition-delay: .12s; }
+    .reveal-d3 { transition-delay: .24s; }
+    .reveal-d4 { transition-delay: .36s; }
+    .reveal-d5 { transition-delay: .48s; }
+
+    /* grainy noise overlay */
+    .grain::after {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 1000;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      opacity: .6; mix-blend-mode: overlay;
+    }
+
+    /* custom cursor */
+    .cursor-dot, .cursor-ring { position: fixed; pointer-events: none; z-index: 9999; left: 0; top: 0; transform: translate(-50%, -50%); transition: width .25s cubic-bezier(.22,.61,.36,1), height .25s cubic-bezier(.22,.61,.36,1), background .25s; mix-blend-mode: difference; }
+    .cursor-dot { width: 6px; height: 6px; background: #fff; border-radius: 50%; }
+    .cursor-ring { width: 36px; height: 36px; border: 1px solid rgba(255,255,255,.45); border-radius: 50%; transition: transform .12s linear, width .25s, height .25s, border-color .25s; }
+    .cursor-ring.hover { width: 64px; height: 64px; border-color: #2DD4BF; }
+    @media (hover: none) { .cursor-dot, .cursor-ring { display: none; } }
+
+    /* hide native cursor on interactive areas */
+    body.has-custom-cursor, body.has-custom-cursor * { cursor: none !important; }
+
+    /* marquee */
+    @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+    .marquee-track { display: inline-flex; gap: 60px; animation: marquee 60s linear infinite; white-space: nowrap; }
+
+    /* slow drift */
+    @keyframes drift { 0%, 100% { transform: translate(0,0) scale(1); } 50% { transform: translate(40px,-30px) scale(1.05); } }
+    .drift1 { animation: drift 22s ease-in-out infinite; }
+    .drift2 { animation: drift 28s ease-in-out infinite reverse; }
+
+    /* pulse for live dot */
+    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(45,212,191,.55); } 50% { box-shadow: 0 0 0 8px rgba(45,212,191,0); } }
+    .pulse-dot { animation: pulse 1.8s ease-out infinite; }
+
+    /* hover lift */
+    .lift { transition: transform .35s cubic-bezier(.22,.61,.36,1), border-color .25s, background .25s; }
+    .lift:hover { transform: translateY(-4px); }
+
+    /* scroll progress */
+    .scrollbar-rail { position: fixed; top: 0; left: 0; right: 0; height: 2px; background: rgba(255,255,255,.04); z-index: 100; }
+    .scrollbar-fill { height: 100%; background: linear-gradient(90deg, #F59E0B, #2DD4BF, #3B82F6); transform-origin: left center; }
+
+    /* underline link */
+    .ul-link { position: relative; }
+    .ul-link::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: right; transition: transform .45s cubic-bezier(.22,.61,.36,1); }
+    .ul-link:hover::after { transform: scaleX(1); transform-origin: left; }
+
+    /* dotted bg for sections */
+    .dotgrid {
+      background-image: radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+
+    /* big counter type */
+    .display { font-feature-settings: "ss01","tnum"; }
+
+    /* magnetic button */
+    .mag { position: relative; display: inline-flex; align-items: center; gap: 12px; padding: 18px 28px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.02); color: #fff; font-weight: 500; letter-spacing: -.01em; transition: background .25s, border-color .25s; }
+    .mag:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.4); }
+    .mag-arrow { width: 16px; height: 16px; transition: transform .35s cubic-bezier(.22,.61,.36,1); }
+    .mag:hover .mag-arrow { transform: translateX(6px); }
+
+    /* simple section ruler */
+    .ruler { height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent); }
+
+    .scroll-hint { animation: hint 2.2s ease-in-out infinite; }
+    @keyframes hint { 0%, 100% { transform: translateY(0); opacity: .5; } 50% { transform: translateY(8px); opacity: 1; } }
+
+    /* loading-style chip border anim */
+    .chip-live { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.10); font-family: "JetBrains Mono", monospace; font-size: 11px; letter-spacing: .04em; color: rgba(255,255,255,.7); }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body class="grain has-custom-cursor" data-screen-label="SRRP Landing">
+  <div class="cursor-ring" id="cursorRing"></div>
+  <div class="cursor-dot" id="cursorDot"></div>
+  <div class="scrollbar-rail"><div class="scrollbar-fill" id="scrollFill" style="transform: scaleX(0)"></div></div>
+
+  <div id="root"></div>
+
+  <!-- shared data -->
+  <script src="image-slot.js"></script>
+  <script type="text/babel" src="shared.jsx"></script>
+  <script type="text/babel" src="reports-data-tr.jsx"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="landing-cinematic.jsx"></script>
+
+  <script>
+    // custom cursor + scroll progress (vanilla, runs alongside React)
+    (() => {
+      const ring = document.getElementById('cursorRing');
+      const dot = document.getElementById('cursorDot');
+      const fill = document.getElementById('scrollFill');
+      let mx = window.innerWidth / 2, my = window.innerHeight / 2;
+      let rx = mx, ry = my;
+      window.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; dot.style.transform = `translate(${mx}px, ${my}px) translate(-50%,-50%)`; });
+      const tick = () => {
+        rx += (mx - rx) * 0.18; ry += (my - ry) * 0.18;
+        ring.style.transform = `translate(${rx}px, ${ry}px) translate(-50%,-50%)`;
+        requestAnimationFrame(tick);
+      };
+      tick();
+      // hover detection
+      const hoverable = 'a, button, .lift, .mag, [data-cursor=hover]';
+      document.addEventListener('mouseover', e => { if (e.target.closest && e.target.closest(hoverable)) ring.classList.add('hover'); });
+      document.addEventListener('mouseout',  e => { if (e.target.closest && e.target.closest(hoverable)) ring.classList.remove('hover'); });
+      // scroll progress
+      const updateScroll = () => {
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        const p = max > 0 ? window.scrollY / max : 0;
+        fill.style.transform = `scaleX(${p})`;
+      };
+      window.addEventListener('scroll', updateScroll, { passive: true });
+      updateScroll();
+    })();
+  </script>
+</body>
+</html>

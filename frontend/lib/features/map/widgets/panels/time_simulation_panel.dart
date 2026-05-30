@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 
 import 'package:frontend/core/theme/app_theme.dart';
 import 'package:frontend/features/map/animation/time_simulation_controller.dart';
+import 'package:frontend/shared/widgets/srrp_date_picker.dart';
 
 class TimeSimulationPanel extends StatelessWidget {
   final ThemeViewModel theme;
@@ -25,6 +26,9 @@ class TimeSimulationPanel extends StatelessWidget {
   static const _intervals = <(String, String)>[
     ('daily',  'Günlük'),
     ('hourly', 'Saatlik'),
+    // T-6: uzun pencere (precompute) — tarih aralığı yerine "Son N yıl"
+    ('weekly',  'Haftalık ⚡'),
+    ('monthly', 'Aylık ⚡'),
   ];
 
   String _fmt(DateTime d) =>
@@ -38,8 +42,14 @@ class TimeSimulationPanel extends StatelessWidget {
     final tc = theme.textColor;
     final sc = theme.secondaryTextColor;
 
+    // 2026-05-25 (F1): Dar ekranda (1080px telefonda ~393dp) playbackRow tek
+    // satıra sığmıyordu — RIGHT OVERFLOWED BY 61 PIXELS. MediaQuery ile aktif
+    // ekran genişliğine göre cap; ayrıca _playbackRow LayoutBuilder ile
+    // <380 ise speed slider'ını alt satıra atıyor.
+    final screenW = MediaQuery.of(context).size.width;
+    final maxPanelW = screenW < 700 ? screenW - 24.0 : 660.0;
     return Container(
-      constraints: const BoxConstraints(maxWidth: 660),
+      constraints: BoxConstraints(maxWidth: maxPanelW),
       decoration: BoxDecoration(
         color: cs.withValues(alpha: 0.97),
         borderRadius: BorderRadius.circular(16),
@@ -114,17 +124,20 @@ class TimeSimulationPanel extends StatelessWidget {
       runSpacing: 6,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        _datePicker(ctx,
-            label: 'Başlangıç',
-            date: ctrl.startDate,
-            tc: tc, sc: sc,
-            onPick: ctrl.setStartDate),
-        Text('–', style: TextStyle(color: sc)),
-        _datePicker(ctx,
-            label: 'Bitiş',
-            date: ctrl.endDate,
-            tc: tc, sc: sc,
-            onPick: ctrl.setEndDate),
+        // Uzun pencere modunda tarih aralığı gizlenir (precompute "Son N yıl").
+        if (!ctrl.isLongWindow) ...[
+          _datePicker(ctx,
+              label: 'Başlangıç',
+              date: ctrl.startDate,
+              tc: tc, sc: sc,
+              onPick: ctrl.setStartDate),
+          Text('–', style: TextStyle(color: sc)),
+          _datePicker(ctx,
+              label: 'Bitiş',
+              date: ctrl.endDate,
+              tc: tc, sc: sc,
+              onPick: ctrl.setEndDate),
+        ],
         _dropdownChip(
             value: ctrl.metric,
             items: _metrics,
@@ -135,6 +148,13 @@ class TimeSimulationPanel extends StatelessWidget {
             items: _intervals,
             tc: tc, sc: sc,
             onChanged: ctrl.setInterval),
+        // T-6: uzun pencerede "Son N yıl" seçici
+        if (ctrl.isLongWindow)
+          _dropdownChip(
+              value: '${ctrl.yearsWindow}',
+              items: const [('2', 'Son 2 Yıl'), ('5', 'Son 5 Yıl'), ('10', 'Son 10 Yıl')],
+              tc: tc, sc: sc,
+              onChanged: (v) => ctrl.setYearsWindow(int.tryParse(v) ?? 5)),
         _loadButton(ctrl),
       ],
     );
@@ -150,12 +170,14 @@ class TimeSimulationPanel extends StatelessWidget {
   }) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
+      // N5: SrrpDatePicker (year/month/day grid)
       onTap: () async {
-        final picked = await showDatePicker(
+        final picked = await showSrrpDatePicker(
           context: ctx,
           initialDate: date,
           firstDate: DateTime(2015),
           lastDate: DateTime(2027, 12, 31),
+          title: label,
         );
         if (picked != null) onPick(picked);
       },
@@ -236,67 +258,95 @@ class TimeSimulationPanel extends StatelessWidget {
 
   Widget _playbackRow(BuildContext ctx, Color tc, Color sc, TimeSimulationController ctrl) {
     final hasData = ctrl.hasData;
-    return Row(
-      children: [
-        _playBtn(Icons.skip_previous_rounded, () => ctrl.seek(0),
-            enabled: hasData, sc: sc),
-        _playBtn(Icons.fast_rewind_rounded, () => ctrl.stepBy(-5),
-            enabled: hasData, sc: sc),
-        // ▶/⏸ Merkez
-        GestureDetector(
-          onTap: hasData
-              ? () => ctrl.isPlaying ? ctrl.pause() : ctrl.play()
-              : null,
-          child: Container(
-            width: 40, height: 40,
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
+    final controls = [
+      _playBtn(Icons.skip_previous_rounded, () => ctrl.seek(0),
+          enabled: hasData, sc: sc),
+      _playBtn(Icons.fast_rewind_rounded, () => ctrl.stepBy(-5),
+          enabled: hasData, sc: sc),
+      // ▶/⏸ Merkez
+      GestureDetector(
+        onTap: hasData
+            ? () => ctrl.isPlaying ? ctrl.pause() : ctrl.play()
+            : null,
+        child: Container(
+          width: 40, height: 40,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: hasData
+                ? Colors.cyanAccent.withValues(alpha: 0.18)
+                : Colors.transparent,
+            shape: BoxShape.circle,
+            border: Border.all(
               color: hasData
-                  ? Colors.cyanAccent.withValues(alpha: 0.18)
-                  : Colors.transparent,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: hasData
-                    ? Colors.cyanAccent.withValues(alpha: 0.6)
-                    : sc.withValues(alpha: 0.2),
+                  ? Colors.cyanAccent.withValues(alpha: 0.6)
+                  : sc.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Icon(
+            ctrl.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            color: hasData ? Colors.cyanAccent : sc,
+            size: 22,
+          ),
+        ),
+      ),
+      _playBtn(Icons.fast_forward_rounded, () => ctrl.stepBy(5),
+          enabled: hasData, sc: sc),
+      _playBtn(Icons.skip_next_rounded, () => ctrl.seek(ctrl.totalFrames - 1),
+          enabled: hasData, sc: sc),
+    ];
+
+    Widget speedControl({bool expanded = true}) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.speed_rounded, color: sc, size: 14),
+            const SizedBox(width: 4),
+            SizedBox(
+              width: expanded ? 120 : 90,
+              child: SliderTheme(
+                data: SliderTheme.of(ctx).copyWith(
+                  trackHeight: 3,
+                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                  activeTrackColor: Colors.cyanAccent,
+                  inactiveTrackColor: sc.withValues(alpha: 0.2),
+                  thumbColor: Colors.cyanAccent,
+                ),
+                child: Slider(
+                  value: ctrl.speedFps.clamp(1.0, 20.0),
+                  min: 1, max: 20, divisions: 19,
+                  onChanged: ctrl.setSpeed,
+                ),
               ),
             ),
-            child: Icon(
-              ctrl.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-              color: hasData ? Colors.cyanAccent : sc,
-              size: 22,
+            Text('${ctrl.speedFps.toInt()} fps',
+                style: TextStyle(color: sc, fontSize: 11)),
+          ],
+        );
+
+    // 2026-05-25 (F1): Dar ekranda (<380dp) playbackRow taşıyordu. Şimdi
+    // LayoutBuilder ile sığmıyorsa speed kontrolü alta atılıyor.
+    return LayoutBuilder(builder: (lctx, c) {
+      final compact = c.maxWidth < 380;
+      if (compact) {
+        return Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: controls,
             ),
-          ),
-        ),
-        _playBtn(Icons.fast_forward_rounded, () => ctrl.stepBy(5),
-            enabled: hasData, sc: sc),
-        _playBtn(Icons.skip_next_rounded, () => ctrl.seek(ctrl.totalFrames - 1),
-            enabled: hasData, sc: sc),
-        const Spacer(),
-        Icon(Icons.speed_rounded, color: sc, size: 14),
-        const SizedBox(width: 4),
-        SizedBox(
-          width: 90,
-          child: SliderTheme(
-            data: SliderTheme.of(ctx).copyWith(
-              trackHeight: 3,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-              activeTrackColor: Colors.cyanAccent,
-              inactiveTrackColor: sc.withValues(alpha: 0.2),
-              thumbColor: Colors.cyanAccent,
-            ),
-            child: Slider(
-              value: ctrl.speedFps.clamp(1.0, 20.0),
-              min: 1, max: 20, divisions: 19,
-              onChanged: ctrl.setSpeed,
-            ),
-          ),
-        ),
-        Text('${ctrl.speedFps.toInt()} fps',
-            style: TextStyle(color: sc, fontSize: 11)),
-      ],
-    );
+            const SizedBox(height: 4),
+            speedControl(expanded: false),
+          ],
+        );
+      }
+      return Row(
+        children: [
+          ...controls,
+          const Spacer(),
+          speedControl(),
+        ],
+      );
+    });
   }
 
   Widget _scrubber(BuildContext ctx, Color sc, TimeSimulationController ctrl) {

@@ -75,12 +75,12 @@ Stack(
 
 ## Semptomlar
 
-| Semptom | Muhtemel neden |
-|---|---|
-| Mobilde hiçbir şeye tıklanamıyor | Stack'te non-positioned widget |
-| Web'de çalışıyor ama mobilde çalışmıyor | Web'de `PointerInterceptor` + Stack hatası bazen görünmez |
-| Belirli bir butona tıklama geçmiyor | O butonun üstünde Positioned olmayan veya başka Positioned var |
-| Harita zoom/pan çalışmıyor | Haritanın üstünde görünmez overlay |
+| Semptom                                 | Muhtemel neden                                                 |
+| --------------------------------------- | -------------------------------------------------------------- |
+| Mobilde hiçbir şeye tıklanamıyor        | Stack'te non-positioned widget                                 |
+| Web'de çalışıyor ama mobilde çalışmıyor | Web'de `PointerInterceptor` + Stack hatası bazen görünmez      |
+| Belirli bir butona tıklama geçmiyor     | O butonun üstünde Positioned olmayan veya başka Positioned var |
+| Harita zoom/pan çalışmıyor              | Haritanın üstünde görünmez overlay                             |
 
 ## Debug
 

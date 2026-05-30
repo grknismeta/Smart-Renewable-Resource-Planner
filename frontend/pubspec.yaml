@@ -48,6 +48,19 @@ dependencies:
   # --- Web: Platform view üzerindeki pointer event çakışmasını engeller ---
   pointer_interceptor: ^0.10.1+2
 
+  # --- Mikro-animasyonlar (LottieFiles JSON / ileride asset hazır oldukça) ---
+  # 2026-05-09 — AnimatedGradientButton'da Lottie wrapper desteği. Şu an
+  # mikro-ikonlar Pure Flutter Transform ile yapılıyor (asset yok); asset
+  # gelince `Lottie.asset(...)` ile 1 satır migration.
+  lottie: ^3.1.2
+
+  # --- Sohbet balonu pop-up (tooltip) — Sprint 6 (2026-05-09) ---
+  # Pin ekleme/düzenleme pop-up'ları için. Anchor-based, otomatik flip,
+  # tail çizimi, animasyonlu açma/kapama. Eski custom _PinPopoverWithTail +
+  # _anchoredPositioned + _TailPainter + _Placement kodumuzu siler.
+  # pub.dev: ~600 likes, aktif maintain.
+  just_the_tooltip: ^0.0.12
+
 
 dev_dependencies:
   flutter_test:

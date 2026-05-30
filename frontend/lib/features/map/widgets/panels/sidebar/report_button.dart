@@ -16,10 +16,8 @@ class ReportButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const ReportScreen()),
-        );
+        // Madde 4: animasyonlu slide-up + fade geçişi
+        Navigator.push(context, createReportRoute());
       },
       borderRadius: BorderRadius.circular(10),
       child: Container(

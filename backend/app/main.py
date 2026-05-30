@@ -99,7 +99,7 @@ def print_banner():
     _safe_print(f"  {_c('gray', 'Baslangiç:')}  {_c('white', now)}")
 
 # ─── ROUTERLARI IMPORT ET ─────────────────────────────────────────────────────
-from .routers import pins, users, equipments, optimization, weather, reports, scenario, tiles, recommendations, wind_vectors, borders, analysis, system, chat
+from .routers import pins, users, equipments, optimization, weather, reports, scenario, tiles, recommendations, wind_vectors, borders, analysis, system, chat, ml, contour_tiles
 
 # Coğrafya analiz motoru
 _GEO_ENABLED = os.getenv("GEO_ANALYSIS_ENABLED", "false").lower() == "true"
@@ -344,12 +344,14 @@ app.include_router(weather.router)                                              
 app.include_router(reports.router,      tags=["📊 Reports"])
 app.include_router(scenario.router,     prefix="/scenarios",  tags=["🗂️ Scenarios"])
 app.include_router(tiles.router,        prefix="/api/v1/tiles",    tags=["🗺️ Map Tiles (MVT)"])
+app.include_router(contour_tiles.router, prefix="/api/v1/tiles",   tags=["🗺️ İzohips (Contour MVT)"])  # O2 — self-hosted contour
 app.include_router(recommendations.router)                                        # Prefix router içinde
 app.include_router(wind_vectors.router)                                           # Parçacık akış verisi
 app.include_router(borders.router)                                                # GADM il/ilçe sınırları
 app.include_router(analysis.router)                                               # Faz 1 — Tek kaynak (prefix: /analysis)
 app.include_router(system.router)                                                 # Faz 1 — Scheduler status (prefix: /system)
 app.include_router(chat.router)                                                   # Aşama 3.C — AI Chatbot (prefix: /chat)
+app.include_router(ml.router)                                                     # P1 — SARIMAX ML Forecast (prefix: /ml)
 
 if _GEO_ENABLED:
     app.include_router(geo.router, prefix="/geo", tags=["🗺️ Geo Analysis"])
