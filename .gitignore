@@ -83,8 +83,6 @@ tree_structure.txt
 backend/data/dem/
 backend/data/dem/*
 
-# Obsidian (knowledge vault) — kişisel ayarları commit etme, paylaşılan ayarları tut
-docs/knowledge/srrp-knowledge/.obsidian/workspace.json
-docs/knowledge/srrp-knowledge/.obsidian/workspace-mobile.json
-docs/knowledge/srrp-knowledge/.obsidian/cache/
-docs/knowledge/srrp-knowledge/.trash/
+# Obsidian (knowledge vault)
+.obsidian/
+.trash/
