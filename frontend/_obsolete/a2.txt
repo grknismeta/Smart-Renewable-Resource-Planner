@@ -1,0 +1,656 @@
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+I/GestureDetector(30867): obtain mCurrentDownEvent. id: 631967776 caller: org.maplibre.android.gestures.StandardScaleGestureDetector.analyzeEvent:159 org.maplibre.android.gestures.BaseGesture.analyze:66 org.maplibre.android.gestures.BaseGesture.onTouchEvent:44 
+I/GestureDetector(30867): obtain mCurrentDownEvent. id: 631967776 caller: org.maplibre.android.gestures.StandardGestureDetector.analyzeEvent:147 org.maplibre.android.gestures.BaseGesture.analyze:66 org.maplibre.android.gestures.BaseGesture.onTouchEvent:44 
+I/GestureDetector(30867): obtain mCurrentMotionEventRaw. action: 2 id: 430690671
+I/GestureDetector(30867): obtain mCurrentMotionEventRaw. action: 2 id: 430690671
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=no preference, reason=boost timeout, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@1ae45de
+W/WindowOnBackDispatcher(30867): OnBackInvokedCallback is not enabled for the application.
+W/WindowOnBackDispatcher(30867): Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+
+══╡ EXCEPTION CAUGHT BY RENDERING LIBRARY
+╞═════════════════════════════════════════════════════════
+The following assertion was thrown during performLayout():
+RenderFlex children have non-zero flex but incoming height constraints are
+unbounded.
+When a column is in a parent that does not provide a finite height constraint, for
+example if it is
+in a vertical scrollable, it will try to shrink-wrap its children along the vertical
+axis. Setting a
+flex on a child (e.g. using Expanded) indicates that the child is to expand to fill
+the remaining
+space in the vertical direction.
+These two directives are mutually exclusive. If a parent is to shrink-wrap its
+child, the child
+cannot simultaneously expand to fit its parent.
+Consider setting mainAxisSize to MainAxisSize.min and using FlexFit.loose fits for
+the flexible
+children (using Flexible rather than Expanded). This will allow the flexible
+children to size
+themselves to less than the infinite remaining space they would otherwise be forced
+to take, and
+then will cause the RenderFlex to shrink-wrap the children rather than expanding to
+fit the maximum
+constraints provided by the parent.
+If this message did not help you determine the problem, consider using
+debugDumpRenderTree():
+  https://flutter.dev/to/debug-render-layer
+  https://api.flutter.dev/flutter/rendering/debugDumpRenderTree.html
+The affected RenderFlex is:
+  RenderFlex#d73e7 relayoutBoundary=up9 NEEDS-LAYOUT NEEDS-PAINT
+  NEEDS-COMPOSITING-BITS-UPDATE(creator: Column ← Padding ← DecoratedBox ← Container
+  ← WeatherStripCard ← Column ← LayoutBuilder ← SizedBox ← Column ← _ClimateProfile
+  ← Column ← Padding ← ⋯, parentData: offset=Offset(0.0, 0.0) (can use size),
+  constraints: BoxConstraints(0.0<=w<=334.0, 0.0<=h<=Infinity), size: MISSING,
+  direction: vertical, mainAxisAlignment: start, mainAxisSize: max,
+  crossAxisAlignment: start, textDirection: ltr, verticalDirection: down, spacing:
+  0.0)
+The creator information is set to:
+  Column ← Padding ← DecoratedBox ← Container ← WeatherStripCard ← Column ←
+  LayoutBuilder ← SizedBox
+  ← Column ← _ClimateProfile ← Column ← Padding ← ⋯
+The nearest ancestor providing an unbounded width constraint is:
+_RenderSingleChildViewport#4ffbb NEEDS-LAYOUT NEEDS-PAINT:
+  needs compositing
+  creator: _SingleChildViewport ← IgnorePointer-[GlobalKey#27a35] ← Semantics ←
+  Listener ←
+    _GestureSemantics ←
+    RawGestureDetector-[LabeledGlobalKey<RawGestureDetectorState>#1de48] ←
+    Listener ← _ScrollableScope ← _ScrollSemantics-[GlobalKey#c0684] ←
+    NotificationListener<ScrollMetricsNotification> ← Transform ← ClipRect ← ⋯
+  parentData: <none> (can use size)
+  constraints: BoxConstraints(w=384.0, h=595.3)
+  layer: OffsetLayer#fb0b6
+  size: Size(384.0, 595.3)
+  offset: Offset(0.0, -0.0)
+See also: https://flutter.dev/unbounded-constraints
+If none of the above helps enough to fix this problem, please don't hesitate to file
+a bug:
+  https://github.com/flutter/flutter/issues/new?template=02_bug.yml
+
+The relevant error-causing widget was:
+  Column
+  Column:file:///C:/Projelerim/smart_renewable_resource_planner/frontend/lib/feature
+  s/reports/widgets/climate/climate_widgets.dart:56:14
+
+When the exception was thrown, this was the stack:
+#0      RenderFlex.performLayout.<anonymous closure>
+(package:flutter/src/rendering/flex.dart:1250:9)
+#1      RenderFlex.performLayout (package:flutter/src/rendering/flex.dart:1253:6)
+#2      RenderObject.layout (package:flutter/src/rendering/object.dart:2766:7)
+#3      RenderPadding.performLayout
+(package:flutter/src/rendering/shifted_box.dart:243:12)
+#4      RenderObject.layout (package:flutter/src/rendering/object.dart:2766:7)
+#5      RenderProxyBoxMixin.performLayout
+(package:flutter/src/rendering/proxy_box.dart:115:18)
+#6      RenderObject.layout (package:flutter/src/rendering/object.dart:2766:7)
+#7      ChildLayoutHelper.layoutChild
+(package:flutter/src/rendering/layout_helper.dart:62:11)
+#8      RenderFlex._computeSizes (package:flutter/src/rendering/flex.dart:1161:28)
+#9      RenderFlex.performLayout (package:flutter/src/rendering/flex.dart:1255:32)
+#10     RenderObject.layout (package:flutter/src/rendering/object.dart:2766:7)
+#11     _RenderLayoutBuilder.performLayout
+(package:flutter/src/widgets/layout_builder.dart:451:14)
+#12     RenderObject.layout (package:flutter/src/rendering/object.dart:2766:7)
+#13     RenderConstrainedBox.performLayout
+(package:flutter/src/rendering/proxy_box.dart:293:14)
+#14     RenderObject.layout (package:flutter/src/rendering/object.dart:2766:7)
+#15     ChildLayoutHelper.layoutChild
+(package:flutter/src/rendering/layout_helper.dart:62:11)
+#16     RenderFlex._computeSizes (package:flutter/src/rendering/flex.dart:1161:28)
+#17     RenderFlex.performLayout (package:flutter/src/rendering/flex.dart:1255:32)
+#18     RenderObject.layout (package:flutter/src/rendering/object.dart:2766:7)
+#19     ChildLayoutHelper.layoutChild
+(package:flutter/src/rendering/layout_helper.dart:62:11)
+#20     RenderFlex._computeSizes (package:flutter/src/rendering/flex.dart:1161:28)
+#21     RenderFlex.performLayout (package:flutter/src/rendering/flex.dart:1255:32)
+#22     RenderObject.layout (package:flutter/src/rendering/object.dart:2766:7)
+#23     RenderPadding.performLayout
+(package:flutter/src/rendering/shifted_box.dart:243:12)
+#24     RenderObject.layout (package:flutter/src/rendering/object.dart:2766:7)
+#25     _RenderSingleChildViewport.performLayout
+(package:flutter/src/widgets/single_child_scroll_view.dart:501:14)
+#26     RenderObject._layoutWithoutResize
+(package:flutter/src/rendering/object.dart:2614:7)
+#27     PipelineOwner.flushLayout
+(package:flutter/src/rendering/object.dart:1160:18)
+#28     PipelineOwner.flushLayout
+(package:flutter/src/rendering/object.dart:1173:15)
+#29     RendererBinding.drawFrame
+(package:flutter/src/rendering/binding.dart:629:23)
+#30     WidgetsBinding.drawFrame (package:flutter/src/widgets/binding.dart:1242:13)
+#31     RendererBinding._handlePersistentFrameCallback
+(package:flutter/src/rendering/binding.dart:495:5)
+#32     SchedulerBinding._invokeFrameCallback
+(package:flutter/src/scheduler/binding.dart:1438:15)
+#33     SchedulerBinding.handleDrawFrame
+(package:flutter/src/scheduler/binding.dart:1351:9)
+#34     SchedulerBinding._handleDrawFrame
+(package:flutter/src/scheduler/binding.dart:1204:5)
+#35     _invoke (dart:ui/hooks.dart:331:13)
+#36     PlatformDispatcher._drawFrame (dart:ui/platform_dispatcher.dart:444:5)
+#37     _drawFrame (dart:ui/hooks.dart:303:31)
+
+The following RenderObject was being processed when the exception was fired:
+RenderFlex#d73e7 relayoutBoundary=up9 NEEDS-LAYOUT NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE:
+  creator: Column ← Padding ← DecoratedBox ← Container ← WeatherStripCard ← Column ←
+  LayoutBuilder ←
+    SizedBox ← Column ← _ClimateProfile ← Column ← Padding ← ⋯
+  parentData: offset=Offset(0.0, 0.0) (can use size)
+  constraints: BoxConstraints(0.0<=w<=334.0, 0.0<=h<=Infinity)
+  size: MISSING
+  direction: vertical
+  mainAxisAlignment: start
+  mainAxisSize: max
+  crossAxisAlignment: start
+  textDirection: ltr
+  verticalDirection: down
+  spacing: 0.0
+This RenderObject had the following descendants (showing up to depth 5):
+    child 1: RenderFlex#a824d NEEDS-LAYOUT NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+      child 1: RenderFlex#9f721 NEEDS-LAYOUT NEEDS-PAINT
+      NEEDS-COMPOSITING-BITS-UPDATE
+        child 1: RenderParagraph#1d61e NEEDS-LAYOUT NEEDS-PAINT
+          text: TextSpan
+        child 2: RenderConstrainedBox#5259e NEEDS-LAYOUT NEEDS-PAINT
+        child 3: RenderParagraph#66369 NEEDS-LAYOUT NEEDS-PAINT
+          text: TextSpan
+      child 2: RenderFlex#15ee5 NEEDS-LAYOUT NEEDS-PAINT
+      NEEDS-COMPOSITING-BITS-UPDATE
+        child 1: RenderParagraph#86799 NEEDS-LAYOUT NEEDS-PAINT
+          text: TextSpan
+        child 2: RenderParagraph#38f40 NEEDS-LAYOUT NEEDS-PAINT
+          text: TextSpan
+      child 3: RenderConstrainedBox#ec8f9 NEEDS-LAYOUT NEEDS-PAINT
+      child 4: RenderFlex#1b133 NEEDS-LAYOUT NEEDS-PAINT
+      NEEDS-COMPOSITING-BITS-UPDATE
+        child 1: RenderParagraph#ae902 NEEDS-LAYOUT NEEDS-PAINT
+          text: TextSpan
+        child 2: RenderParagraph#16934 NEEDS-LAYOUT NEEDS-PAINT
+          text: TextSpan
+      child 5: RenderConstrainedBox#dbffa NEEDS-LAYOUT NEEDS-PAINT
+      child 6: RenderFlex#87537 NEEDS-LAYOUT NEEDS-PAINT
+      NEEDS-COMPOSITING-BITS-UPDATE
+        child 1: RenderParagraph#a0378 NEEDS-LAYOUT NEEDS-PAINT
+          text: TextSpan
+        child 2: RenderParagraph#642e4 NEEDS-LAYOUT NEEDS-PAINT
+          text: TextSpan
+    child 2: RenderConstrainedBox#cfcf8 NEEDS-LAYOUT NEEDS-PAINT
+    ...(descendants list truncated after 25 lines)
+════════════════════════════════════════════════════════════════════════════════════
+════════════════
+
+Another exception was thrown: RenderBox was not laid out: RenderFlex#d73e7
+relayoutBoundary=up9 NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid out: RenderPadding#f1cac
+relayoutBoundary=up8 NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid out: RenderDecoratedBox#2e3a7
+relayoutBoundary=up7 NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid out: RenderFlex#bd011
+relayoutBoundary=up6 NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid out: _RenderLayoutBuilder#dd5fe
+relayoutBoundary=up5 NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid out: RenderConstrainedBox#0c927
+relayoutBoundary=up4 NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid out: RenderFlex#59f10
+relayoutBoundary=up3 NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid out: RenderDecoratedBox#2e3a7
+relayoutBoundary=up7
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=no preference, reason=boost timeout, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@1ae45de
+Another exception was thrown: Cannot hit test a render box with no size.
+Another exception was thrown: Cannot hit test a render box with no size.
+Another exception was thrown: Cannot hit test a render box with no size.
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=no preference, reason=boost timeout, vri=VRI[MainActivity]@1ae45de
+I/flutter (14542): API REQUEST system/chat_events
+I/flutter (14542): Joined rooms: [0, tr, 217b5dc1-f626-11ed-a47d-0cc47af32a56]
+I/flutter (14542): eggUpdate {eggId: 6810856, remainingRewards: 0}
+I/flutter (14542): API REQUEST mycompanydetail
+I/flutter (14542): handleUpdateCooperative {cooperativeUUID: 217b5dc1-f626-11ed-a47d-0cc47af32a56, oldCooperativeUUID: null}
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@1ae45de
+Another exception was thrown: Cannot hit test a render box with no size.
+I/PlatformViewsController(30867): Hosting view in view hierarchy for platform view: 1
+I/PlatformViewsController(30867): PlatformView is using SurfaceProducer backend
+D/NativeCustomFrequencyManager(30867): [NativeCFMS] BpCustomFrequencyManager::BpCustomFrequencyManager()
+D/HWUI    (30867): CFMS:: SetUp Pid : 30867    Tid : 30947
+D/NativeCustomFrequencyManager(30867): [NativeCFMS] BpCustomFrequencyManager::BpCustomFrequencyManager()
+D/HWUI    (30867): CFMS:: SetUp Pid : 30867    Tid : 30947
+I/Kumiho-Kumiho(30867): getPackageName: com.example.frontend
+I/Kumiho-Kumiho(30867): getPackageName: com.example.frontend
+I/PlatformViewsController(30867): Hosting view in view hierarchy for platform view: 2
+I/PlatformViewsController(30867): PlatformView is using SurfaceProducer backend
+D/NativeCustomFrequencyManager(30867): [NativeCFMS] BpCustomFrequencyManager::BpCustomFrequencyManager()
+D/HWUI    (30867): CFMS:: SetUp Pid : 30867    Tid : 30947
+D/NativeCustomFrequencyManager(30867): [NativeCFMS] BpCustomFrequencyManager::BpCustomFrequencyManager()
+D/HWUI    (30867): CFMS:: SetUp Pid : 30867    Tid : 30947
+W/ImageReader_JNI(30867): Unable to acquire a buffer item, very likely client tried to acquire more than maxImages buffers
+I/Kumiho-Kumiho(30867): getPackageName: com.example.frontend
+I/Kumiho-Kumiho(30867): getPackageName: com.example.frontend
+I/flutter (30867): [ReportMiniMap] 15 ilçe polygonu yüklendi (http://127.0.0.1:8000/geo/borders/districts?province=Adana)
+I/PlatformViewsController(30867): Hosting view in view hierarchy for platform view: 3
+I/PlatformViewsController(30867): PlatformView is using SurfaceProducer backend
+D/NativeCustomFrequencyManager(30867): [NativeCFMS] BpCustomFrequencyManager::BpCustomFrequencyManager()
+D/HWUI    (30867): CFMS:: SetUp Pid : 30867    Tid : 30947
+D/NativeCustomFrequencyManager(30867): [NativeCFMS] BpCustomFrequencyManager::BpCustomFrequencyManager()
+D/HWUI    (30867): CFMS:: SetUp Pid : 30867    Tid : 30947
+I/Kumiho-Kumiho(30867): getPackageName: com.example.frontend
+I/Kumiho-Kumiho(30867): getPackageName: com.example.fre=[0,0][1080,92] mVisible=true mFlags= mSideHint=TOP mBoundingRects=null}, InsetsSource: {ef120001 mType=navigationBars mFrame=[0,2205][1080,2340] mVisible=false mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {ef120004 mType=systemGestures mFrame=[0,0][0,0] mVisible=true mFlags= mSideHint=NONE mBoundingRects=null}, InsetsSource: {ef120005 mType=mandatorySystemGestures mFrame=[0,2205][1080,2340] mVisible=true mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {ef120006 mType=tappableElement mFrame=[0,2205][1080,2340] mVisible=true mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {ef120024 mType=systemGestures mFrame=[0,0][0,0] mVisible=true mFlags= mSideHint=I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@1ae45de
+Another exception was thrown: RenderFlex children have
+non-zero flex but incoming height constraints are
+unbounded.
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#81e6d relayoutBoundary=up9 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderPadding#2e20a relayoutBoundary=up8
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#0b947 relayoutBoundary=up7
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#d34e7 relayoutBoundary=up6 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#4bd13 relayoutBoundary=up5
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#72620 relayoutBoundary=up4
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#94bce relayoutBoundary=up3 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#0b947 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#d34e7 relayoutBoundary=up6
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#4bd13 relayoutBoundary=up5
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#72620 relayoutBoundary=up4
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#94bce relayoutBoundary=up3 NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#0b947 relayoutBoundary=up7
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=no preference, reason=boost timeout, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=no preference, reason=boost timeout, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=no preference, reason=boost timeout, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=no preference, reason=boost timeout, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@1ae45de
+Another exception was thrown: A RenderFlex overflowed
+by 4.7 pixels on the right.
+I/PlatformViewsController(30867): Hosting view in view hierarchy for platform view: 4
+I/PlatformViewsController(30867): PlatformView is using SurfaceProducer backend
+D/NativeCustomFrequencyManager(30867): [NativeCFMS] BpCustomFrequencyManager::BpCustomFrequencyManager()
+D/HWUI    (30867): CFMS:: SetUp Pid : 30867    Tid : 30947
+D/NativeCustomFrequencyManager(30867): [NativeCFMS] BpCustomFrequencyManager::BpCustomFrequencyManager()
+D/HWUI    (30867): CFMS:: SetUp Pid : 30867    Tid : 30947
+I/Kumiho-Kumiho(30867): getPackageName: com.example.frontend
+I/Kumiho-Kumiho(30867): getPackageName: com.example.frontend
+Another exception was thrown: RenderFlex children have
+non-zero flex but incoming height constraints are
+unbounded.
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#39551 relayoutBoundary=up9 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderPadding#a92e8 relayoutBoundary=up8
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#2bfa7 relayoutBoundary=up7
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#9b31e relayoutBoundary=up6 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#62a04 relayoutBoundary=up5
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#daa12 relayoutBoundary=up4
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#ca7f5 relayoutBoundary=up3 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#2bfa7 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#2bfa7 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#9b31e relayoutBoundary=up6
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#62a04 relayoutBoundary=up5
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#daa12 relayoutBoundary=up4
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#ca7f5 relayoutBoundary=up3 NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#2bfa7 relayoutBoundary=up7
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=no preference, reason=boost timeout, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@1ae45de
+Another exception was thrown: RenderFlex children have
+non-zero flex but incoming height constraints are
+unbounded.
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#6ea34 relayoutBoundary=up9 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderPadding#b7257 relayoutBoundary=up8
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#b6e67 relayoutBoundary=up7
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#ba1f8 relayoutBoundary=up6 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#44617 relayoutBoundary=up5
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#357c9 relayoutBoundary=up4
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#affc0 relayoutBoundary=up3 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#b6e67 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#b6e67 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#b6e67 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#ba1f8 relayoutBoundary=up6
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#44617 relayoutBoundary=up5
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#357c9 relayoutBoundary=up4
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#affc0 relayoutBoundary=up3 NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#b6e67 relayoutBoundary=up7
+Another exception was thrown: RenderFlex children have
+non-zero flex but incoming height constraints are
+unbounded.
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#12719 relayoutBoundary=up9 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderPadding#86709 relayoutBoundary=up8
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#c63cb relayoutBoundary=up7
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#44739 relayoutBoundary=up6 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#656b3 relayoutBoundary=up5
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#ca954 relayoutBoundary=up4
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#81560 relayoutBoundary=up3 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#c63cb relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#c63cb relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#c63cb relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#44739 relayoutBoundary=up6
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#656b3 relayoutBoundary=up5
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#ca954 relayoutBoundary=up4
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#81560 relayoutBoundary=up3 NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#c63cb relayoutBoundary=up7
+Another exception was thrown: RenderFlex children have
+non-zero flex but incoming height constraints are
+unbounded.
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#94bea relayoutBoundary=up9 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderPadding#82aa8 relayoutBoundary=up8
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#52020 relayoutBoundary=up7
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#144b1 relayoutBoundary=up6 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#bd18e relayoutBoundary=up5
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#46e75 relayoutBoundary=up4
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#a034a relayoutBoundary=up3 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#52020 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#52020 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#52020 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#52020 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#52020 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#144b1 relayoutBoundary=up6
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#bd18e relayoutBoundary=up5
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#46e75 relayoutBoundary=up4
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#a034a relayoutBoundary=up3 NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#52020 relayoutBoundary=up7
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+I/VRI[MainActivity]@1ae45de(30867): handleResized, frames=ClientWindowFrames{frame=[0,0][1080,2340] display=[0,0][1080,2340] parentFrame=[0,0][0,0]} displayId=0 dragResizing=false compatScale=1.0 frameChanged=false attachedFrameChanged=false configChanged=false displayChanged=false compatScaleChanged=false dragResizingChanged=false
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+Another exception was thrown: Cannot hit test a render
+box with no size.
+I/InsetsController(30867): onStateChanged: host=com.example.frontend/com.example.frontend.MainActivity, from=android.view.ViewRootImpl.onInsetsStateChanged:3026, state=InsetsState: {mDisplayFrame=Rect(0, 0 - 1080, 2340), mDisplayCutout=DisplayCutout{insets=Rect(0, 92 - 0, 0) waterfall=Insets{left=0, top=0, right=0, bottom=0} boundingRect={Bounds=[Rect(0, 0 - 0, 0), Rect(506, 0 - 574, 92), Rect(0, 0 - 0, 0), Rect(0, 0 - 0, 0)]} cutoutPathParserInfo={CutoutPathParserInfo{displayWidth=1080 displayHeight=2340 physicalDisplayWidth=1080 physicalDisplayHeight=2340 density={2.8125} cutoutSpec={M 0,0 M 0, 8.533333333333333 a 12.08888888888889,12.08888888888889 0 1,0 0,24.17777777777778 a 12.08888888888889,12.08888888888889 0 1,0 0,-24.17777777777778 Z @dp} rotation={0} scale={1.0} physicalPixelDisplaySizeRatio={1.0}}} sideOverrides={}}, mRoundedCorners=RoundedCorners{[RoundedCorner{position=TopLeft, radius=113, center=Point(113, 113)}, RoundedCorner{position=TopRight, radius=113, center=Point(967, 113)}, RoundedCorner{position=BottomRight, radius=113, center=Point(967, 2227)}, RoundedCorner{position=BottomLeft, radius=113, center=Point(113, 2227)}]}  mRoundedCornerFrame=Rect(0, 0 - 1080, 2340), mPrivacyIndicatorBounds=PrivacyIndicatorBounds {static bounds=Rect(956, 0 - 1080, 92) rotation=0}, mDisplayShape=DisplayShape{ spec=-311912193 displayWidth=1080 displayHeight=2340 physicalPixelDisplaySizeRatio=1.0 rotation=0 offsetX=0 offsetY=0 scale=1.0}, mSources= { InsetsSource: {96d00000 mType=statusBars mFrame=[0,0][1080,92] mVisible=true mFlags= mSideHint=TOP mBoundingRects=null}, InsetsSource: {96d00005 mType=mandatorySystemGestures mFrame=[0,0][1080,126] mVisible=true mFlags= mSideHint=TOP mBoundingRects=null}, InsetsSource: {96d00006 mType=tappableElement mFrame=[0,0][1080,92] mVisible=true mFlags= mSideHint=TOP mBoundingRects=null}, InsetsSource: {ef120001 mType=navigationBars mFrame=[0,2205][1080,2340] mVisible=true mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {ef120004 mType=systemGestures mFrame=[0,0][0,0] mVisible=true mFlags= mSideHint=NONE mBoundingRects=null}, InsetsSource: {ef120005 mType=mandatorySystemGestures mFrame=[0,2205][1080,2340] mVisible=true mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {ef120006 mType=tappableElement mFrame=[0,2205][1080,2340] mVisible=true mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {ef120024 mType=systemGestures mFrame=[0,0][0,0] mVisible=true mFlags= mSideHint=NONE mBoundingRects=null}, InsetsSource: {3 mType=ime mFrame=[0,0][0,0] mVisible=false mFlags= mSideHint=NONE mBoundingRects=null}, InsetsSource: {27 mType=displayCutout mFrame=[0,0][1080,92] mVisible=true mFlags= mSideHint=TOP mBoundingRects=null} }
+I/InsetsController(30867): controlAnimationUncheckedInner: Added types=statusBars navigationBars, animType=1, host=com.example.frontend/com.example.frontend.MainActivity, from=android.view.InsetsController.controlAnimationUnchecked:1608 android.view.InsetsController.applyAnimation:2416 android.view.InsetsController.applyAnimation:2343 
+I/InsetsController(30867): onStateChanged: host=com.example.frontend/com.example.frontend.MainActivity, from=android.view.ViewRootImpl.onInsetsStateChanged:3026, state=InsetsState: {mDisplayFrame=Rect(0, 0 - 1080, 2340), mDisplayCutout=DisplayCutout{insets=Rect(0, 92 - 0, 0) waterfall=Insets{left=0, top=0, right=0, bottom=0} boundingRect={Bounds=[Rect(0, 0 - 0, 0), Rect(506, 0 - 574, 92), Rect(0, 0 - 0, 0), Rect(0, 0 - 0, 0)]} cutoutPathParserInfo={CutoutPathParserInfo{displayWidth=1080 displayHeight=2340 physicalDisplayWidth=1080 physicalDisplayHeight=2340 density={2.8125} cutoutSpec={M 0,0 M 0, 8.533333333333333 a 12.08888888888889,12.08888888888889 0 1,0 0,24.17777777777778 a 12.08888888888889,12.08888888888889 0 1,0 0,-24.17777777777778 Z @dp} rotation={0} scale={1.0} physicalPixelDisplaySizeRatio={1.0}}} sideOverrides={}}, mRoundedCorners=RoundedCorners{[RoundedCorner{position=TopLeft, radius=113, center=Point(113, 113)}, RoundedCorner{position=TopRight, radius=113, center=Point(967, 113)}, RoundedCorner{position=BottomRight, radius=113, center=Point(967, 2227)}, RoundedCorner{position=BottomLeft, radius=113, center=Point(113, 2227)}]}  mRoundedCornerFrame=Rect(0, 0 - 1080, 2340), mPrivacyIndicatorBounds=PrivacyIndicatorBounds {static bounds=Rect(956, 0 - 1080, 92) rotation=0}, mDisplayShape=DisplayShape{ spec=-311912193 displayWidth=1080 displayHeight=2340 physicalPixelDisplaySizeRatio=1.0 rotation=0 offsetX=0 offsetY=0 scale=1.0}, mSources= { InsetsSource: {96d00000 mType=statusBars mFrame=[0,0][1080,92] mVisible=false mFlags= mSideHint=TOP mBoundingRects=null}, InsetsSource: {96d00005 mType=mandatorySystemGestures mFrame=[0,0][1080,126] mVisible=true mFlags= mSideHint=TOP mBoundingRects=null}, InsetsSource: {96d00006 mType=tappableElement mFrame=[0,0][1080,92] mVisible=true mFlags= mSideHint=TOP mBoundingRects=null}, InsetsSource: {ef120001 mType=navigationBars mFrame=[0,2205][1080,2340] mVisible=false mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {ef120004 mType=systemGestures mFrame=[0,0][0,0] mVisible=true mFlags= mSideHint=NONE mBoundingRects=null}, InsetsSource: {ef120005 mType=mandatorySystemGestures mFrame=[0,2205][1080,2340] mVisible=true mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {ef120006 mType=tappableElement mFrame=[0,2205][1080,2340] mVisible=true mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {ef120024 mType=systemGestures mFrame=[0,0][0,0] mVisible=true mFlags= mSideHint=NONE mBoundingRects=null}, InsetsSource: {3 mType=ime mFrame=[0,0][0,0] mVisible=false mFlags= mSideHint=NONE mBoundingRects=null}, InsetsSource: {27 mType=displayCutout mFrame=[0,0][1080,92] mVisible=true mFlags= mSideHint=TOP mBoundingRects=null} }
+I/VRI[MainActivity]@1ae45de(30867): handleResized, frames=ClientWindowFrames{frame=[0,0][1080,2340] display=[0,0][1080,2340] parentFrame=[0,0][0,0]} displayId=0 dragResizing=false compatScale=1.0 frameChanged=false attachedFrameChanged=false configChanged=false displayChanged=false compatScaleChanged=false dragResizingChanged=false
+I/InsetsController(30867): cancelAnimation: types=statusBars navigationBars, animType=1, host=com.example.frontend/com.example.frontend.MainActivity, from=android.view.InsetsController.notifyFinished:2006 android.view.InsetsAnimationThreadControlRunner$1.lambda$notifyFinished$0:82 android.view.InsetsAnimationThreadControlRunner$1.$r8$lambda$cDFF0h4Ncq-8EXdGszv69jrUu7c:0 
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=no preference, reason=boost timeout, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@1ae45de
+Another exception was thrown: RenderFlex children have
+non-zero flex but incoming height constraints are
+unbounded.
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#ce9b8 relayoutBoundary=up9 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderPadding#fed7a relayoutBoundary=up8
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#f6618 relayoutBoundary=up7
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#5e86f relayoutBoundary=up6 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#520a6 relayoutBoundary=up5
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#dd2f7 relayoutBoundary=up4
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#4904a relayoutBoundary=up3 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: A RenderFlex overflowed
+by 48 pixels on the right.
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#f6618 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#f6618 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#f6618 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#f6618 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#f6618 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#5e86f relayoutBoundary=up6
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#520a6 relayoutBoundary=up5
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#dd2f7 relayoutBoundary=up4
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#4904a relayoutBoundary=up3 NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#f6618 relayoutBoundary=up7
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=no preference, reason=boost timeout, vri=VRI[MainActivity]@1ae45de
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRateCategory for touch hint category=high hint, reason=touch, vri=VRI[MainActivity]@1ae45de
+I/PlatformViewsController(30867): Hosting view in view hierarchy for platform view: 5
+I/PlatformViewsController(30867): PlatformView is using SurfaceProducer backend
+D/NativeCustomFrequencyManager(30867): [NativeCFMS] BpCustomFrequencyManager::BpCustomFrequencyManager()
+D/HWUI    (30867): CFMS:: SetUp Pid : 30867    Tid : 30947
+D/NativeCustomFrequencyManager(30867): [NativeCFMS] BpCustomFrequencyManager::BpCustomFrequencyManager()
+D/HWUI    (30867): CFMS:: SetUp Pid : 30867    Tid : 30947
+I/Kumiho-Kumiho(30867): getPackageName: com.example.frontend
+I/Kumiho-Kumiho(30867): getPackageName: com.example.frontend
+Another exception was thrown: RenderFlex children have
+non-zero flex but incoming height constraints are
+unbounded.
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#2b509 relayoutBoundary=up9 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderPadding#59a47 relayoutBoundary=up8
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#eca28 relayoutBoundary=up7
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#7e370 relayoutBoundary=up6 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#81a6b relayoutBoundary=up5
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#47b9b relayoutBoundary=up4
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#1f8f7 relayoutBoundary=up3 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#eca28 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#eca28 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#7e370 relayoutBoundary=up6
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#81a6b relayoutBoundary=up5
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#47b9b relayoutBoundary=up4
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#1f8f7 relayoutBoundary=up3 NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#eca28 relayoutBoundary=up7
+Another exception was thrown: A RenderFlex overflowed
+by 4.7 pixels on the right.
+Another exception was thrown: RenderFlex children have
+non-zero flex but incoming height constraints are
+unbounded.
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#a40e6 relayoutBoundary=up9 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderPadding#c68e3 relayoutBoundary=up8
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#149c1 relayoutBoundary=up7
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#01214 relayoutBoundary=up6 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#dbcde relayoutBoundary=up5
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#06e0b relayoutBoundary=up4
+NEEDS-PAINT NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#8278e relayoutBoundary=up3 NEEDS-PAINT
+NEEDS-COMPOSITING-BITS-UPDATE
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#149c1 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#149c1 relayoutBoundary=up7
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#01214 relayoutBoundary=up6
+Another exception was thrown: RenderBox was not laid
+out: _RenderLayoutBuilder#dbcde relayoutBoundary=up5
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderConstrainedBox#06e0b relayoutBoundary=up4
+NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderFlex#8278e relayoutBoundary=up3 NEEDS-PAINT
+Another exception was thrown: RenderBox was not laid
+out: RenderDecoratedBox#149c1 relayoutBoundary=up7
+I/VRI[MainActivity]@1ae45de(30867): call setFrameRa

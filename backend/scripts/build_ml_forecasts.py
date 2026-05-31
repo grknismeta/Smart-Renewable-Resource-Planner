@@ -98,7 +98,7 @@ def main(years: int, only_province: bool, province_filter, dry_run: bool,
     from app.db.models import MlForecast
     from app.services.ml_batch_service import (
         get_monthly_series,
-        get_monthly_series_from_daily,
+        get_monthly_series_best,
         select_best_monthly_forecast,
     )
     from app.services.climate_scenarios import scenario_factor
@@ -134,7 +134,9 @@ def main(years: int, only_province: bool, province_filter, dry_run: bool,
             scope = "province" if district is None else "district"
             for metric in resource_metrics[resource]:
                 if use_daily:
-                    series, series_start = get_monthly_series_from_daily(
+                    # İl-scope'ta monthly_climate (20y, ~257 ay) tercih edilir;
+                    # ilçede daily aggregate. (get_monthly_series_best yönetir.)
+                    series, series_start = get_monthly_series_best(
                         prov, district, metric,
                     )
                     if series and series_start:

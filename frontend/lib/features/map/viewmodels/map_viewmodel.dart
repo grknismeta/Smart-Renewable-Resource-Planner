@@ -84,6 +84,14 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   MlBaseStyle _mlBaseStyle = MlBaseStyle.darkMatter;
   bool _autoMapStyleSync = true; // Tema ile otomatik stil senkronizasyonu
   bool _show3DTurbines = false;
+  // 2026-05-31 — 3D Santral: kayıtlı pinler GLB modeline (RES→türbin,
+  // GES→güneş paneli) dönüşür. Web'de model-viewer marker, yüksek zoom +
+  // görünür alan + WebGL context cap (~12). Native ileride.
+  bool _show3DPlants = false;
+  // 2026-05-31 — 3D Santral model boyut ölçeği (kullanıcı slider'ı, 0.5–2.5).
+  double _threeDPlantScale = 1.0;
+  // 3D Santral görünüm modu: 'realistic' (gerçek ölçek) | 'model' (devasa).
+  String _threeDDisplayMode = 'realistic';
   bool _showGlobe = false;
 
   /// Globe açılmadan önce Türkiye özelliklerinin durumunu saklar.
@@ -164,6 +172,44 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     } catch (_) {
       return null;
     }
+  }
+
+  // ─── 3D Santral: il-bazlı hakim rüzgar yönü (türbin oryantasyonu) ─────────
+  // /analysis/province/{il}/climate → wind_rose.dominant (8-yön pusula) →
+  // derece. Cache'li; 3D türbin marker'ları bu yöne döner.
+  final Map<String, double> _provinceWindDirDeg = {};
+  static const Map<String, double> _compassToDeg = {
+    'N': 0, 'NE': 45, 'E': 90, 'SE': 135,
+    'S': 180, 'SW': 225, 'W': 270, 'NW': 315,
+  };
+
+  /// İl için hakim rüzgar yönü (derece) — yoksa null.
+  double? windDirDegForProvince(String? province) {
+    if (province == null || province.isEmpty) return null;
+    return _provinceWindDirDeg[province];
+  }
+
+  /// Verilen iller için hakim rüzgar yönlerini (eksikse) çeker, cache'ler.
+  /// Tamamlanınca notify → 3D türbinler doğru yöne döner.
+  Future<void> ensureWindDirections(Iterable<String> provinces) async {
+    final missing = provinces
+        .where((p) => p.isNotEmpty && !_provinceWindDirDeg.containsKey(p))
+        .toSet();
+    if (missing.isEmpty) return;
+    var changed = false;
+    for (final prov in missing) {
+      try {
+        final climate = await _apiService.analysis.fetchProvinceClimate(prov);
+        final deg = _compassToDeg[climate.windRose.dominant.toUpperCase()];
+        if (deg != null) {
+          _provinceWindDirDeg[prov] = deg;
+          changed = true;
+        }
+      } catch (_) {
+        // sessiz geç — marker varsayılan yön kullanır
+      }
+    }
+    if (changed) safeNotify();
   }
 
   void openPinDetail(Pin pin) {
@@ -249,6 +295,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   MlBaseStyle get mlBaseStyle => _mlBaseStyle;
   bool get autoMapStyleSync => _autoMapStyleSync;
   bool get show3DTurbines => _show3DTurbines;
+  bool get show3DPlants => _show3DPlants;
+  double get threeDPlantScale => _threeDPlantScale;
+  String get threeDDisplayMode => _threeDDisplayMode;
   bool get showGlobe => _showGlobe;
   bool get show3DBuildings => _show3DBuildings;
   bool get show3DTerrain => _show3DTerrain;
@@ -612,6 +661,26 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
     safeNotify();
   }
 
+  /// 3D Santral modu — kayıtlı pinleri 3D modele çevirir (web).
+  void toggleShow3DPlants() {
+    _show3DPlants = !_show3DPlants;
+    safeNotify();
+  }
+
+  /// 3D Santral model boyut ölçeği (slider). 0.5–2.5 arası.
+  void setThreeDPlantScale(double v) {
+    _threeDPlantScale = v.clamp(0.5, 2.5);
+    safeNotify();
+  }
+
+  /// 3D Santral görünüm modu: 'realistic' | 'model'.
+  void setThreeDDisplayMode(String mode) {
+    if (mode != 'realistic' && mode != 'model') return;
+    if (_threeDDisplayMode == mode) return;
+    _threeDDisplayMode = mode;
+    safeNotify();
+  }
+
   void toggleShowGlobe() {
     if (!_showGlobe) {
       // Globe açılıyor → Türkiye özelliklerini kaydet ve kapat
@@ -836,7 +905,8 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   /// Bölge modunu aç/kapat. 7 bölgeyi doğrudan gösterir.
   void openRegionMode() {
-    if (isRegionsModeActive) {
+    // Toggle: drill ile _selectionLevel değişse bile, AÇILAN mod bölge ise kapat.
+    if (_isProvinceModeActive && _initialSelectionMode == SelectionLevel.region) {
       closeSelectionMode();
       return;
     }
@@ -855,7 +925,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
   /// İle tıklayınca il bilgisi gösterilir ama harita il seviyesinde kalır →
   /// kullanıcı başka illere de tıklayabilir.
   void openProvincesMode() {
-    if (_isProvinceModeActive && _selectionLevel == SelectionLevel.province) {
+    // Toggle: drill (il→ilçe) ile seviye değişse bile, AÇILAN mod il ise kapat.
+    if (_isProvinceModeActive &&
+        _initialSelectionMode == SelectionLevel.province) {
       closeSelectionMode();
       return;
     }
@@ -873,7 +945,9 @@ class MapViewModel extends BaseViewModel with MapLayerMixin {
 
   /// İlçe modunu aç/kapat. Tüm Türkiye ilçelerini doğrudan gösterir (il filtresi yok).
   void openDistrictsMode() {
-    if (isDistrictsModeActive) {
+    // Toggle: drill ile seviye değişse bile, AÇILAN mod ilçe ise kapat.
+    if (_isProvinceModeActive &&
+        _initialSelectionMode == SelectionLevel.district) {
       closeSelectionMode();
       return;
     }

@@ -46,12 +46,16 @@ class PinFlowOverlay extends StatefulWidget {
 
 class _PinFlowOverlayState extends State<PinFlowOverlay> {
   Offset? _pos; // local cache — sync ile _persistedPosition
+  // 2026-05-31 — Kart pin'in YANINDA açılır (sağ tarafı). Kullanıcı sürükleyene
+  // kadar pin'e bağlı (pan/zoom'da takip eder). Sürükleyince serbest kalır.
+  bool _userMoved = false;
+  String? _lastTargetKey;
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerChange);
-    _pos = _persistedPosition;
+    _lastTargetKey = _targetKey(widget.controller);
   }
 
   @override
@@ -60,15 +64,43 @@ class _PinFlowOverlayState extends State<PinFlowOverlay> {
     super.dispose();
   }
 
-  void _onControllerChange() => setState(() {});
+  /// Aktif hedefin kimliği — değişince kart yeniden pin'e hizalanır.
+  /// Mode HARİÇ (detail↔editForm aynı pin → kart zıplamasın); sadece pin/nokta.
+  String _targetKey(PinFlowController c) =>
+      '${c.activePin?.id ?? ''}|${c.point?.latitude ?? ''},${c.point?.longitude ?? ''}';
 
-  /// Default pos: sağ-alt köşe (FAB'ın yanı değil — sağdan 16, alttan ~140
-  /// → mobile FAB ile çakışmaz).
+  void _onControllerChange() {
+    // Yeni pin/nokta açıldıysa: kullanıcı sürükleme kilidini sıfırla → pin'e hizala.
+    final key = _targetKey(widget.controller);
+    if (key != _lastTargetKey) {
+      _lastTargetKey = key;
+      _userMoved = false;
+      _pos = null;
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Default pos: sağ-alt köşe (anchor yoksa — örn. native projeksiyon null).
   Offset _defaultPosition(Size screen, double cardWidth) {
     return Offset(
       screen.width - cardWidth - 16,
       screen.height - (screen.height * 0.55) - 140,
     );
+  }
+
+  /// Pin'in YANINDA konum — tercihen sağında, dikeyde pin'e hizalı.
+  /// Sağa sığmazsa sola çevirir. (anchor = pin'in ekran piksel konumu.)
+  Offset _anchoredPosition(
+      Offset anchor, Size screen, double cardWidth, double cardHeight) {
+    const gap = 18.0;
+    double x = anchor.dx + gap; // pin'in sağı
+    // Dikeyde: kartın ortası pin'e yakın olsun (biraz yukarı kaydır).
+    double y = anchor.dy - cardHeight * 0.42;
+    // Sağa taşıyorsa pin'in soluna al.
+    if (x + cardWidth > screen.width - 8) {
+      x = anchor.dx - cardWidth - gap;
+    }
+    return Offset(x, y);
   }
 
   /// 2026-05-26 (L2): Clamp gevşetildi — kullanıcı kartı ekran dışına
@@ -90,6 +122,7 @@ class _PinFlowOverlayState extends State<PinFlowOverlay> {
 
   void _onDragDelta(Offset delta, Size screen, double cardWidth) {
     setState(() {
+      _userMoved = true; // artık serbest — pin'e hizalanmayı bırak
       final current = _pos ?? _defaultPosition(screen, cardWidth);
       _pos = _clamp(
         current + delta,
@@ -115,8 +148,21 @@ class _PinFlowOverlayState extends State<PinFlowOverlay> {
     final content = _buildContent(context);
     if (content == null) return const SizedBox.shrink();
 
-    // _pos null ise default
-    final pos = _pos ?? _defaultPosition(screen, cardWidth);
+    // Konum seçimi:
+    //   • Kullanıcı sürüklediyse → serbest _pos.
+    //   • Aksi halde pin'e hizalı (sağında). anchor web'de pin ekran konumu;
+    //     pan/zoom'da güncellenir (recomputeAnchor) → kart pin'i takip eder.
+    //   • anchor yoksa (native projeksiyon null / henüz hazır değil) → default.
+    const estCardHeight = 340.0;
+    final anchor = ctrl.screenAnchor;
+    final Offset pos;
+    if (_userMoved && _pos != null) {
+      pos = _pos!;
+    } else if (anchor != null) {
+      pos = _anchoredPosition(anchor, screen, cardWidth, estCardHeight);
+    } else {
+      pos = _persistedPosition ?? _defaultPosition(screen, cardWidth);
+    }
     final clampedPos = _clamp(pos, screen, cardWidth, 300);
 
     return Positioned(
@@ -168,6 +214,8 @@ class _PinFlowOverlayState extends State<PinFlowOverlay> {
             widget.onTypeSelected?.call(type);
           },
           onClose: ctrl.close,
+          onDragDelta: dragDelta(cardWidth),
+          onDragEnd: _onDragEnd,
         );
 
       case PinFlowMode.addForm:
@@ -178,6 +226,9 @@ class _PinFlowOverlayState extends State<PinFlowOverlay> {
           point: ctrl.point!,
           initialPinType: ctrl.selectedType!,
           onClose: ctrl.close,
+          // Çoklu pin: başarılı kayıt → controller Güneş/Rüzgar için
+          // yerleştirme modunda kalır (HES'te kapanır).
+          onSaved: ctrl.onPinAdded,
           onDragDelta: dragDelta(cardWidth),
           onDragEnd: _onDragEnd,
         );

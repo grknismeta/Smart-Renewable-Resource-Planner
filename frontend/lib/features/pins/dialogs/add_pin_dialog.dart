@@ -34,6 +34,11 @@ class AddPinDialog extends StatefulWidget {
   final String initialPinType;
   final VoidCallback onClose;
 
+  /// 2026-05-31 — Çoklu pin: BAŞARILI kayıttan sonra çağrılır (iptal/X = onClose).
+  /// PinFlowController bunu kullanıp Güneş/Rüzgar için yerleştirme modunda kalır.
+  /// Null ise onClose'a düşer (eski davranış).
+  final VoidCallback? onSaved;
+
   /// 2026-05-26 (K1): Floating draggable card için header drag callback'leri.
   /// PinFlowOverlay tarafından sağlanır; PinPanelShell'e iletilir.
   final ValueChanged<Offset>? onDragDelta;
@@ -44,6 +49,7 @@ class AddPinDialog extends StatefulWidget {
     required this.point,
     required this.initialPinType,
     required this.onClose,
+    this.onSaved,
     this.onDragDelta,
     this.onDragEnd,
   });
@@ -684,7 +690,9 @@ class _AddPinDialogState extends State<AddPinDialog> {
       }
 
       if (context.mounted) {
-        widget.onClose();
+        // Çoklu pin: başarılı kayıt → onSaved (varsa) ile akış devam kararını
+        // controller verir; yoksa eski davranış (kapat).
+        (widget.onSaved ?? widget.onClose)();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(

@@ -416,14 +416,15 @@ class _MlProjectionPanelState extends State<MlProjectionPanel> {
     final yrSpan = _maxYear - _minYear;
     switch (_scenario) {
       case 'baseline':
-        return 'Baz · ML modelin geçmişten öğrendiği trend ($yrSpan yıl ileri). '
-               'İklim değişimi katkısı YOK — yıl-yıl drift küçük olabilir.';
+        return 'Baz · SARIMAX + Fourier mevsim + year² + CO₂ exog '
+               '($yrSpan yıl). Mauna Loa CO₂ proxy ve quadratic ivme ile '
+               'deterministik iklim sinyali dahil.';
       case 'rcp45':
-        return 'RCP 4.5 (orta emisyon) · Baz trendin üzerine IPCC ısınma '
-               'projeksiyonu eklenir (~+1.5°C 2050\'ye).';
+        return 'RCP 4.5 (orta emisyon) · Baz forecast üzerine IPCC AR6 '
+               'Akdeniz delta katsayıları (~+1.5°C 2050).';
       case 'rcp85':
-        return 'RCP 8.5 (yüksek emisyon) · Baz + IPCC yüksek-ısınma '
-               'projeksiyonu (~+2.5°C 2050\'ye).';
+        return 'RCP 8.5 (yüksek emisyon) · Baz + IPCC AR6 yüksek-ısınma '
+               'projeksiyonu (~+2.5°C 2050).';
       default:
         return '';
     }

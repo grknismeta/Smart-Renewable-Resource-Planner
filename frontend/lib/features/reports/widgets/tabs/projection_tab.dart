@@ -116,7 +116,10 @@ class _ProjectionBody extends StatelessWidget {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SizedBox(height: 380, child: chart),
+                    // Sabit 380 yükseklik mobilde içeriğe yetmiyordu (header +
+                    // 320 grafik + legend → ~54px overflow). Doğal boyut: chart
+                    // zaten içinde sabit-yükseklik grafik barındırıyor.
+                    chart,
                     const SizedBox(height: 14),
                     sidebar,
                   ],
@@ -2697,38 +2700,45 @@ class _NeonProjectionChart extends StatelessWidget {
   }
 
   /// Yıllık aggregate spots — X 1-10 yıl, Y mode'a göre birim.
-  /// Pin modu: kWh → GWh (÷1e6). Province modu: birim olduğu gibi (örn. MJ/m²).
+  /// Pin modu: kWh → GWh (÷1e6). Province modu: birim olduğu gibi.
+  ///
+  /// 2026-05-28 FIX: Calendar-year gruplama yerine **göreceli yıl offset**
+  /// (her 12 ay = 1 grup). Forecast yıl ortasında başladığında calendar-year
+  /// kısmi gruplar (8 ay+12 ay+4 ay = "291-428-130" gibi) yaratıyordu;
+  /// bu yaklaşım her zaman tam 12-ay'lık ardışık dilim → görsel temiz,
+  /// drift okunabilir.
   ({List<FlSpot> p50, List<FlSpot> p10, List<FlSpot> p90, String unit})
       _aggregateYearly() {
     final f = vm.forecast;
     if (f == null || f.points.isEmpty) {
       return (p50: const [], p10: const [], p90: const [], unit: 'GWh');
     }
-    // Group monthly points by year
-    final Map<int, List<double>> p50ByYr = {};
-    final Map<int, List<double>> p10ByYr = {};
-    final Map<int, List<double>> p90ByYr = {};
-    for (final p in f.points) {
-      final y = p.date.year;
-      (p50ByYr[y] ??= []).add(p.value);
-      (p10ByYr[y] ??= []).add(p.lower);
-      (p90ByYr[y] ??= []).add(p.upper);
-    }
-    final years = p50ByYr.keys.toList()..sort();
     final pin = vm.mode == ProjectionMode.pin;
     final unit = pin ? 'GWh' : '';
-    final scale = pin ? 1e-6 : 1.0; // kWh → GWh
+    final scale = pin ? 1e-6 : 1.0;
+    final pts = f.points;
+
     final p50 = <FlSpot>[];
     final p10 = <FlSpot>[];
     final p90 = <FlSpot>[];
-    for (var i = 0; i < years.length && i < 10; i++) {
-      final y = years[i];
-      double sum(List<double>? vs) =>
-          (vs ?? const []).fold<double>(0, (a, b) => a + b) * scale;
-      // X: 1..10 (1-indexed year offset)
-      p50.add(FlSpot((i + 1).toDouble(), sum(p50ByYr[y])));
-      p10.add(FlSpot((i + 1).toDouble(), sum(p10ByYr[y])));
-      p90.add(FlSpot((i + 1).toDouble(), sum(p90ByYr[y])));
+    final maxYears = (pts.length ~/ 12).clamp(1, 10);
+
+    for (var yr = 0; yr < maxYears; yr++) {
+      double s50 = 0, s10 = 0, s90 = 0;
+      var taken = 0;
+      for (var m = 0; m < 12; m++) {
+        final idx = yr * 12 + m;
+        if (idx >= pts.length) break;
+        s50 += pts[idx].value;
+        s10 += pts[idx].lower;
+        s90 += pts[idx].upper;
+        taken++;
+      }
+      // Tam 12 ay dolmadıysa o yılı atla (kısmi yıl çıkışları engelle)
+      if (taken < 12) break;
+      p50.add(FlSpot((yr + 1).toDouble(), s50 * scale));
+      p10.add(FlSpot((yr + 1).toDouble(), s10 * scale));
+      p90.add(FlSpot((yr + 1).toDouble(), s90 * scale));
     }
     return (p50: p50, p10: p10, p90: p90, unit: unit);
   }
@@ -2856,11 +2866,17 @@ class _NeonProjectionChart extends StatelessWidget {
               getTitlesWidget: (v, _) {
                 final i = v.toInt();
                 if (i < 1 || i > p50.length) return const SizedBox.shrink();
+                // "+1/+2" yerine GERÇEK YIL. Çok yıl varsa kalabalık olmasın
+                // diye 2'de bir göster (ilk + son hep görünür).
+                final step = p50.length > 6 ? 2 : 1;
+                if ((i - 1) % step != 0 && i != p50.length) {
+                  return const SizedBox.shrink();
+                }
                 return Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    '+$i',
-                    style: const TextStyle(color: _muted, fontSize: 9.5),
+                    '${DateTime.now().year + i}',
+                    style: const TextStyle(color: _muted, fontSize: 9),
                   ),
                 );
               },
@@ -2881,7 +2897,7 @@ class _NeonProjectionChart extends StatelessWidget {
                 final isMain = s.barIndex == 2;
                 return LineTooltipItem(
                   isMain
-                      ? '+${s.x.toInt()} yıl  ${_fmtY(s.y)} ${unit.isEmpty ? "" : unit}'
+                      ? '${DateTime.now().year + s.x.toInt()}  ${_fmtY(s.y)} ${unit.isEmpty ? "" : unit}'
                       : '',
                   TextStyle(
                     color: isMain ? _neon : Colors.transparent,
@@ -2971,28 +2987,36 @@ class _AiKpiSidebar extends StatelessWidget {
     final scale = pin ? 1e-6 : 1.0;
     final unit = pin ? 'GWh' : '';
 
-    // Yıllık aggregate (X-axis ile birebir)
-    final Map<int, double> yearly = {};
-    if (f != null) {
-      for (final p in f.points) {
-        yearly[p.date.year] = (yearly[p.date.year] ?? 0) + p.value * scale;
+    // 2026-05-28 FIX: relative-year offset (her 12 ay = 1 grup) — kısmi yıl
+    // toplamlarının KPI'ları çarpıtmasını önler (eski calendar-year bug'ı).
+    final List<double> yearlyTotals = [];
+    if (f != null && f.points.isNotEmpty) {
+      final pts = f.points;
+      final maxYears = (pts.length ~/ 12);
+      for (var yr = 0; yr < maxYears; yr++) {
+        double s = 0;
+        for (var m = 0; m < 12; m++) {
+          s += pts[yr * 12 + m].value;
+        }
+        yearlyTotals.add(s * scale);
       }
     }
-    final years = yearly.keys.toList()..sort();
     double? degradationPct;
     double? cumulative;
     double? firstYr;
     double? lastYr;
-    if (years.length >= 2) {
-      firstYr = yearly[years.first];
-      lastYr = yearly[years.last];
-      if (firstYr != null && firstYr > 0) {
-        degradationPct = (lastYr! - firstYr) / firstYr * 100;
+    if (yearlyTotals.length >= 2) {
+      firstYr = yearlyTotals.first;
+      lastYr = yearlyTotals.last;
+      if (firstYr > 0) {
+        degradationPct = (lastYr - firstYr) / firstYr * 100;
       }
-      cumulative = yearly.values.fold<double>(0, (a, b) => a + b);
-    } else if (years.length == 1) {
-      cumulative = yearly[years.first];
+      cumulative = yearlyTotals.fold<double>(0, (a, b) => a + b);
+    } else if (yearlyTotals.length == 1) {
+      cumulative = yearlyTotals.first;
     }
+    final years = List<int>.generate(
+        yearlyTotals.length, (i) => i + 1); // sadece etiket için
 
     // AI confidence: MAPE → 1-MAPE (clamped). 0.05 MAPE → %95
     double? confidence;

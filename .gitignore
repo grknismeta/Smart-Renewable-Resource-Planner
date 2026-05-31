@@ -86,3 +86,11 @@ backend/data/dem/*
 # Obsidian (knowledge vault)
 .obsidian/
 .trash/
+# ─── 2026-05-31 Repo temizliği — kod çalışması için gereksiz ───────────────
+# Arşiv: yol haritası .md, tasarım mockup, tek-seferlik script, test harness,
+# medya, dump'lar. Diskte _arsiv/ altında organize; repo'ya gitmez.
+/_arsiv/
+
+# Obsidian knowledge vault — yerinde kalır (CLAUDE.md/memory referans veriyor)
+# ama repo'ya gitmez (geliştirme notları, kişisel).
+/docs/

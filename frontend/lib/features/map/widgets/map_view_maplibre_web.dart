@@ -215,6 +215,19 @@ external void _jsUpdateClusterPins(String geojsonStr);
 @JS('window.srrpClearClusterPins')
 external void _jsClusterPinsClear();
 
+// ─── 3D Santral (GLB model marker) JS Interop ──────────────────────────────
+// enabled=true: pin GeoJSON'undan RES→türbin, GES→panel model-viewer marker'ları
+// kurar (yüksek zoom + görünür alan + cap). false: marker'ları kaldırır,
+// daire pinleri geri gösterir.
+@JS('window.srrpSet3DPlants')
+external void _jsSet3DPlants(String geojsonStr, bool enabled);
+
+@JS('window.srrpSet3DScale')
+external void _jsSet3DScale(double scale);
+
+@JS('window.srrpSet3DMode')
+external void _jsSet3DMode(String mode);
+
 // ─── Animasyon JS Interop ──────────────────────────────────────────────────
 
 @JS('window.srrpLoadAnimationData')
@@ -420,7 +433,9 @@ String _pinColorHex(String type, {bool isDark = true}) {
   }
 }
 
-String _pinsToGeoJson(List<Pin> pins, {bool isDark = true}) => jsonEncode({
+String _pinsToGeoJson(List<Pin> pins,
+        {bool isDark = true, Map<int, double> windDirByPin = const {}}) =>
+    jsonEncode({
   'type': 'FeatureCollection',
   'features': pins
       .map(
@@ -438,6 +453,12 @@ String _pinsToGeoJson(List<Pin> pins, {bool isDark = true}) => jsonEncode({
             'city': p.city ?? '',
             'district': p.district ?? '',
             'locationLabel': p.locationLabel,
+            // 3D Santral: kurulumdaki Gelişmiş Ayarlar yönü/eğimi → marker
+            // (Güneş paneli oryantasyonu). null ise marker varsayılanı (güney/enlem).
+            if (p.panelAzimuth != null) 'azimuth': p.panelAzimuth,
+            if (p.panelTilt != null) 'tilt': p.panelTilt,
+            // Türbin: ilin hakim rüzgar yönü (derece) → rotor o yöne döner.
+            if (windDirByPin.containsKey(p.id)) 'windDir': windDirByPin[p.id],
           },
         },
       )
@@ -727,6 +748,10 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   double _lastIntensity = 1.0;
   HeatmapPalette _lastPalette = HeatmapPalette.classic;
   bool _last3D = false;
+  bool _last3DPlants = false;
+  double _last3DScale = 1.0;
+  String _last3DMode = 'realistic';
+  List<Pin> _last3DPlantsPins = const [];
 
   bool _solarActive = false;
   bool _windActive = false;
@@ -1104,6 +1129,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   bool _anyMapDataChanged(MapViewModel vm) {
     // Pinler
     if (vm.show3DTurbines != _last3D) return true;
+    if (vm.show3DPlants != _last3DPlants) return true;
+    if (vm.threeDPlantScale != _last3DScale) return true;
+    if (vm.threeDDisplayMode != _last3DMode) return true;
     if (vm.showPinClusters != _lastClustering) return true;
     if (!_pinsEqual(vm.filteredPins, _lastPins)) return true;
     // Heatmap veri ve parametreler
@@ -1188,6 +1216,12 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       await _syncPins(vm.filteredPins, vm.show3DTurbines, vm.showPinClusters);
     } catch (e) {
       debugPrint('[MapLibre] _syncPins hata: $e');
+    }
+    try {
+      _sync3DPlants(vm);
+      _syncPlantScale(vm); // scale-only değişimi de uygula
+    } catch (e) {
+      debugPrint('[MapLibre] _sync3DPlants hata: $e');
     }
     try {
       await _syncHeatmapData(vm.weatherSummary);
@@ -2172,6 +2206,73 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     if (kIsWeb) {
       _jsSetupPinHover();
       _jsSetupPinClick();
+    }
+  }
+
+  /// 3D Santral modu — pin GeoJSON'unu JS model-viewer marker katmanına iletir.
+  /// Mod açık/kapandığında veya pin listesi değiştiğinde çağrılır. Kapalıyken
+  /// enabled=false ile bir kez çağrılıp marker'ları temizler.
+  void _sync3DPlants(MapViewModel vm) {
+    if (!kIsWeb) return;
+    final enabled = vm.show3DPlants;
+    final modeChanged = enabled != _last3DPlants;
+    final pinsChanged = !_pinsEqual(vm.filteredPins, _last3DPlantsPins);
+    if (!modeChanged && !pinsChanged) return;
+    _last3DPlants = enabled;
+    _last3DPlantsPins = List.from(vm.filteredPins);
+    _pushPlantsGeoJson(vm);
+    _syncPlantScale(vm);
+
+    // Türbin illerinin hakim rüzgar yönünü (eksikse) çek → gelince yeniden push.
+    if (enabled) {
+      final provinces = vm.filteredPins
+          .where((p) {
+            final t = p.type.toLowerCase();
+            return t.contains('rüzgar') ||
+                t.contains('ruzgar') ||
+                t.contains('wind');
+          })
+          .map((p) => p.city ?? '')
+          .where((c) => c.isNotEmpty)
+          .toSet();
+      if (provinces.isNotEmpty) {
+        vm.ensureWindDirections(provinces).then((_) {
+          if (mounted && vm.show3DPlants) _pushPlantsGeoJson(vm);
+        });
+      }
+    }
+  }
+
+  /// 3D pin GeoJSON'unu (türbin rüzgar yönleri dahil) JS'e gönderir.
+  void _pushPlantsGeoJson(MapViewModel vm) {
+    final windDirByPin = <int, double>{};
+    for (final p in vm.filteredPins) {
+      final t = p.type.toLowerCase();
+      if (!(t.contains('rüzgar') ||
+          t.contains('ruzgar') ||
+          t.contains('wind'))) {
+        continue;
+      }
+      final deg = vm.windDirDegForProvince(p.city);
+      if (deg != null) windDirByPin[p.id] = deg;
+    }
+    _jsSet3DPlants(
+      _pinsToGeoJson(vm.filteredPins,
+          isDark: _lastDarkMode, windDirByPin: windDirByPin),
+      vm.show3DPlants,
+    );
+  }
+
+  /// 3D Santral boyut ölçeği + görünüm modu değiştiğinde JS'e ilet.
+  void _syncPlantScale(MapViewModel vm) {
+    if (!kIsWeb) return;
+    if (vm.threeDPlantScale != _last3DScale) {
+      _last3DScale = vm.threeDPlantScale;
+      _jsSet3DScale(vm.threeDPlantScale);
+    }
+    if (vm.threeDDisplayMode != _last3DMode) {
+      _last3DMode = vm.threeDDisplayMode;
+      _jsSet3DMode(vm.threeDDisplayMode);
     }
   }
 

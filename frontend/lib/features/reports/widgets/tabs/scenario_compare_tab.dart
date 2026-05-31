@@ -1240,16 +1240,26 @@ class _ScenarioPinMap extends StatelessWidget {
               score: 70,
             ))
         .toList();
-    // Bbox = pin koordinatları
+    // Bbox = pin koordinatları, Türkiye sınırlarına CLAMP'li.
+    // Sınır/bozuk koordinatlı bir pin (ör. "Yurtdışı" RES) bbox'ı Bulgaristan'a
+    // taşıyordu → harita Türkiye dışını gösteriyordu. Clamp ile harita hep
+    // Türkiye'de kalır (web+mobil aynı). TR bbox ~ [25.5..45.0]E, [35.7..42.3]N.
+    const trW = 25.5, trE = 45.0, trS = 35.7, trN = 42.3;
+    double cl(double v, double lo, double hi) => v < lo ? lo : (v > hi ? hi : v);
     ml.LngLatBounds? bounds;
-    if (pins.length >= 2) {
+    if (pins.isNotEmpty) {
       double minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
       for (final p in pins) {
-        if (p.latitude < minLat) minLat = p.latitude;
-        if (p.latitude > maxLat) maxLat = p.latitude;
-        if (p.longitude < minLon) minLon = p.longitude;
-        if (p.longitude > maxLon) maxLon = p.longitude;
+        final la = cl(p.latitude, trS, trN);
+        final lo = cl(p.longitude, trW, trE);
+        if (la < minLat) minLat = la;
+        if (la > maxLat) maxLat = la;
+        if (lo < minLon) minLon = lo;
+        if (lo > maxLon) maxLon = lo;
       }
+      // Tek pin / aynı konum → dejenere bbox'a minimum açıklık ver.
+      if ((maxLat - minLat) < 0.15) { minLat -= 0.1; maxLat += 0.1; }
+      if ((maxLon - minLon) < 0.15) { minLon -= 0.1; maxLon += 0.1; }
       bounds = ml.LngLatBounds(
         longitudeWest: minLon,
         latitudeSouth: minLat,
@@ -1283,10 +1293,13 @@ class _ScenarioPinMap extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         ReportMiniMap(
-          height: 220,
+          // 2026-06-01: 220 çok inceydi → 320. boundsPadding 0.5→1.6: pin'ler
+          // Ankara gibi kümelendiğinde maxBounds çok dar kalıp yatay pan'i
+          // kilitliyordu; geniş padding → bağlam + sağa/sola pan alanı.
+          height: 320,
           markers: markers,
           bounds: bounds,
-          boundsPadding: 0.5,
+          boundsPadding: 1.6,
           // Pin tipini renge yansıtmak için fixedColor değil, score-color hili.
           // Daha doğru renklendirme için marker tipini score değil renge map'le:
           // ReportMiniMap'in _colorFor 0-100 score üstünden renk veriyor — biz

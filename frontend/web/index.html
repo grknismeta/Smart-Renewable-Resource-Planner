@@ -46,6 +46,17 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap">
 
+  <!-- 3D Santral: GLB modelleri three.js + MapLibre custom WebGL layer ile
+       (tek context, gerçek 3B). importmap module script'lerden ÖNCE olmalı. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
   <!-- MapLibre GL JS — Lazy-load: Sadece MapLibre moduna geçilince yüklenir.
        srrpEnsureMapLibre(callback) fonksiyonu ile yönetilir.
        Standart harita kullanıcıları için ~800KB script yüklenmez → lag yok. -->
@@ -372,6 +383,383 @@
       });
 
       window._srrpClusterActive = false;
+    };
+
+    // ── 3D Santral (GLB model-viewer marker) ────────────────────────
+    // Pinleri gerçek 3D modele çevirir: RES→türbin, GES→güneş paneli.
+    // Daire pin layer'ı GÖRÜNÜR kalır (tıklama/hover onunla çalışır); model
+    // üstte pointer-events:none overlay olarak durur. WebGL context limiti
+    // (~16) nedeniyle: sadece yüksek zoom + görünür alan + en yakın CAP pin.
+    var _M3D_MINZOOM = 6.5;   // bu zoom altında sadece daireler
+    var _M3D_CAP = 40;        // vektör hafif → daha çok marker (WebGL limiti yok)
+    window._srrp3DEnabled = false;
+    window._srrp3DFeats = [];
+    window._srrp3DById = {};        // pinId -> maplibregl.Marker
+    window._srrp3DListener = null;
+
+    function _m3dIsWind(props) {
+      var t = (props && props.type ? String(props.type) : '').toLowerCase();
+      return t.indexOf('rüzgar') >= 0 || t.indexOf('ruzgar') >= 0 ||
+             t.indexOf('wind') >= 0 || t === 'res';
+    }
+    function _m3dIsSolar(props) {
+      var t = (props && props.type ? String(props.type) : '').toLowerCase();
+      return t.indexOf('güneş') >= 0 || t.indexOf('gunes') >= 0 ||
+             t.indexOf('solar') >= 0 || t.indexOf('panel') >= 0 || t === 'ges';
+    }
+
+    // ── Türbin fiziği: rüzgar hızı (m/s) → kanat açısal hızı (deg/sn) ──
+    // Gerçek güç eğrisi: cut-in 3, rated 12, cut-out 25 m/s. Rated'de ~15 RPM
+    // (=90 deg/s). cut-in altı / cut-out üstü = durur (fren/feather).
+    function _m3dTurbineOmega(windMs) {
+      var CUT_IN = 3.0, RATED = 12.0, CUT_OUT = 25.0, RATED_OMEGA = 90.0;
+      if (windMs == null || isNaN(windMs)) windMs = 7.5; // makul varsayılan
+      if (windMs < CUT_IN || windMs > CUT_OUT) return 0;
+      if (windMs < RATED) return RATED_OMEGA * (windMs - CUT_IN) / (RATED - CUT_IN);
+      return RATED_OMEGA;
+    }
+
+    window._m3dUid = 0;
+    window._m3dRaf = null;
+    window._m3dLast = null;
+    window._m3d3DScale = 1;   // kullanıcı boyut slider'ı (Katmanlar → 3D Santral)
+    window._m3dBuiltScale = 1; // marker'ların kurulduğu efektif ölçek
+
+    // Efektif ölçek = kullanıcı slider × zoom büyümesi. Boyut PX ile sürülür
+    // (CSS scale() rasterleştirip piksellendiriyordu); büyüyünce yeniden kurulur.
+    window._m3dEffScale = function() {
+      var m = window._srrpMap;
+      var z = m ? m.getZoom() : 12;
+      var zf = Math.max(1, Math.min(2.8, 1 + (z - 10) * 0.18));
+      return (window._m3d3DScale || 1) * zf;
+    };
+
+    // Dart'tan model boyut ölçeği — marker'ları yeni px boyutunda yeniden kurar.
+    window.srrpSet3DScale = function(s) {
+      window._m3d3DScale = (typeof s === 'number' && s > 0) ? s : 1;
+      var byId = window._srrp3DById || {};
+      Object.keys(byId).forEach(function(k){ byId[k].remove(); delete byId[k]; });
+      if (window._srrpRefresh3D) window._srrpRefresh3D();
+    };
+
+    // Tek paylaşımlı rAF: tüm türbin kanat gruplarını döndürür (N marker → 1 tick).
+    function _m3dTick(t) {
+      var dt = Math.min(0.05, (t - (window._m3dLast || t)) / 1000);
+      window._m3dLast = t;
+      var byId = window._srrp3DById || {};
+      var any = false;
+      for (var k in byId) {
+        var m = byId[k];
+        if (m && m._blade) {
+          any = true;
+          if (m._omega > 0) {
+            m._angle = (m._angle + m._omega * dt) % 360;
+            // SVG attribute rotate → viewBox (0,0)=hub etrafında düzgün döner.
+            m._blade.setAttribute('transform', 'rotate(' + m._angle.toFixed(1) + ')');
+          }
+        }
+      }
+      if (any && window._srrp3DEnabled) {
+        window._m3dRaf = requestAnimationFrame(_m3dTick);
+      } else {
+        window._m3dRaf = null;
+      }
+    }
+    window._m3dStartTick = function() {
+      if (!window._m3dRaf) {
+        window._m3dLast = null;
+        window._m3dRaf = requestAnimationFrame(_m3dTick);
+      }
+    };
+
+    // ── Vektör RÜZGAR TÜRBİNİ marker'ı ──
+    // Gövde sabit, sadece kanat döner. `scene` katmanı kamera pitch/bearing'inden
+    // sürülür (_m3dApplyCamera) → dünyaya çakılı 3B nesne gibi davranır:
+    // top-down'da yatık, tam eğimde dik; bearing'le yan/arka görünür.
+    function _m3dBuildTurbine(feat) {
+      var size = Math.round(92 * window._m3dEffScale()); // px ile boyut (keskin)
+      var p = feat.properties || {};
+      var windMs = (p.windSpeed != null) ? parseFloat(p.windSpeed) : 7.5;
+      var windDir = (p.windDir != null) ? parseFloat(p.windDir) : 0; // dünya yaw (deg)
+      var uid = 'wt' + (window._m3dUid++);
+
+      var wrap = document.createElement('div');
+      // position:absolute ŞART — maplibre transform ile konumlandırır.
+      wrap.style.cssText = 'width:' + size + 'px;height:' + (size * 1.6) +
+        'px;position:absolute;top:0;left:0;perspective:700px;pointer-events:none;' +
+        'filter:drop-shadow(0 6px 14px rgba(0,0,0,.45));';
+
+      // scene — kamera-sürümlü 3B kök; pivot TABANDA (= pin).
+      var scene = document.createElement('div');
+      scene.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;' +
+        'transform-origin:center bottom;transform-style:preserve-3d;';
+      // Kule (statik SVG). Nacelle YOK — rotor'un hub'ı nacelle görevi görür
+      // (ayrı ellipse boşluk/hizasızlık yaratıyordu). none → tam hizalama.
+      scene.innerHTML =
+        '<svg viewBox="0 0 100 150" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">' +
+        '<defs>' +
+        '<linearGradient id="twr' + uid + '" x1="0" x2="1"><stop offset="0" stop-color="#6E7785"/><stop offset=".38" stop-color="#FAFBFD"/><stop offset=".62" stop-color="#CBD2DC"/><stop offset="1" stop-color="#586071"/></linearGradient>' +
+        '</defs>' +
+        '<path d="M 45.5 150 L 47.8 51 L 52.2 51 L 54.5 150 Z" fill="url(#twr' + uid + ')" stroke="rgba(0,0,0,.3)" stroke-width=".4"/>' +
+        '</svg>';
+
+      // Rotor — SVG (VEKTÖR → keskin, piksellenmez; bıçaklar hub'a bağlı).
+      // Yön rotor'un rotateY'siyle (bıçak diski rüzgara döner). Disk DÖNER (spin).
+      var rotor = document.createElement('div');
+      rotor.style.cssText = 'position:absolute;left:50%;top:34%;width:' + size +
+        'px;height:' + size + 'px;transform:translate(-50%,-50%);transform-style:preserve-3d;';
+      // Airfoil bıçak path (viewBox -50..50; yukarı = -y; kök hub'a değer, uç daralır)
+      var bp = 'M -2.4 -4 C -3.6 -16 -2.8 -38 0 -46 C 2.8 -38 3.6 -16 2.4 -4 C 1.5 -1 -1.5 -1 -2.4 -4 Z';
+      rotor.innerHTML =
+        '<svg viewBox="-50 -50 100 100" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible">' +
+        '<defs>' +
+        '<linearGradient id="bl' + uid + '" x1="0" y1="0" x2="1" y2="0">' +
+        '<stop offset="0" stop-color="#FFFFFF"/><stop offset=".5" stop-color="#E6EAF1"/><stop offset="1" stop-color="#8A93A2"/>' +
+        '</linearGradient>' +
+        '<radialGradient id="hb' + uid + '" cx=".35" cy=".35" r=".75">' +
+        '<stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#2F6FD6"/>' +
+        '</radialGradient>' +
+        '</defs>' +
+        '<g class="m3dspin">' +
+        '<g transform="rotate(0)"><path d="' + bp + '" fill="url(#bl' + uid + ')" stroke="rgba(0,0,0,.22)" stroke-width=".5"/></g>' +
+        '<g transform="rotate(120)"><path d="' + bp + '" fill="url(#bl' + uid + ')" stroke="rgba(0,0,0,.22)" stroke-width=".5"/></g>' +
+        '<g transform="rotate(240)"><path d="' + bp + '" fill="url(#bl' + uid + ')" stroke="rgba(0,0,0,.22)" stroke-width=".5"/></g>' +
+        '<circle r="7" fill="url(#hb' + uid + ')" stroke="rgba(0,0,0,.4)" stroke-width=".6"/>' +
+        '</g></svg>';
+      var blade = rotor.querySelector('.m3dspin'); // tick döndürür (rotate)
+      scene.appendChild(rotor);
+      wrap.appendChild(scene);
+
+      var marker = new maplibregl.Marker({ element: wrap, anchor: 'bottom' })
+        .setLngLat(feat.geometry.coordinates)
+        .addTo(window._srrpMap);
+      marker._kind = 'turbine';
+      marker._scene = scene;
+      marker._rotor = rotor;   // bearing yaw'ı SADECE rotor'a (kule silindir kalır)
+      marker._yaw = windDir;
+      marker._blade = blade;
+      marker._omega = _m3dTurbineOmega(windMs);
+      marker._angle = 0;
+      return marker;
+    }
+
+    // ── Vektör GÜNEŞ PANELİ marker'ı (tilt + azimuth, kamera-sürümlü) ──
+    function _m3dBuildPanel(feat) {
+      var size = Math.round(90 * window._m3dEffScale()); // px ile boyut (keskin)
+      var p = feat.properties || {};
+      var coords = feat.geometry.coordinates;
+      var lat = coords[1];
+      // Mount tilt ≈ enlem (panel eğimi). Kullanıcı sonra override edebilir.
+      var mountTilt = (p.tilt != null) ? parseFloat(p.tilt)
+                                       : Math.max(10, Math.min(40, Math.abs(lat)));
+      var azimuth = (p.azimuth != null) ? parseFloat(p.azimuth) : 0; // 0 = güney
+
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'width:' + size + 'px;height:' + size +
+        'px;position:absolute;top:0;left:0;perspective:600px;pointer-events:none;' +
+        'filter:drop-shadow(0 8px 14px rgba(0,0,0,.5));';
+
+      // Zemin gölgesi — wrap'te (scene ile dönmez, zeminde kalır)
+      var sh = document.createElement('div');
+      sh.style.cssText = 'position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:' +
+        (size * 0.55) + 'px;height:6px;background:rgba(0,0,0,.45);border-radius:50%;filter:blur(3px);';
+
+      // scene — kamera pitch + heading(azimuth-bearing) buradan; pivot tabanda.
+      var scene = document.createElement('div');
+      scene.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;' +
+        'transform-origin:center bottom;transform-style:preserve-3d;';
+
+      // Panel — gerçek 3B KUTU (6 yüz): ön=grid, arka+4 kenar=koyu çerçeve.
+      // Kapalı kutu → boşluk YOK, yandan tek levha gibi.
+      var pw = size * 0.8, ph = size * 0.55, D = Math.max(3, Math.round(size * 0.045));
+      var box = document.createElement('div');
+      box.style.cssText = 'position:absolute;left:50%;bottom:2px;transform:translateX(-50%) rotateX(-' +
+        mountTilt + 'deg);transform-origin:center bottom;transform-style:preserve-3d;width:' +
+        pw + 'px;height:' + ph + 'px;';
+      var _pface = function(w, h, tf, css) {
+        var d = document.createElement('div');
+        d.style.cssText = 'position:absolute;left:50%;top:50%;width:' + w + 'px;height:' + h +
+          'px;transform:translate(-50%,-50%) ' + tf + ';' + css;
+        return d;
+      };
+      var frameCss = 'background:linear-gradient(135deg,#26324A,#0E1A33);border:1px solid #2A3550;border-radius:2px;';
+      box.appendChild(_pface(pw, ph, 'translateZ(' + (-D / 2) + 'px) rotateY(180deg)', frameCss)); // arka
+      box.appendChild(_pface(D, ph, 'rotateY(90deg) translateZ(' + (pw / 2) + 'px)', frameCss));    // sağ
+      box.appendChild(_pface(D, ph, 'rotateY(-90deg) translateZ(' + (pw / 2) + 'px)', frameCss));   // sol
+      box.appendChild(_pface(pw, D, 'rotateX(90deg) translateZ(' + (ph / 2) + 'px)', frameCss));    // üst
+      box.appendChild(_pface(pw, D, 'rotateX(-90deg) translateZ(' + (ph / 2) + 'px)', frameCss));   // alt
+      // Ön yüz — mavi hücre grid'i
+      var front = _pface(pw, ph, 'translateZ(' + (D / 2) + 'px)',
+        'background:linear-gradient(135deg,#1E3A8A 0%,#2563EB 45%,#1E40AF 100%);' +
+        'border:1px solid #475569;border-radius:2px;display:grid;' +
+        'grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(2,1fr);gap:1.5px;padding:1.5px;' +
+        'box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);overflow:hidden;');
+      for (var i = 0; i < 8; i++) {
+        var cell = document.createElement('div');
+        cell.style.cssText = 'background:linear-gradient(135deg,#1E40AF 0%,#3B82F6 50%,#1E3A8A 100%);border-radius:1px;';
+        front.appendChild(cell);
+      }
+      box.appendChild(front);
+      scene.appendChild(box);
+      wrap.appendChild(sh);
+      wrap.appendChild(scene);
+
+      var marker = new maplibregl.Marker({ element: wrap, anchor: 'bottom' })
+        .setLngLat(coords)
+        .addTo(window._srrpMap);
+      marker._kind = 'panel';
+      marker._scene = scene;
+      marker._azimuth = azimuth;
+      marker._tilt = mountTilt;
+      return marker;
+    }
+
+    // ── Kamera senkronu — scene transform'unu harita pitch/bearing'inden sür ──
+    // Bu, modeli dünyaya çakılı gerçek 3B nesne gibi gösterir (bakış açımız
+    // değişince yön/açı dünya-sabit kalır; arka/yan/foreshorten görünür).
+    window._m3dApplyCamera = function() {
+      var map = window._srrpMap;
+      if (!map) return;
+      var pitch = map.getPitch();                 // 0 = top-down, ↑ = oblik
+      var bearing = map.getBearing();
+      var maxP = (map.getMaxPitch ? map.getMaxPitch() : 60) || 60;
+      // NOT: boyut artık PX ile (builder'da effScale), CSS scale YOK → keskin.
+      var byId = window._srrp3DById;
+      for (var k in byId) {
+        var m = byId[k];
+        if (!m || !m._scene) continue;
+        if (m._kind === 'turbine') {
+          // Dikey nesne: top-down'da yatık (~82°), tam eğimde dik (0°).
+          var lean = Math.max(0, Math.min(82, (1 - pitch / maxP) * 82));
+          // KULE: sadece pitch lean → her bearing'de silindir profili korunur.
+          m._scene.style.transform = 'rotateX(' + lean.toFixed(1) + 'deg)';
+          // ROTOR: yön (bıçak diski) bearing'e göre döner; küçük translateZ ile
+          // nacelle önünde (dönük olduğu yönün ucunda).
+          if (m._rotor) {
+            m._rotor.style.transform = 'translate(-50%,-50%) rotateY(' +
+              ((m._yaw || 0) - bearing).toFixed(1) + 'deg) translateZ(4px)';
+          }
+        } else {
+          // Yatay decal: pitch'le zemine yatar; heading = azimuth-bearing.
+          m._scene.style.transform =
+            'rotateX(' + pitch.toFixed(1) + 'deg) rotateZ(' +
+            ((m._azimuth || 0) - bearing).toFixed(1) + 'deg)';
+        }
+      }
+    };
+
+    function _m3dMakeMarker(feat) {
+      var props = feat.properties || {};
+      if (_m3dIsWind(props))  return _m3dBuildTurbine(feat);
+      if (_m3dIsSolar(props)) return _m3dBuildPanel(feat);
+      return null; // HES / bilinmeyen → daire kalır
+    }
+
+    function _m3dDist(coord, center) {
+      var dx = coord[0] - center.lng, dy = coord[1] - center.lat;
+      return dx * dx + dy * dy;
+    }
+
+    window._srrpRefresh3D = function() {
+      var map = window._srrpMap;
+      if (!map || !window._srrp3DEnabled) return;
+      var feats = window._srrp3DFeats || [];
+      var byId = window._srrp3DById;
+      var zoom = map.getZoom();
+
+      // Efektif boyut belirgin değiştiyse mevcutları temizle → yeni px boyutta
+      // (keskin) yeniden kurulurlar (CSS scale bulanıklığı yok).
+      var eff = window._m3dEffScale();
+      if (Math.abs(eff - (window._m3dBuiltScale || 1)) > 0.08) {
+        Object.keys(byId).forEach(function(k){ byId[k].remove(); delete byId[k]; });
+        window._m3dBuiltScale = eff;
+      }
+
+      // Zoom dışı → tüm modelleri kaldır (daireler zaten görünür)
+      if (zoom < _M3D_MINZOOM) {
+        Object.keys(byId).forEach(function(k){ byId[k].remove(); delete byId[k]; });
+        return;
+      }
+
+      var bounds = map.getBounds();
+      var center = map.getCenter();
+      var visible = feats.filter(function(f){
+        var c = f.geometry.coordinates;
+        return bounds.contains([c[0], c[1]]);
+      });
+      visible.sort(function(a,b){
+        return _m3dDist(a.geometry.coordinates, center) -
+               _m3dDist(b.geometry.coordinates, center);
+      });
+
+      var keep = {};
+      visible.slice(0, _M3D_CAP).forEach(function(f){
+        var id = String(f.properties.id);
+        keep[id] = true;
+        if (!byId[id]) {
+          var m = _m3dMakeMarker(f);
+          if (m) byId[id] = m;
+        }
+      });
+      // Görünür/cap dışı kalanları kaldır
+      Object.keys(byId).forEach(function(k){
+        if (!keep[k]) { byId[k].remove(); delete byId[k]; }
+      });
+      // Yeni marker'ları hemen kameraya göre yönlendir + kanat döngüsü
+      window._m3dApplyCamera();
+      window._m3dStartTick();
+    };
+
+    window.srrpSet3DPlants = function(geojsonStr, enabled) {
+      var map = window._srrpMap;
+      if (!map) return;
+      window._srrp3DEnabled = !!enabled;
+
+      try {
+        var gj = JSON.parse(geojsonStr);
+        window._srrp3DFeats = (gj && gj.features) ? gj.features : [];
+      } catch(_) { window._srrp3DFeats = []; }
+
+      if (!enabled) {
+        var byId = window._srrp3DById;
+        Object.keys(byId).forEach(function(k){ byId[k].remove(); delete byId[k]; });
+        if (window._srrp3DListener) {
+          map.off('moveend', window._srrp3DListener);
+          map.off('zoomend', window._srrp3DListener);
+          window._srrp3DListener = null;
+        }
+        if (window._srrp3DReposition) {
+          map.off('move', window._srrp3DReposition);
+          map.off('pitch', window._srrp3DReposition);
+          map.off('rotate', window._srrp3DReposition);
+          window._srrp3DReposition = null;
+        }
+        return;
+      }
+
+      // Aktif:
+      //   • moveend/zoomend → cap/görünür-alan yeniden hesapla (ekle/çıkar)
+      //   • move/pitch/rotate → her frame marker'ları ZORLA yeniden-projekte et.
+      //     Bu, harita eğildiğinde (pitch) marker'ların koordinatından kaymasını
+      //     engeller — taban her zaman pin lng/lat'ında kalır.
+      if (!window._srrp3DListener) {
+        window._srrp3DListener = function(){ window._srrpRefresh3D(); };
+        map.on('moveend', window._srrp3DListener);
+        map.on('zoomend', window._srrp3DListener);
+      }
+      if (!window._srrp3DReposition) {
+        window._srrp3DReposition = function(){
+          var b = window._srrp3DById;
+          for (var k in b) {
+            try { b[k].setLngLat(b[k].getLngLat()); } catch(_) {}
+          }
+          window._m3dApplyCamera(); // pitch/bearing → scene transform güncelle
+        };
+        map.on('move', window._srrp3DReposition);
+        map.on('pitch', window._srrp3DReposition);
+        map.on('rotate', window._srrp3DReposition);
+      }
+      window._srrpRefresh3D();
     };
 
     // ── GADM Sınır Katmanları ───────────────────────────────────────
@@ -3320,6 +3708,183 @@
   </script>
 </head>
 <body>
+  <!-- ════════════════ 3D SANTRAL — three.js + MapLibre custom layer ════════════
+       GLB modelleri haritanın TEK WebGL context'inde render eder (gerçek 3B,
+       hiçbir açıdan kaybolmaz). Eski model-viewer/CSS marker yaklaşımının
+       window.srrpSet3DPlants/srrpSet3DScale fonksiyonlarını override eder. -->
+  <script type="module">
+  import * as THREE from 'three';
+  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+  (function () {
+    // ── KALİBRASYON SABİTLERİ (kareye bakıp ayarlanır) ──────────────────
+    var MODEL_URL  = { wind: 'models/wind_turbine.glb', solar: 'models/solar_panel.glb' };
+    var VIS_METERS = { wind: 1600, solar: 900 };   // görsel boyut (mercator metre)
+    var BLADE_AXIS = 'z';                            // bıçak dönüş ekseni (x|y|z)
+    var BLADE_RPM_RATED = 15;                        // rated rüzgarda ~RPM
+    var MODEL_UP_FIX = Math.PI / 2;                  // Y-up model → Z-up dünya
+
+    var scene, camera, renderer, mapRef;
+    var instances = {};      // pinId -> {merc, object, rotor, omega, angle, yaw, meters}
+    var templates = {};      // kind -> normalize edilmiş THREE.Group
+    var pending = {};        // kind -> [callbacks] (yükleme sürerken)
+    var loader = new GLTFLoader();
+    var enabled = false, userScale = 1, feats = [], layerAdded = false;
+    var modeMul = 1;   // 'model' (büyük) = 4.5, 'realistic' (gerçekçi) = 1
+    var lastT = 0;
+
+    function turbineOmega(ms) {  // rad/s
+      var CI = 3, R = 12, CO = 25, RO = BLADE_RPM_RATED * 2 * Math.PI / 60;
+      if (ms == null || isNaN(ms)) ms = 7.5;
+      if (ms < CI || ms > CO) return 0;
+      if (ms < R) return RO * (ms - CI) / (R - CI);
+      return RO;
+    }
+
+    // GLB'yi yükle + normalize et (yükseklik=1, taban y=0, x/z ortalı).
+    function getTemplate(kind, cb) {
+      if (templates[kind]) { cb(templates[kind]); return; }
+      if (pending[kind]) { pending[kind].push(cb); return; }
+      pending[kind] = [cb];
+      loader.load(MODEL_URL[kind], function (gltf) {
+        var model = gltf.scene;
+        var box = new THREE.Box3().setFromObject(model);
+        var size = new THREE.Vector3(); box.getSize(size);
+        var ctr = new THREE.Vector3(); box.getCenter(ctr);
+        var h = size.y || Math.max(size.x, size.z) || 1;
+        var k = 1 / h;
+        model.scale.setScalar(k);
+        model.position.set(-ctr.x * k, -box.min.y * k, -ctr.z * k); // taban orijinde
+        model.traverse(function (n) {
+          if (n.isMesh && n.material) {
+            n.material = n.material.clone();
+            n.material.side = THREE.DoubleSide; // -scale aynalama için
+          }
+        });
+        var g = new THREE.Group(); g.add(model);
+        templates[kind] = g;
+        (pending[kind] || []).forEach(function (f) { f(g); });
+        pending[kind] = null;
+      }, undefined, function (err) {
+        console.error('[SRRP-3D] GLB yüklenemedi:', kind, err);
+        pending[kind] = null;
+      });
+    }
+
+    var customLayer = {
+      id: 'srrp-3d-plants', type: 'custom', renderingMode: '3d',
+      onAdd: function (map, gl) {
+        mapRef = map;
+        camera = new THREE.Camera();
+        scene = new THREE.Scene();
+        scene.add(new THREE.AmbientLight(0xffffff, 1.15));
+        var d1 = new THREE.DirectionalLight(0xffffff, 1.5); d1.position.set(0.6, -1, 0.8); scene.add(d1);
+        var d2 = new THREE.DirectionalLight(0x9ab8ff, 0.55); d2.position.set(-0.5, 1, 0.4); scene.add(d2);
+        // logarithmicDepthBuffer: maplibre'nin çok geniş depth aralığında
+        // üst üste panel yüzeylerinin z-fighting (bozulma) yapmasını engeller.
+        renderer = new THREE.WebGLRenderer({
+          canvas: map.getCanvas(), context: gl,
+          antialias: true, logarithmicDepthBuffer: true,
+        });
+        renderer.autoClear = false;
+        rebuild();
+      },
+      render: function (gl, matrix) {
+        if (!scene) return;
+        var m = new THREE.Matrix4().fromArray(matrix);
+        camera.projectionMatrix = m;
+        var now = performance.now();
+        var dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 0;
+        lastT = now;
+        var ids = Object.keys(instances), spinning = false;
+        for (var i = 0; i < ids.length; i++) {
+          var inst = instances[ids[i]];
+          var s = inst.merc.meterInMercatorCoordinateUnits() * inst.meters * userScale * modeMul;
+          var L = new THREE.Matrix4()
+            .makeTranslation(inst.merc.x, inst.merc.y, inst.merc.z)
+            .multiply(new THREE.Matrix4().makeScale(s, -s, s))
+            .multiply(new THREE.Matrix4().makeRotationX(MODEL_UP_FIX))
+            .multiply(new THREE.Matrix4().makeRotationY(inst.yaw));
+          inst.object.matrixAutoUpdate = false;
+          inst.object.matrix.copy(L);
+          inst.object.matrixWorldNeedsUpdate = true;
+          if (inst.rotor && inst.omega > 0) {
+            inst.angle += inst.omega * dt;
+            inst.rotor.rotation[BLADE_AXIS] = inst.angle;
+            spinning = true;
+          }
+        }
+        renderer.resetState();
+        renderer.render(scene, camera);
+        if (spinning) mapRef.triggerRepaint(); // dönüş için sürekli; statikse durur
+      }
+    };
+
+    function classify(t) {
+      t = (t || '').toLowerCase();
+      if (t.indexOf('rüzgar') >= 0 || t.indexOf('ruzgar') >= 0 || t.indexOf('wind') >= 0) return 'wind';
+      if (t.indexOf('güneş') >= 0 || t.indexOf('gunes') >= 0 || t.indexOf('solar') >= 0 || t.indexOf('panel') >= 0) return 'solar';
+      return null;
+    }
+
+    function rebuild() {
+      if (!scene) return;
+      Object.keys(instances).forEach(function (k) { scene.remove(instances[k].object); });
+      instances = {};
+      if (!enabled) { if (mapRef) mapRef.triggerRepaint(); return; }
+      feats.forEach(function (f) {
+        var kind = classify(f.properties && f.properties.type);
+        if (!kind) return;
+        getTemplate(kind, function (tmpl) {
+          if (!enabled) return;
+          var obj = tmpl.clone(true);
+          var rotor = null;
+          if (kind === 'wind') {
+            obj.traverse(function (n) { if (n.name && /blade/i.test(n.name)) rotor = n; });
+          }
+          var c = f.geometry.coordinates;
+          var props = f.properties || {};
+          var yawDeg = (props.windDir != null) ? parseFloat(props.windDir)
+                    : (props.azimuth != null) ? parseFloat(props.azimuth) : 0;
+          instances[String(props.id)] = {
+            merc: maplibregl.MercatorCoordinate.fromLngLat([c[0], c[1]], 0),
+            object: obj, rotor: rotor,
+            omega: (kind === 'wind') ? turbineOmega(parseFloat(props.windSpeed)) : 0,
+            angle: 0, yaw: yawDeg * Math.PI / 180, meters: VIS_METERS[kind]
+          };
+          scene.add(obj);
+          if (mapRef) mapRef.triggerRepaint();
+        });
+      });
+    }
+
+    // ── Dart bridge (eski fonksiyonları override) ──────────────────────
+    window.srrpSet3DPlants = function (geojsonStr, en) {
+      var map = window._srrpMap;
+      enabled = !!en;
+      try { var gj = JSON.parse(geojsonStr); feats = (gj && gj.features) ? gj.features : []; }
+      catch (_) { feats = []; }
+      if (!map) return;
+      if (!layerAdded) {
+        try { map.addLayer(customLayer); layerAdded = true; } // onAdd → rebuild
+        catch (e) { console.error('[SRRP-3D] addLayer hata:', e); }
+      } else {
+        rebuild();
+      }
+    };
+    window.srrpSet3DScale = function (s) {
+      userScale = (typeof s === 'number' && s > 0) ? s : 1;
+      if (mapRef) mapRef.triggerRepaint();
+    };
+    // Görünüm modu: 'model' (devasa, uzaktan görünür) | 'realistic' (gerçek ölçek).
+    window.srrpSet3DMode = function (mode) {
+      modeMul = (mode === 'model') ? 4.5 : 1;
+      if (mapRef) mapRef.triggerRepaint();
+    };
+    console.log('[SRRP-3D] three.js custom layer hazır.');
+  })();
+  </script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

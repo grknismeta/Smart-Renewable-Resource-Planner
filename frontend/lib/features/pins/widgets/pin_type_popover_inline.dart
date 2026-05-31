@@ -40,6 +40,10 @@ class PinTypePopoverInline extends StatelessWidget {
 
   final VoidCallback onClose;
 
+  /// 2026-05-31 — Pin edit kartı gibi: header'dan tutup sürükle.
+  final ValueChanged<Offset>? onDragDelta;
+  final VoidCallback? onDragEnd;
+
   const PinTypePopoverInline({
     super.key,
     required this.theme,
@@ -47,6 +51,8 @@ class PinTypePopoverInline extends StatelessWidget {
     required this.coordsLabel,
     required this.onSelect,
     required this.onClose,
+    this.onDragDelta,
+    this.onDragEnd,
   });
 
   @override
@@ -70,41 +76,57 @@ class PinTypePopoverInline extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Header: il/ilçe (baskın) + koordinat (küçük) + close
-            Row(
-              children: [
-                Icon(Icons.place_rounded,
-                    size: 14, color: theme.secondaryTextColor),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    locationLabel.isEmpty ? 'Türkiye dışı' : locationLabel,
-                    style: TextStyle(
-                      color: theme.textColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+            // Header: il/ilçe (baskın) + koordinat (küçük) + close.
+            // Sürükleme kolu — header'dan tutup taşı (pin edit kartı gibi).
+            MouseRegion(
+              cursor: SystemMouseCursors.grab,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanUpdate: onDragDelta == null
+                    ? null
+                    : (d) => onDragDelta!(d.delta),
+                onPanEnd:
+                    onDragEnd == null ? null : (_) => onDragEnd!(),
+                child: Row(
+                  children: [
+                    Icon(Icons.drag_indicator_rounded,
+                        size: 14,
+                        color: theme.secondaryTextColor.withValues(alpha: 0.6)),
+                    const SizedBox(width: 2),
+                    Icon(Icons.place_rounded,
+                        size: 14, color: theme.secondaryTextColor),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        locationLabel.isEmpty ? 'Türkiye dışı' : locationLabel,
+                        style: TextStyle(
+                          color: theme.textColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                    Text(
+                      coordsLabel,
+                      style: TextStyle(
+                        color: theme.secondaryTextColor.withValues(alpha: 0.85),
+                        fontSize: 10,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: onClose,
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 14,
+                        color: theme.secondaryTextColor,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(
-                  coordsLabel,
-                  style: TextStyle(
-                    color: theme.secondaryTextColor.withValues(alpha: 0.85),
-                    fontSize: 10,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-                const SizedBox(width: 4),
-                GestureDetector(
-                  onTap: onClose,
-                  child: Icon(
-                    Icons.close_rounded,
-                    size: 14,
-                    color: theme.secondaryTextColor,
-                  ),
-                ),
-              ],
+              ),
             ),
             const SizedBox(height: 8),
             Text(

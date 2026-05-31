@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:ui' as ui;
 import 'package:provider/provider.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
@@ -147,8 +148,8 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
   bool _choroplethExpanded = true;
   bool _pinExpanded        = true;
   bool _pinVisualExpanded  = true;
-  bool _satelliteExpanded  = false;
-  bool _windExpanded       = true;
+  // 2026-05-31 — "Uydu Katmanları" ve "Rüzgar Partikülleri" bölümleri kaldırıldı
+  // (Bulut Örtüsü + Canlı Rüzgar → 3D Efektler). İlgili expand alanları silindi.
   bool _effectsExpanded    = true;
 
   // 2026-05-17 — Pin görsel stili (gelecek özellik placeholder).
@@ -418,81 +419,78 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                   _pinVisualOpt(1, 'V3 Tipi', Icons.location_on_outlined,
                       Colors.amberAccent,
                       disabled: true, badge: 'YAKINDA'),
-                  _pinVisualOpt(2, '3D Santral', Icons.view_in_ar_outlined,
+                  // 3D Santral: RES→türbin, GES→güneş paneli GLB modeli.
+                  // Web'de aktif; native (mobil) overlay sonraki adımda → 'WEB' rozeti.
+                  // Icon: eski "3D Türbinler" efektinden devralındı (wind_power).
+                  _pinVisualOpt(2, '3D Santral', Icons.wind_power_outlined,
                       Colors.deepPurpleAccent,
-                      disabled: true, badge: 'YAKINDA'),
-                ],
-
-                const SizedBox(height: 10),
-                // ── Uydu Katmanları ───────────────────────────────────
-                _SectionHeader(
-                  title: 'Uydu Katmanları', expanded: _satelliteExpanded, theme: theme,
-                  onToggle: () => setState(() => _satelliteExpanded = !_satelliteExpanded),
-                ),
-                if (_satelliteExpanded) ...[
-                  const SizedBox(height: 6),
-                  // Bulut Örtüsü: Faz 3.4 (2026-04-22) — devre dışı.
-                  // Kök sebepler henüz çözülmedi: telefonda görünmüyor, zoom
-                  // limit uyarısı, yağmur/normal ayrımı yok, legend yok. Demo
-                  // öncesi mobil parity riski büyük → toggle disable + "YAKINDA".
-                  // Detaylı TODO: INBOX "Bulut düzeltme" bölümü.
-                  // Re-enable için `_cloudLayerEnabled = true` yap (dosya başı).
-                  _effectRow('Bulut Örtüsü', Icons.cloud_outlined,
-                      _cloudLayerEnabled && vm.showCloudLayer,
-                      const Color(0xFF90CAF9),
-                      _cloudLayerEnabled ? vm.toggleShowCloudLayer : null,
-                      badge: _cloudLayerEnabled ? 'SAT' : 'YAKINDA',
-                      disabled: !_cloudLayerEnabled),
-                  if (_cloudLayerEnabled && vm.showCloudLayer) ...[
-                    const SizedBox(height: 6),
+                      disabled: !kIsWeb, badge: kIsWeb ? null : 'WEB'),
+                  // 3D Santral seçiliyken model boyut slider'ı.
+                  if (kIsWeb && _pinVisualStyle == 2) ...[
+                    const SizedBox(height: 4),
                     Row(children: [
-                      Icon(Icons.opacity_outlined, size: 12, color: theme.secondaryTextColor),
+                      Icon(Icons.photo_size_select_large_rounded,
+                          size: 12, color: theme.secondaryTextColor),
                       const SizedBox(width: 4),
-                      Text('Şeffaflık', style: TextStyle(color: theme.secondaryTextColor, fontSize: 10)),
+                      Text('Model Boyutu',
+                          style: TextStyle(
+                              color: theme.secondaryTextColor, fontSize: 10)),
                       const Spacer(),
-                      Text('${(vm.cloudOpacity * 100).round()}%',
-                          style: TextStyle(color: theme.textColor, fontSize: 10, fontWeight: FontWeight.w600)),
+                      Text('${vm.threeDPlantScale.toStringAsFixed(1)}×',
+                          style: const TextStyle(
+                              color: Colors.deepPurpleAccent,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600)),
                     ]),
                     SliderTheme(
                       data: SliderThemeData(
                         trackHeight: 2,
-                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-                        activeTrackColor: const Color(0xFF90CAF9),
-                        inactiveTrackColor: theme.secondaryTextColor.withValues(alpha: 0.2),
-                        thumbColor: const Color(0xFF90CAF9),
-                        overlayColor: const Color(0xFF90CAF9).withAlpha(40),
+                        thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 10),
+                        activeTrackColor: Colors.deepPurpleAccent,
+                        inactiveTrackColor:
+                            theme.secondaryTextColor.withValues(alpha: 0.2),
+                        thumbColor: Colors.deepPurpleAccent,
+                        overlayColor: Colors.deepPurpleAccent.withAlpha(40),
                       ),
                       child: Slider(
-                        value: vm.cloudOpacity, min: 0.1, max: 1.0, divisions: 9,
-                        onChanged: vm.setCloudOpacity,
+                        value: vm.threeDPlantScale,
+                        min: 0.5,
+                        max: 2.5,
+                        divisions: 20, // 0.1 adım
+                        onChanged: vm.setThreeDPlantScale,
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Row(children: [
-                        Icon(Icons.info_outline_rounded, size: 10, color: theme.secondaryTextColor.withValues(alpha: 0.6)),
-                        const SizedBox(width: 4),
-                        Expanded(child: Text(
-                          'RainViewer infrared uydu — ~10 dk güncelleme',
-                          style: TextStyle(color: theme.secondaryTextColor.withValues(alpha: 0.6), fontSize: 9),
-                        )),
-                      ]),
-                    ),
+                    // Görünüm modu: Model (devasa, uzaktan görünür) / Gerçekçi.
+                    const SizedBox(height: 2),
+                    Row(children: [
+                      _modeChip('model', 'Model', Icons.view_in_ar_rounded),
+                      const SizedBox(width: 6),
+                      _modeChip('realistic', 'Gerçekçi', Icons.public_rounded),
+                    ]),
                   ],
                 ],
 
+                // NOT (2026-05-31): "Uydu Katmanları" ve "Rüzgar Partikülleri"
+                // bölümleri kaldırıldı; Bulut Örtüsü + Canlı Rüzgar artık
+                // "3D Efektler" altında. (_satelliteExpanded/_windExpanded
+                // alanları geriye uyum için durur, kullanılmıyor.)
                 const SizedBox(height: 10),
-                // ── Rüzgar Partikülleri ───────────────────────────────
+                // ── 3D Efektler ───────────────────────────────────────
                 _SectionHeader(
-                  title: 'Rüzgar Partikülleri', expanded: _windExpanded, theme: theme,
-                  onToggle: () => setState(() => _windExpanded = !_windExpanded),
+                  title: '3D Efektler', expanded: _effectsExpanded, theme: theme,
+                  onToggle: () => setState(() => _effectsExpanded = !_effectsExpanded),
                 ),
-                if (_windExpanded) ...[
+                if (_effectsExpanded) ...[
                   const SizedBox(height: 6),
-                  _effectRow('Canlı Akış', Icons.air_rounded,
+                  // Canlı Rüzgar — gerçek zamanlı rüzgar partikül akışı
+                  // (eski "Canlı Akış"; "Rüzgar Partikülleri" bölümünden taşındı).
+                  _effectRow('Canlı Rüzgar', Icons.air_rounded,
                       vm.showWindParticles, Colors.cyanAccent,
-                      () => vm.toggleWindParticles(!vm.showWindParticles), badge: 'LIVE'),
+                      () => vm.toggleWindParticles(!vm.showWindParticles),
+                      badge: 'LIVE'),
                   if (vm.isWindLoading)
                     Padding(
                       padding: const EdgeInsets.only(left: 36, top: 4),
@@ -505,26 +503,14 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                       child: Text('Rüzgar verisi mevcut değil',
                           style: TextStyle(fontSize: 11, color: Colors.orange.shade300)),
                     ),
-                ],
-
-                const SizedBox(height: 10),
-                // ── 3D Efektler ───────────────────────────────────────
-                _SectionHeader(
-                  title: '3D Efektler', expanded: _effectsExpanded, theme: theme,
-                  onToggle: () => setState(() => _effectsExpanded = !_effectsExpanded),
-                ),
-                if (_effectsExpanded) ...[
-                  const SizedBox(height: 6),
-                  // 3D Türbinler — demo dondurmasında devre dışı.
-                  _effectRow(
-                    '3D Türbinler',
-                    Icons.wind_power_outlined,
-                    _threeDEffectsEnabled && vm.show3DTurbines,
-                    Colors.blueAccent,
-                    _threeDEffectsEnabled ? vm.toggleShow3DTurbines : null,
-                    badge: _threeDEffectsEnabled ? '3D' : 'YAKINDA',
-                    disabled: !_threeDEffectsEnabled,
-                  ),
+                  // Bulut Örtüsü — uydu bulut katmanı (eski "Uydu Katmanları"ndan
+                  // taşındı). Şu an placeholder (devre dışı, _cloudLayerEnabled).
+                  _effectRow('Bulut Örtüsü', Icons.cloud_outlined,
+                      _cloudLayerEnabled && vm.showCloudLayer,
+                      const Color(0xFF90CAF9),
+                      _cloudLayerEnabled ? vm.toggleShowCloudLayer : null,
+                      badge: _cloudLayerEnabled ? 'SAT' : 'YAKINDA',
+                      disabled: !_cloudLayerEnabled),
                   // 3D Arazi — Sprint S2: AWS Terrarium CDN (terrarium PNG).
                   _effectRow(
                     '3D Arazi',
@@ -605,11 +591,10 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                       ),
                     ),
                   ],
-                ],
-
-                // 2026-05-27 (O1): İzohips contour overlay toggle + opacity.
-                const SizedBox(height: 8),
-                Row(children: [
+                  // ── İzohips (Kontur) — "3D Arazi" ile birleştirildi: artık
+                  // 3D Efektler listesinde (2026-05-31). Bağımsız seçilebilir.
+                  const SizedBox(height: 8),
+                  Row(children: [
                   Expanded(
                     child: Text('İzohips (Kontur Çizgileri)',
                         style: TextStyle(color: theme.textColor, fontSize: 12)),
@@ -689,6 +674,7 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                     ),
                   ),
                 ],
+                ], // ← "3D Efektler" (if _effectsExpanded) kapanışı
               ],
             ),
           ),
@@ -779,6 +765,42 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
   }
 
   /// Pin görsel stili seçim satırı (radio benzeri). Disabled olanlar tıklanmaz.
+  /// 3D Santral görünüm modu segment tuşu (Model / Gerçekçi).
+  Widget _modeChip(String mode, String label, IconData icon) {
+    final active = vm.threeDDisplayMode == mode;
+    const accent = Colors.deepPurpleAccent;
+    return Expanded(
+      child: InkWell(
+        onTap: () => vm.setThreeDDisplayMode(mode),
+        borderRadius: BorderRadius.circular(7),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: active ? accent.withValues(alpha: 0.18) : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(
+                color: active ? accent : accent.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon,
+                  size: 12,
+                  color: active ? accent : theme.secondaryTextColor),
+              const SizedBox(width: 4),
+              Text(label,
+                  style: TextStyle(
+                      color: active ? theme.textColor : theme.secondaryTextColor,
+                      fontSize: 11,
+                      fontWeight: active ? FontWeight.w600 : FontWeight.w400)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _pinVisualOpt(
     int value,
     String label,
@@ -791,7 +813,14 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
     return Opacity(
       opacity: disabled ? 0.42 : 1.0,
       child: InkWell(
-        onTap: disabled ? null : () => setState(() => _pinVisualStyle = value),
+        onTap: disabled
+            ? null
+            : () {
+                setState(() => _pinVisualStyle = value);
+                // 3D Santral (value=2) seçili → pinler GLB modeline döner.
+                final want3D = value == 2;
+                if (vm.show3DPlants != want3D) vm.toggleShow3DPlants();
+              },
         borderRadius: BorderRadius.circular(6),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 5),

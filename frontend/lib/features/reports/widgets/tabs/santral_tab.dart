@@ -1407,8 +1407,18 @@ class _ClimateProfile extends StatelessWidget {
               ),
             );
           }
+          // Dar (mobil): dikey dizilim. strip (WeatherStripCard) içinde Column+
+          // Expanded var → dış SizedBox(height:null) ile sınırsız yükseklikte
+          // "non-zero flex unbounded height" çökmesi yapıyordu (web'de
+          // IntrinsicHeight önlüyordu, mobilde değil) → iç içe geçme bug'ı.
+          // BOUNDED yükseklik şart. rose (WindRoseCard) AspectRatio → kendi
+          // boyutlanır, bound gerekmez.
           return Column(
-            children: [strip, const SizedBox(height: 10), rose],
+            children: [
+              SizedBox(height: 132, child: strip),
+              const SizedBox(height: 10),
+              rose,
+            ],
           );
         });
       case 'Hidroelektrik':

@@ -104,21 +104,27 @@ class SARIMAXForecaster:
 
     @staticmethod
     def _build_exog(idx, base_year: int):
-        """Exogenous matrix: [month_sin, month_cos, year_trend] (M-G.1).
+        """Exogenous matrix (M-G.1 + M-G.3, 5 kolon):
+          0. month_sin   — Fourier mevsim
+          1. month_cos   — Fourier mevsim
+          2. year_trend  — lineer (yıl - base_year)
+          3. year_sq     — quadratic (year_trend² / 100, climate change ivmesi)
+          4. co2_norm    — CO₂ ppm proxy (Mauna Loa fit, deterministik signal)
 
-        - month_sin/cos: Fourier mevsim — düz dummy yerine pürüzsüz dönüşüm.
-        - year_trend: lineer trend (yıl - base_year). SARIMAX D=1 trendi siler;
-          exog ile uzun-vade drift'i ayrı kazanırız → forecast yıllar arasında
-          sabit kalmaz.
-
-        Returns: np.ndarray shape (n, 3)
+        D=1 seasonal differencing trend'i siler; exog drift'i geri kazandırır.
+        CO₂ + year² ile hızlanan iklim sinyali (yatırımcı için anlamlı projeksiyon).
+        Returns: np.ndarray shape (n, 5)
         """
+        from app.services.ml_batch_service import get_co2_ppm
         months = np.array([d.month for d in idx])
         years = np.array([d.year - base_year for d in idx], dtype=float)
+        co2 = np.array([get_co2_ppm(d.year, d.month) - 410.0 for d in idx])
         return np.column_stack([
             np.sin(2 * np.pi * months / 12),
             np.cos(2 * np.pi * months / 12),
             years,
+            (years * years) / 100.0,
+            co2 / 50.0,
         ])
 
     def forecast(
@@ -493,6 +499,9 @@ def project_climatology(
     if target_field is None:
         raise ValueError(f"metric geçersiz: {metric}")
 
+    # Climatology — yalnızca son-çare fallback (zorunlu değil; uzun seri varsa
+    # hiç kullanılmaz). Eskiden bulunamayınca raise ediyordu → kaldırıldı.
+    monthly_fallback: Optional[list] = None
     with SystemSessionLocal() as db:
         variants = province_aliases(province)
         row = (
@@ -504,42 +513,41 @@ def project_climatology(
             )
             .first()
         )
-        if not row:
-            raise ValueError(
-                f"Climatology bulunamadı: {province} / {resource}"
-            )
-        monthly: Optional[list] = getattr(row, target_field, None)
-        if not monthly or len(monthly) != 12:
-            raise ValueError(
-                f"Climatology.{target_field} dolu değil ({province})"
-            )
+        if row:
+            mlist = getattr(row, target_field, None)
+            if mlist and len(mlist) == 12:
+                # river_discharge dict formatı [{mean,min,max}, …] → mean.
+                if isinstance(mlist[0], dict):
+                    monthly_fallback = [float(m.get("mean", 0) or 0) for m in mlist]
+                else:
+                    monthly_fallback = [
+                        float(v) if v is not None else 0.0 for v in mlist
+                    ]
 
-    # 2026-05-28 M-F.1: Önce daily-aggregate'tan gerçek 10y aylık seriyi dene.
-    # Daily veri yoksa climatology 12-ay × 5 tekrar fallback'i (eski davranış).
+    # M-E.2: Kaynak önceliği — monthly_climate (20y, ~257 ay) → daily aggregate
+    # (~109 ay) → climatology 12-ay × 5 (son çare). get_monthly_series_best
+    # ilk ikisini yönetir.
     forecaster = SARIMAXForecaster()
+    series: Optional[list] = None
+    start_date: Optional[date] = None
     try:
-        from app.services.ml_batch_service import (
-            get_monthly_series_from_daily, _DAILY_METRIC_COLS,
-        )
-        if metric in _DAILY_METRIC_COLS:
-            daily_series, daily_start = get_monthly_series_from_daily(
-                province, None, metric,
-            )
-            if daily_series and len(daily_series) >= 24:
-                series = daily_series
-                start_date = date(daily_start.year, daily_start.month, 1)
-            else:
-                series = list(monthly) * 5
-                start_date = date.today().replace(day=1).replace(
-                    year=date.today().year - 5)
-        else:
-            series = list(monthly) * 5
-            start_date = date.today().replace(day=1).replace(
-                year=date.today().year - 5)
+        from app.services.ml_batch_service import get_monthly_series_best
+        best_series, best_start = get_monthly_series_best(province, None, metric)
+        if best_series and len(best_series) >= 24 and best_start is not None:
+            series = best_series
+            start_date = date(best_start.year, best_start.month, 1)
     except Exception:
-        series = list(monthly) * 5
+        series = None
+
+    if series is None:
+        if not monthly_fallback:
+            raise ValueError(
+                f"ML serisi bulunamadı: {province} / {resource} / {metric}"
+            )
+        series = list(monthly_fallback) * 5
         start_date = date.today().replace(day=1).replace(
             year=date.today().year - 5)
+
     return forecaster.forecast(
         series=series,
         start_date=start_date,
@@ -762,13 +770,52 @@ def _climatology_fallback(pin, years_ahead: int) -> SarimaxForecast:
 
     capacity_mw = float(getattr(pin, "capacity_mw", 0) or 0)
 
+    # 2026-05-28 FIX: wind için 'discharge' YANLIŞ idi (dict format → float()
+    # hata). Doğru eşleme: solar→sunshine, wind→sunshine (shape proxy; rescale
+    # _flat ezecek), hydro→discharge.
+    metric_by_resource = {
+        "solar": "sunshine",
+        "wind": "sunshine",   # shape için; _rescale_climatology_to_energy
+                              # wind'i flat 1/12'ye ezecek
+        "hydro": "discharge",
+    }
+    primary_metric = metric_by_resource.get(resource, "sunshine")
     try:
         forecast = project_climatology(
             province=pin.city,
             resource=resource,
             years_ahead=years_ahead,
-            metric="sunshine" if resource == "solar" else "discharge",
+            metric=primary_metric,
         )
+    except ValueError as ve:
+        # 2026-05-28: Bazı iller için hydro/wind climatology satırı yok
+        # (örn. HES potansiyeli olmayan iller). Solar shape proxy'sine düş —
+        # _rescale_climatology_to_energy yine kapasite×CF ile doğru kWh ölçekler.
+        logger.info(
+            "Climatology eksik (%s/%s): solar shape proxy'e düşülüyor — %s",
+            pin.city, resource, ve,
+        )
+        try:
+            forecast = project_climatology(
+                province=pin.city,
+                resource="solar",
+                years_ahead=years_ahead,
+                metric="sunshine",
+            )
+        except Exception as e2:
+            logger.warning("Solar proxy de fail (%s): %s", pin.city, e2)
+            return SarimaxForecast(
+                target=f"pin_{pin.id}_kwh",
+                horizon_months=years_ahead * 12,
+                history_months=0,
+                order=(0, 0, 0),
+                seasonal_order=(0, 0, 0, 12),
+                method="no_data",
+                mape=None,
+                points=[],
+                historical=[],
+                notes=[f"Climatology fallback fail: {ve} → {e2}"],
+            )
     except Exception as e:
         logger.warning("Climatology fallback fail (%s): %s", pin.city, e)
         return SarimaxForecast(

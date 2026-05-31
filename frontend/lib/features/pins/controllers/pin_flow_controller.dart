@@ -57,6 +57,9 @@ class PinFlowController extends ChangeNotifier {
   String _province = '';
   String _district = '';
   bool _isResolvingLocation = false;
+  // 2026-05-31 — Çoklu pin: Güneş/Rüzgar kaydından sonra aynı tiple yerleştirme
+  // modunda kal. Null → tekli mod. HES bu modu tetiklemez.
+  String? _repeatType;
 
   // ─── Public getters ─────────────────────────────────────────────────────
 
@@ -68,6 +71,9 @@ class PinFlowController extends ChangeNotifier {
   String get province => _province;
   String get district => _district;
   bool get isResolvingLocation => _isResolvingLocation;
+  /// Çoklu pin modu aktif mi (aynı tip art arda kuruluyor).
+  bool get isMultiPlacing => _repeatType != null;
+  String? get repeatType => _repeatType;
 
   /// True ise pop-up overlay görünür olmalı (mode != idle && != placing).
   bool get hasOverlay =>
@@ -99,6 +105,7 @@ class PinFlowController extends ChangeNotifier {
   void cancelPlacing() {
     if (_mode != PinFlowMode.placing) return;
     _mode = PinFlowMode.idle;
+    _repeatType = null; // çoklu pin modunu bitir
     _deactivateSuitabilityLayers();
     _syncMapClickState();
     notifyListeners();
@@ -111,7 +118,14 @@ class PinFlowController extends ChangeNotifier {
     switch (_mode) {
       case PinFlowMode.placing:
         _point = point;
-        _mode = PinFlowMode.typeSelection;
+        if (_repeatType != null) {
+          // Çoklu pin: tip seçimini atla, aynı tiple doğrudan forma gir.
+          _selectedType = _repeatType;
+          _mode = PinFlowMode.addForm;
+          _activateSuitabilityLayers(_repeatType);
+        } else {
+          _mode = PinFlowMode.typeSelection;
+        }
         _recomputeAnchorFromPoint();
         _fetchReverseGeocode(point);
         _showPreviewPin(point);
@@ -142,6 +156,30 @@ class PinFlowController extends ChangeNotifier {
     _activateSuitabilityLayers(pinType);
     _syncMapClickState();
     notifyListeners();
+  }
+
+  /// Pin BAŞARIYLA kaydedildi (AddPinDialog → onSaved).
+  /// Güneş/Rüzgar ise aynı tiple yerleştirme moduna dön (çoklu kurulum);
+  /// HES ise akışı kapat. Kullanıcı "Santral Kur"/ESC ile çoklu modu bitirir.
+  void onPinAdded() {
+    final t = _selectedType;
+    final isSolarWind = t == 'Güneş Paneli' || t == 'Rüzgar Türbini';
+    if (isSolarWind) {
+      _repeatType = t;
+      _showPreviewPin(null);
+      _activePin = null;
+      _point = null;
+      _screenAnchor = null;
+      _province = '';
+      _district = '';
+      _mode = PinFlowMode.placing; // sonraki tık → aynı tiple addForm
+      _activateSuitabilityLayers(t);
+      _syncMapClickState();
+      notifyListeners();
+    } else {
+      _repeatType = null;
+      close();
+    }
   }
 
   /// Pin tıklaması — detail moduna geç (pinler arası geçiş aynı).
@@ -203,6 +241,7 @@ class PinFlowController extends ChangeNotifier {
     _screenAnchor = null;
     _province = '';
     _district = '';
+    _repeatType = null; // çoklu pin modu da sıfırlanır
     if (wasActive) {
       _deactivateSuitabilityLayers();
     }

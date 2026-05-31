@@ -186,7 +186,11 @@ class _ReportMiniMapState extends State<ReportMiniMap> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(11),
         child: SizedBox(
-          height: widget.height,
+          // 2026-06-01: Web/geniş ekranda harita çok küçük kalıyordu → 1.5×
+          // dikey büyütme. Mobil (dar) olduğu gibi yeterli.
+          height: MediaQuery.of(context).size.width >= 900
+              ? widget.height * 1.5
+              : widget.height,
           child: Stack(
             children: [
               // 2026-05-25 (H3): Harita aktive olduğunda parent

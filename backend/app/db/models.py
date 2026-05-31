@@ -453,6 +453,52 @@ class ThematicTimeseries(SystemBase):
                          server_default=func.now(), onupdate=func.now())
 
 
+# --- UZUN-VADE AYLIK İKLİM (M-E.2, 2026-05-30) ---
+class MonthlyClimate(SystemBase):
+    """20 yıllık il-bazlı aylık iklim serisi (Open-Meteo Archive, 2005→bugün).
+
+    weather_data sadece 2015'ten ve ilçe bazlı; ML trend sinyali için kısa.
+    Bu tablo 81 il için 2005-2026 ayını **tek API çağrısı/il** ile çeker
+    (günlük → aylık lokal toplulaştırma). Tüm metrikler aynı satırda:
+    precip + cloud + radiation + wind + temp → hem M-E.2 (uzun trend) hem
+    M-G.2 (cloud×radiation exog) tek kaynaktan beslenir.
+
+    Granülerlik: aylık, il bazlı (ilçe YOK — ilçe ML günlük aggregate kullanır).
+    Anahtar = (province_name, year, month).
+
+    Kaynak: archive-api.open-meteo.com (ücretsiz, ~1 req/sn).
+    Plan: PLAN-2026-05-28-ML-CLIMATE-PROJECTION.md (M-E.2)
+    """
+    __tablename__ = "monthly_climate"
+    __table_args__ = (
+        UniqueConstraint("province_name", "year", "month",
+                         name="uq_monthly_climate_key"),
+        Index("ix_monthly_climate_lookup", "province_name", "year", "month"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    province_name = Column(String, nullable=False, index=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)   # 1-12
+
+    # Aylık toplulaştırılmış metrikler
+    precipitation_sum = Column(Float, nullable=True)        # ay toplamı (mm)
+    cloud_cover_mean = Column(Float, nullable=True)         # ay ort (%)
+    relative_humidity_mean = Column(Float, nullable=True)   # ay ort (%)
+    shortwave_radiation_sum = Column(Float, nullable=True)  # günlük sum ay ort (MJ/m²)
+    wind_speed_mean = Column(Float, nullable=True)          # ay ort (m/s veya km/h)
+    temperature_mean = Column(Float, nullable=True)         # ay ort (°C)
+    sunshine_hours = Column(Float, nullable=True)           # ay toplamı (saat)
+
+    n_days = Column(Integer, nullable=True)                 # toplulaştırılan gün sayısı
+    source = Column(String, nullable=True, default="open-meteo-archive")
+    computed_at = Column(DateTime(timezone=True),
+                         server_default=func.now(), onupdate=func.now())
+
+
 # --- SCHEDULER META (son çalışma zamanı — "228 dk önce" fix) ---
 class SchedulerMeta(SystemBase):
     """
