@@ -12,7 +12,10 @@
 
 services:
   db:
-    image: postgis/postgis:16-3.4
+    # PG17 — lokal dump PostgreSQL 17 + PostGIS 3.6'dan alındı; major sürüm
+    # eşleşmeli (PG17 archive PG16'ya restore edilemez). PostGIS 3.5 image,
+    # 3.6 dump'ının geometri verisini (WKB, taşınabilir) sorunsuz restore eder.
+    image: postgis/postgis:17-3.5
     container_name: srrp_postgres
     restart: unless-stopped
     environment:
