@@ -99,3 +99,6 @@ backend/data/dem/*
 # Obsidian knowledge vault — yerinde kalır (CLAUDE.md/memory referans veriyor)
 # ama repo'ya gitmez (geliştirme notları, kişisel).
 /docs/
+
+# Deploy transfer arşivleri (repoya girmez)
+*.tar.gz
