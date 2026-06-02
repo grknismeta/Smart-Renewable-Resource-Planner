@@ -17,8 +17,10 @@ class AuthViewModel extends BaseViewModel {
   // ── HESABIM (2026-06-02): mevcut kullanıcı profili ──────────────────────────
   String? _email;
   String? _fullName;
+  bool _hasPassword = true; // 2026-06-03: OAuth kullanıcısı false → "Şifre Belirle"
   String? get email => _email;
   String? get fullName => _fullName;
+  bool get hasPassword => _hasPassword;
   /// Görüntülenecek ad: full_name varsa o, yoksa e-postanın @ öncesi.
   String get displayName {
     if (_fullName != null && _fullName!.trim().isNotEmpty) return _fullName!.trim();
@@ -124,9 +126,29 @@ class AuthViewModel extends BaseViewModel {
       final me = await _apiService.auth.getMe();
       _email = me['email'] as String?;
       _fullName = me['full_name'] as String?;
+      _hasPassword = (me['has_password'] as bool?) ?? true;
       notifyListeners();
     } catch (e) {
       debugPrint('[Auth] fetchMe hatası: $e');
+    }
+  }
+
+  /// OAuth kullanıcısı için ilk parola belirleme (mevcut parola istenmez).
+  Future<void> setPassword(String newPassword) async {
+    if (newPassword.length < 8) {
+      setError('Parola en az 8 karakter olmalı.');
+      throw Exception('Parola en az 8 karakter olmalı.');
+    }
+    setBusy(true);
+    try {
+      await _apiService.auth.setPassword(newPassword);
+      _hasPassword = true; // artık parolası var
+      notifyListeners();
+    } catch (e) {
+      setError(e.toString());
+      rethrow;
+    } finally {
+      setBusy(false);
     }
   }
 

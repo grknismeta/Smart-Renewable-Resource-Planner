@@ -37,9 +37,9 @@ def create_user(db: Session, user: schemas.UserCreate):
 
 def get_or_create_oauth_user(db: Session, email: str, full_name: Optional[str] = None):
     """AUTH-3 (2026-06-01): OAuth (Google/GitHub) ile gelen kullanıcı — e-posta
-    ile eşle; yoksa parolasız oluştur (rastgele kullanılamaz hash → parola
-    login'i imkânsız). full_name boşsa doldur."""
-    import secrets as _secrets
+    ile eşle; yoksa PAROLASIZ oluştur. 2026-06-03: hashed_password=NULL → kullanıcı
+    'Şifre Belirle' ile parola oluşturana kadar parola-login imkânsız;
+    `has_password` False döner (frontend 'set' vs 'change' ayrımı)."""
     user = get_user_by_email(db, email)
     if user:
         if full_name and not user.full_name:
@@ -50,7 +50,7 @@ def get_or_create_oauth_user(db: Session, email: str, full_name: Optional[str] =
     db_user = models.User(
         email=email,
         full_name=(full_name or '').strip() or None,
-        hashed_password=auth.get_password_hash(_secrets.token_urlsafe(32)),
+        hashed_password=None,  # parolasız OAuth kullanıcısı
     )
     try:
         db.add(db_user)

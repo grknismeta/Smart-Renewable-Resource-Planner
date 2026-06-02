@@ -140,6 +140,19 @@ class AuthService extends BaseService {
     throw Exception(_extractDetail(response, 'Profil güncellenemedi.'));
   }
 
+  /// HESABIM (2026-06-03): OAuth kullanıcısı için İLK parola belirleme
+  /// (mevcut parola istemez). POST /users/me/set-password.
+  Future<void> setPassword(String newPassword) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/users/me/set-password'),
+      headers: await getHeaders(),
+      body: json.encode({'new_password': newPassword}),
+    );
+    if (response.statusCode != 204 && response.statusCode != 200) {
+      throw Exception(_extractDetail(response, 'Parola belirlenemedi.'));
+    }
+  }
+
   /// HESABIM: parola değiştirir. Başarı → 204. Hata → backend detail mesajı.
   Future<void> changePassword(String currentPassword, String newPassword) async {
     final response = await http.post(

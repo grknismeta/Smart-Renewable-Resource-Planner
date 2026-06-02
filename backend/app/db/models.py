@@ -12,9 +12,15 @@ class User(UserBase):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     full_name = Column(String, nullable=True)  # 2026-06-01 (AUTH-1): ad soyad
-    hashed_password = Column(String)
+    hashed_password = Column(String, nullable=True)  # OAuth kullanıcısında NULL
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    @property
+    def has_password(self) -> bool:
+        """2026-06-03: Gerçek parolası var mı? OAuth kullanıcısı (NULL) → False →
+        frontend 'Şifre Belirle' gösterir; True → 'Şifre Değiştir' (mevcut+yeni)."""
+        return bool(self.hashed_password)
 
     pins = relationship("Pin", back_populates="owner")
     scenarios = relationship("Scenario", back_populates="owner")

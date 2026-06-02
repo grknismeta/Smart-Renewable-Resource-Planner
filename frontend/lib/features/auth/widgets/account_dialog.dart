@@ -84,19 +84,21 @@ class _AccountDialogState extends State<AccountDialog> {
 
   Future<void> _changePassword() async {
     final auth = Provider.of<AuthViewModel>(context, listen: false);
+    final hasPw = auth.hasPassword; // false → "Şifre Belirle" (mevcut parola yok)
     final cur = _currentPwCtrl.text;
     final neu = _newPwCtrl.text;
     final conf = _confirmPwCtrl.text;
-    if (cur.isEmpty || neu.isEmpty) {
-      _flash('Mevcut ve yeni parolayı girin.', Colors.orange);
+    if (neu.isEmpty || (hasPw && cur.isEmpty)) {
+      _flash(hasPw ? 'Mevcut ve yeni parolayı girin.' : 'Yeni parolayı girin.',
+          Colors.orange);
       return;
     }
     if (neu.length < 8) {
-      _flash('Yeni parola en az 8 karakter olmalı.', Colors.orange);
+      _flash('Parola en az 8 karakter olmalı.', Colors.orange);
       return;
     }
     if (neu != conf) {
-      _flash('Yeni parolalar eşleşmiyor.', Colors.orange);
+      _flash('Parolalar eşleşmiyor.', Colors.orange);
       return;
     }
     setState(() {
@@ -104,11 +106,19 @@ class _AccountDialogState extends State<AccountDialog> {
       _msg = null;
     });
     try {
-      await auth.changePassword(cur, neu);
+      if (hasPw) {
+        await auth.changePassword(cur, neu);
+      } else {
+        await auth.setPassword(neu); // OAuth kullanıcısı ilk parola
+      }
       _currentPwCtrl.clear();
       _newPwCtrl.clear();
       _confirmPwCtrl.clear();
-      _flash('Parola değiştirildi.', Colors.green);
+      _flash(
+          hasPw
+              ? 'Parola değiştirildi.'
+              : 'Parola belirlendi — artık e-posta + parola ile de girebilirsin.',
+          Colors.green);
       if (mounted) setState(() => _showPasswordSection = false);
     } catch (e) {
       _flash(e.toString().replaceAll('Exception:', '').trim(), Colors.redAccent);
@@ -270,7 +280,7 @@ class _AccountDialogState extends State<AccountDialog> {
                             Icon(Icons.key_outlined,
                                 size: 18, color: theme.textColor),
                             const SizedBox(width: 8),
-                            Text('Parola Değiştir',
+                            Text(auth.hasPassword ? 'Parola Değiştir' : 'Şifre Belirle',
                                 style: TextStyle(
                                     color: theme.textColor,
                                     fontWeight: FontWeight.w600)),
@@ -285,13 +295,29 @@ class _AccountDialogState extends State<AccountDialog> {
                       ),
                       if (_showPasswordSection) ...[
                         const SizedBox(height: 10),
-                        _field(_currentPwCtrl, 'Mevcut parola', theme,
-                            icon: Icons.lock_outline, obscure: true),
-                        const SizedBox(height: 10),
-                        _field(_newPwCtrl, 'Yeni parola (en az 8)', theme,
+                        // Mevcut parola yalnız parolası OLAN kullanıcıda istenir.
+                        if (auth.hasPassword) ...[
+                          _field(_currentPwCtrl, 'Mevcut parola', theme,
+                              icon: Icons.lock_outline, obscure: true),
+                          const SizedBox(height: 10),
+                        ] else
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Text(
+                              'Google ile giriş yaptın; e-posta + parola ile de '
+                              'girebilmek için bir parola belirle.',
+                              style: TextStyle(
+                                  color: theme.secondaryTextColor, fontSize: 12),
+                            ),
+                          ),
+                        _field(_newPwCtrl,
+                            auth.hasPassword
+                                ? 'Yeni parola (en az 8)'
+                                : 'Parola (en az 8)',
+                            theme,
                             icon: Icons.lock_reset, obscure: true),
                         const SizedBox(height: 10),
-                        _field(_confirmPwCtrl, 'Yeni parola (tekrar)', theme,
+                        _field(_confirmPwCtrl, 'Parola (tekrar)', theme,
                             icon: Icons.lock_reset, obscure: true),
                         const SizedBox(height: 12),
                         SizedBox(
@@ -311,7 +337,9 @@ class _AccountDialogState extends State<AccountDialog> {
                                     height: 18,
                                     child: CircularProgressIndicator(
                                         strokeWidth: 2, color: Colors.white))
-                                : const Text('Parolayı Güncelle'),
+                                : Text(auth.hasPassword
+                                    ? 'Parolayı Güncelle'
+                                    : 'Parolayı Belirle'),
                           ),
                         ),
                       ],

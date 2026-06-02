@@ -148,6 +148,24 @@ def change_my_password(
     return None
 
 
+@router.post("/me/set-password", status_code=status.HTTP_204_NO_CONTENT)
+def set_my_password(
+    payload: schemas.SetPassword,
+    current_user: models.User = Depends(auth.get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """HESABIM (2026-06-03): Parolası OLMAYAN (OAuth/Google) kullanıcı için İLK
+    parola belirleme — mevcut parola istenmez. Zaten parolası varsa 400
+    (change-password kullanılmalı)."""
+    if current_user.has_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Zaten bir parolanız var. 'Şifre Değiştir'i kullanın.",
+        )
+    crud.update_user_password(db, current_user, payload.new_password)
+    return None
+
+
 @router.post("/auth/google", response_model=schemas.Token)
 def login_with_google(payload: schemas.GoogleAuthRequest, db: Session = Depends(get_db)):
     """AUTH-3 (2026-06-01): Google ID-token ile giriş.

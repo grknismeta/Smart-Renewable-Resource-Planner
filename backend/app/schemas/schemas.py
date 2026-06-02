@@ -48,6 +48,7 @@ class UserResponse(UserBase):
     id: int
     is_active: bool
     created_at: Optional[datetime] = None
+    has_password: bool = True  # 2026-06-03: OAuth kullanıcısı False → "Şifre Belirle"
     class Config:
         from_attributes = True
 
@@ -72,6 +73,20 @@ class PasswordChange(BaseModel):
             raise ValueError("Yeni parola en az 8 karakter olmalı.")
         if len(v) > 72:
             raise ValueError("Yeni parola en fazla 72 karakter olabilir.")
+        return v
+
+# HESABIM (2026-06-03): OAuth kullanıcısı için ilk parola belirleme (mevcut parola
+# istenmez — zaten yok). Yalnız has_password=False kullanıcılarda geçerli.
+class SetPassword(BaseModel):
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate(cls, v: str) -> str:
+        if v is None or len(v) < 8:
+            raise ValueError("Parola en az 8 karakter olmalı.")
+        if len(v) > 72:
+            raise ValueError("Parola en fazla 72 karakter olabilir.")
         return v
 
 # --- EKİPMAN ---

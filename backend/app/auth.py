@@ -36,6 +36,9 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/token")
 
 def verify_password(plain_password, hashed_password):
+    # 2026-06-03: Parolasız (OAuth) kullanıcı → hashed_password NULL → login imkânsız.
+    if not hashed_password:
+        return False
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password):
