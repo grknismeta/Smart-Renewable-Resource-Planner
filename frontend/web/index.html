@@ -1122,9 +1122,19 @@
       // İl-seviyesi (tek token, '|' içermeyen) anahtarların normalize indexi —
       // ilçe anahtarı + düz il anahtarı tutmazsa son çare normalize eşleşme.
       var _provNormIndex = {};
+      // 2026-06-03: İlçe normalize indexi — "il|ilçe" anahtarlarını ASCII-fold +
+      // "İl Merkez"→"Merkez" eşlemesiyle indeksle. GADM ilçe adları (Sivas Merkez,
+      // ASCII vb.) weather_data adıyla (Merkez) birebir tutmuyordu → ilçe değeri
+      // kaybolup il-değerine düşüyordu. Bu indeks o eşleşmeleri kurtarır.
+      var _distNormIndex = {};
       for (var dk in data) {
-        if (dk === '_meta' || dk.indexOf('|') !== -1) continue;
-        _provNormIndex[_srrpNormName(dk)] = data[dk];
+        if (dk === '_meta') continue;
+        if (dk.indexOf('|') === -1) {
+          _provNormIndex[_srrpNormName(dk)] = data[dk];
+        } else {
+          var pp = dk.split('|');
+          _distNormIndex[_srrpNormName(pp[0]) + '|' + _srrpNormName(pp[1])] = data[dk];
+        }
       }
 
       // Her feature'a _cval property ekle (orijinal GeoJSON'ı mutate etmiyoruz, klonluyoruz)
@@ -1140,7 +1150,12 @@
         // normalize edilmiş il adıyla eşleştir (Hakkâri↔Hakkari, â→a vb.).
         // precompute uzun pencerelerde bazı adlar GADM ile birebir tutmuyor;
         // il fallback siyah deliği önler (2026-05-28).
-        var entry = data[compositeKey] || data[n1] || _provNormIndex[_srrpNormName(n1)];
+        // "Sivas Merkez" → "Merkez" (il öneki sıyrılır), sonra ASCII-normalize eşleştir.
+        var n2strip = (n1 && n2.indexOf(n1 + ' ') === 0) ? n2.slice(n1.length + 1) : n2;
+        var entry = data[compositeKey]
+          || _distNormIndex[_srrpNormName(n1) + '|' + _srrpNormName(n2strip)]
+          || _distNormIndex[_srrpNormName(n1) + '|' + _srrpNormName(n2)]
+          || data[n1] || _provNormIndex[_srrpNormName(n1)];
         var val = entry ? entry[mode] : null;
 
         newFeatures.push({
