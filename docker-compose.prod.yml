@@ -51,7 +51,7 @@ services:
     container_name: srrp_backend
     restart: unless-stopped
     # Prod: --reload YOK (dev'e özgü). Görüntüdeki koddan çalışır.
-    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-srrp_admin}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-srrp_db}
       - REDIS_URL=redis://redis:6379/0

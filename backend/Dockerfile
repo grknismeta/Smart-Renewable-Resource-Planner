@@ -18,5 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY backend/ ./backend/
 
-# Run with uvicorn
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Kod `from app.db import ...` (mutlak) kullanıyor → `backend/` cwd'sinden
+# `app.main` olarak çalıştır (lokaldeki gibi). Aksi halde `app` paketi bulunamaz.
+WORKDIR /app/backend
+
+# Run with uvicorn (prod: --reload yok)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
