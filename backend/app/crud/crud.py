@@ -15,7 +15,11 @@ def get_user_by_email(db: Session, email: str):
 
 def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = auth.get_password_hash(user.password)
-    db_user = models.User(email=user.email, hashed_password=hashed_password)
+    db_user = models.User(
+        email=user.email,
+        full_name=(user.full_name or '').strip() or None,
+        hashed_password=hashed_password,
+    )
     
     try:
         db.add(db_user)
@@ -29,6 +33,51 @@ def create_user(db: Session, user: schemas.UserCreate):
         db.rollback()
         print(f"Kullanıcı oluşturulurken hata: {e}")
         return None
+
+
+def get_or_create_oauth_user(db: Session, email: str, full_name: Optional[str] = None):
+    """AUTH-3 (2026-06-01): OAuth (Google/GitHub) ile gelen kullanıcı — e-posta
+    ile eşle; yoksa parolasız oluştur (rastgele kullanılamaz hash → parola
+    login'i imkânsız). full_name boşsa doldur."""
+    import secrets as _secrets
+    user = get_user_by_email(db, email)
+    if user:
+        if full_name and not user.full_name:
+            user.full_name = full_name.strip() or None
+            db.commit()
+            db.refresh(user)
+        return user
+    db_user = models.User(
+        email=email,
+        full_name=(full_name or '').strip() or None,
+        hashed_password=auth.get_password_hash(_secrets.token_urlsafe(32)),
+    )
+    try:
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    except IntegrityError:
+        db.rollback()
+        return get_user_by_email(db, email)  # yarış: araya kayıt girdiyse onu al
+
+
+def update_user_profile(db: Session, user: models.User, full_name: Optional[str]):
+    """HESABIM (2026-06-02): kullanıcının ad-soyad'ını günceller.
+    full_name boş/None ise alan temizlenir (None)."""
+    user.full_name = (full_name or '').strip() or None
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_user_password(db: Session, user: models.User, new_password: str):
+    """HESABIM (2026-06-02): kullanıcının parolasını yeniden hash'leyip kaydeder.
+    Çağıran taraf mevcut parolayı zaten doğrulamış olmalı."""
+    user.hashed_password = auth.get_password_hash(new_password)
+    db.commit()
+    db.refresh(user)
+    return user
 
 # --- EKİPMAN (System DB) İŞLEMLERİ ---
 

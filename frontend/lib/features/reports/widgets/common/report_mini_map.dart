@@ -79,6 +79,22 @@ class ReportMiniMap extends StatefulWidget {
   final String? districtProvinceFilter;
   final String? districtRegionFilter;
 
+  /// 2026-06-01: Birden fazla ilin ilçe sınırı (Senaryo haritası — pin'ler
+  /// farklı illerde olabilir). Verilirse her il için ayrı fetch + merge.
+  /// `districtProvinceFilter`/`districtRegionFilter`'dan önceliklidir.
+  final List<String>? districtProvinceFilters;
+
+  /// 2026-06-01: 81 il (province) sınırını da çiz. İlçe çizgilerinden daha
+  /// kalın/parlak — hiyerarşi okunur (il > ilçe). `/geo/borders/provinces`
+  /// (~hafif, 81 feature). Senaryo + İl Analizi haritalarında il konteksti.
+  final bool showProvinceBorders;
+
+  /// 2026-06-01: Verilirse `MapOptions.maxBounds` DOĞRUDAN bu olur (pan limiti),
+  /// kamera-fit ise yine `bounds`'a göre yapılır. Senaryo: maxBounds=Türkiye
+  /// geneli (her yere pan + tüm Türkiye görünür) ama kamera pin'lere fit.
+  /// `bounds`'tan türetilen dar maxBounds yerine geçer.
+  final ml.LngLatBounds? maxBoundsOverride;
+
   /// 2026-05-27 (N4): Marker boyut profili. `compact` raporlardaki yeni
   /// davranış (3-4 px sabit). `large` eski davranış (skor bazlı 5-12 px).
   final ReportMarkerSize markerSize;
@@ -94,6 +110,9 @@ class ReportMiniMap extends StatefulWidget {
     this.onMarkerTap,
     this.districtProvinceFilter,
     this.districtRegionFilter,
+    this.districtProvinceFilters,
+    this.showProvinceBorders = false,
+    this.maxBoundsOverride,
     this.markerSize = ReportMarkerSize.large,
   });
 
@@ -123,6 +142,7 @@ class _ReportMiniMapState extends State<ReportMiniMap> {
   /// boş list bırakılır.
   List<Map<String, dynamic>> _districtFeatures = const [];
   String? _districtFilterKey; // değişimi tespit etmek için
+  bool _provinceLoaded = false; // 2026-06-01: 81 il sınırı bir kez yüklenir
 
   static const _styleUrl =
       'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
@@ -132,36 +152,13 @@ class _ReportMiniMapState extends State<ReportMiniMap> {
 
   @override
   Widget build(BuildContext context) {
-    // F4 + N4: bounds verilmişse padding ile genişletip MapOptions.maxBounds'a
-    // ver. `boundsPaddingRatio` öncelikli — bounds size'ın yüzdesi (büyük
-    // bölgede daha geniş, küçük ilçede daha dar).
-    ml.LngLatBounds? paddedBounds;
-    if (widget.bounds != null) {
-      final b = widget.bounds!;
-      double padDeg;
-      if (widget.boundsPaddingRatio != null) {
-        final spanLat = b.latitudeNorth.toDouble() - b.latitudeSouth.toDouble();
-        final spanLon = b.longitudeEast.toDouble() - b.longitudeWest.toDouble();
-        final span = math.max(spanLat, spanLon);
-        padDeg = span * widget.boundsPaddingRatio!;
-      } else {
-        padDeg = widget.boundsPadding;
-      }
-      paddedBounds = ml.LngLatBounds(
-        longitudeWest: b.longitudeWest - padDeg,
-        latitudeSouth: b.latitudeSouth - padDeg,
-        longitudeEast: b.longitudeEast + padDeg,
-        latitudeNorth: b.latitudeNorth + padDeg,
-      );
-    }
+    // F4 + N4: bounds → padding ile genişletilip MapOptions.maxBounds.
+    // 2026-06-01: hesap `_paddedBoundsFor`'a taşındı (didUpdateWidget'te
+    // "harita yeniden yaratılacak mı" tespiti için de kullanılıyor).
+    final paddedBounds = _paddedBoundsFor(widget);
     // Bounds değişimi MapOptions yeniden oluşturma ile yansır; ValueKey ile
     // widget'ı yeniden yarat (native init-time maxBounds için zorunlu).
-    final mapKey = ValueKey(
-      paddedBounds == null
-          ? 'no-bounds'
-          : '${paddedBounds.longitudeWest},${paddedBounds.latitudeSouth},'
-              '${paddedBounds.longitudeEast},${paddedBounds.latitudeNorth}',
-    );
+    final mapKey = ValueKey(_mapKeyStr(paddedBounds));
 
     // 2026-05-25 (G2): Container border rengi aktiflik durumuna göre değişir.
     final borderColor = _active
@@ -224,8 +221,18 @@ class _ReportMiniMapState extends State<ReportMiniMap> {
                   onStyleLoaded: (s) {
                     _style = s;
                     _ready = true;
-                    // N4: önce ilçe polygonları (altta), sonra marker'lar (üstte).
-                    _renderDistrictBoundary().then((_) => _renderMarkers());
+                    // 2026-06-01: Bu BRAND-NEW bir style (harita yeni yaratıldı
+                    // ya da ilk kez yüklendi) → üstünde hiçbir katman yok.
+                    // Cache key'lerini sıfırla ki render fonksiyonları "zaten
+                    // çizili" sanıp erken return etmesin (bölge değişince mavi
+                    // ilçe sınırlarının kaybolma bug'ının kökü buydu).
+                    _districtFilterKey = null;
+                    _provinceLoaded = false;
+                    // Katman sırası (alttan üste): il sınırı → ilçe sınırı →
+                    // marker. Sıralı await ile üst katman altta kalmaz.
+                    _renderProvinceBoundary()
+                        .then((_) => _renderDistrictBoundary())
+                        .then((_) => _renderMarkers());
                     _fitToMarkers();
                   },
                   // 2026-05-25 (H4): onMarkerTap olmasa bile event dinleniyor —
@@ -347,18 +354,68 @@ class _ReportMiniMapState extends State<ReportMiniMap> {
   void didUpdateWidget(covariant ReportMiniMap old) {
     super.didUpdateWidget(old);
     if (!_ready) return;
+
+    // 2026-06-01: paddedBounds (=mapKey) değişirse MapLibreMap ValueKey ile
+    // YENİDEN YARATILIR → yeni style'da onStyleLoaded zaten her şeyi (il+ilçe+
+    // marker+fit) sıfırdan çizer. Bu durumda burada TEKRAR çizmek ölmekte olan
+    // style'a/yeni style'a yarış (race) yaratır ve katmanları bozar
+    // (bölge değişince sınırların kaybolma bug'ı). O yüzden recreation varsa çık.
+    final recreated =
+        _mapKeyStr(_paddedBoundsFor(old)) != _mapKeyStr(_paddedBoundsFor(widget));
+    if (recreated) return;
+
+    // Buradan itibaren: harita PERSIST ediyor (ör. Senaryo — maxBounds sabit
+    // Türkiye, senaryo değişse de mapKey aynı). Sadece değişen delta'yı çiz.
     final filterChanged = old.districtProvinceFilter != widget.districtProvinceFilter ||
-        old.districtRegionFilter != widget.districtRegionFilter;
-    if (filterChanged) {
-      _renderDistrictBoundary();
-    }
-    if (old.markers != widget.markers ||
-        old.bounds != widget.bounds ||
-        old.markerSize != widget.markerSize) {
+        old.districtRegionFilter != widget.districtRegionFilter ||
+        !_sameList(old.districtProvinceFilters, widget.districtProvinceFilters);
+    final bordersChanged =
+        filterChanged || old.showProvinceBorders != widget.showProvinceBorders;
+    final boundsChanged = old.bounds != widget.bounds;
+    final markersChanged =
+        old.markers != widget.markers || old.markerSize != widget.markerSize;
+
+    if (bordersChanged) {
+      // Sınır katmanı değiştiyse il→ilçe→marker sırasıyla yeniden çiz ki
+      // marker en üstte kalsın (sıralı await; aksi halde ilçe fetch'i geç
+      // dönüp marker'ın üstüne biner).
+      _renderProvinceBoundary()
+          .then((_) => _renderDistrictBoundary())
+          .then((_) => _renderMarkers());
+      if (boundsChanged) _fitToMarkers();
+    } else if (markersChanged || boundsChanged) {
       _renderMarkers();
       _fitToMarkers();
     }
   }
+
+  /// maxBoundsOverride > bounds+padding → MapOptions.maxBounds. build ve
+  /// didUpdateWidget (recreation tespiti) aynı hesabı kullanır.
+  ml.LngLatBounds? _paddedBoundsFor(ReportMiniMap w) {
+    if (w.maxBoundsOverride != null) return w.maxBoundsOverride;
+    if (w.bounds == null) return null;
+    final b = w.bounds!;
+    double padDeg;
+    if (w.boundsPaddingRatio != null) {
+      final spanLat = b.latitudeNorth.toDouble() - b.latitudeSouth.toDouble();
+      final spanLon = b.longitudeEast.toDouble() - b.longitudeWest.toDouble();
+      padDeg = math.max(spanLat, spanLon) * w.boundsPaddingRatio!;
+    } else {
+      padDeg = w.boundsPadding;
+    }
+    return ml.LngLatBounds(
+      longitudeWest: b.longitudeWest - padDeg,
+      latitudeSouth: b.latitudeSouth - padDeg,
+      longitudeEast: b.longitudeEast + padDeg,
+      latitudeNorth: b.latitudeNorth + padDeg,
+    );
+  }
+
+  /// paddedBounds → mapKey string (ValueKey + recreation karşılaştırması).
+  String _mapKeyStr(ml.LngLatBounds? pb) => pb == null
+      ? 'no-bounds'
+      : '${pb.longitudeWest},${pb.latitudeSouth},'
+          '${pb.longitudeEast},${pb.latitudeNorth}';
 
   String _colorFor(double score) {
     if (widget.fixedColor != null) {
@@ -477,6 +534,13 @@ class _ReportMiniMapState extends State<ReportMiniMap> {
   /// Bu sayede kullanıcı küçük şehir merkezi noktasına denk getirmeden
   /// ilçenin herhangi bir yerine tıklayarak seçim yapabilir.
   void _onMapEvent(ml.MapEvent event) {
+    // B8 (2026-06-01): native'de MapOptions.maxBounds zorlanmıyor → SADECE pan
+    // BİTİNCE (CameraIdle) bounds dışındaysa yumuşakça geri dön. (Sürekli clamp
+    // ekranı titretiyordu.) Web maplibre-gl kendi zorladığı için sadece native.
+    if (event is ml.MapEventCameraIdle) {
+      if (!kIsWeb) _clampToBounds();
+      return;
+    }
     if (event is! ml.MapEventClick) return;
     if (widget.markers.isEmpty) return;
     final lon = event.point.lng.toDouble();
@@ -522,6 +586,60 @@ class _ReportMiniMapState extends State<ReportMiniMap> {
         _selectedMarker = null;
       }
     });
+  }
+
+  bool _clamping = false; // B8: moveCamera re-entrancy kilidi
+
+  /// B8: native'de GÖRÜNÜR bölge maxBounds (paddedBounds) dışına taşarsa kamerayı
+  /// anında (moveCamera) içeri iter — kenar bazlı (komşu alan kenardan sızmasın),
+  /// web duvarı gibi. paddedBounds = bölge/il bbox veya Senaryo'da Türkiye.
+  void _clampToBounds() {
+    if (_clamping) return;
+    final map = _map;
+    final pb = _paddedBoundsFor(widget);
+    if (map == null || pb == null) return;
+    ml.LngLatBounds vis;
+    ml.MapCamera? cam;
+    try {
+      vis = map.getVisibleRegionSync();
+      cam = map.camera;
+    } catch (_) {
+      return;
+    }
+    if (cam == null) return;
+    final tw = pb.longitudeWest.toDouble();
+    final te = pb.longitudeEast.toDouble();
+    final ts = pb.latitudeSouth.toDouble();
+    final tn = pb.latitudeNorth.toDouble();
+    final vw = vis.longitudeWest.toDouble();
+    final ve = vis.longitudeEast.toDouble();
+    final vs = vis.latitudeSouth.toDouble();
+    final vn = vis.latitudeNorth.toDouble();
+    double dLon = 0, dLat = 0;
+    if ((ve - vw) >= (te - tw)) {
+      dLon = ((tw + te) / 2) - ((vw + ve) / 2);
+    } else if (vw < tw) {
+      dLon = tw - vw;
+    } else if (ve > te) {
+      dLon = te - ve;
+    }
+    if ((vn - vs) >= (tn - ts)) {
+      dLat = ((ts + tn) / 2) - ((vs + vn) / 2);
+    } else if (vs < ts) {
+      dLat = ts - vs;
+    } else if (vn > tn) {
+      dLat = tn - vn;
+    }
+    if (dLon.abs() < 1e-5 && dLat.abs() < 1e-5) return; // içeride
+    _clamping = true;
+    final c = cam.center;
+    map
+        .animateCamera(
+          center: ml.Position(c.lng.toDouble() + dLon, c.lat.toDouble() + dLat),
+          zoom: cam.zoom,
+          nativeDuration: const Duration(milliseconds: 350),
+        )
+        .whenComplete(() => _clamping = false);
   }
 
   /// ASCII fold helper — "Beşiktaş" → "Besiktas".
@@ -601,11 +719,18 @@ class _ReportMiniMapState extends State<ReportMiniMap> {
     final style = _style;
     if (style == null) return;
 
-    // Filter yoksa: eski layer'ları temizle ve çık
-    final hasFilter = (widget.districtProvinceFilter ?? '').isNotEmpty ||
-        (widget.districtRegionFilter ?? '').isNotEmpty;
-    final filterKey =
-        '${widget.districtProvinceFilter ?? ''}|${widget.districtRegionFilter ?? ''}';
+    // Etkin il listesi: districtProvinceFilters (çok-il) > districtProvinceFilter
+    // (tek-il) > districtRegionFilter (bölge).
+    final provinces = (widget.districtProvinceFilters ?? const <String>[])
+        .where((p) => p.trim().isNotEmpty)
+        .toList();
+    final singleProvince = (widget.districtProvinceFilter ?? '').trim();
+    final region = (widget.districtRegionFilter ?? '').trim();
+    final hasFilter =
+        provinces.isNotEmpty || singleProvince.isNotEmpty || region.isNotEmpty;
+    final filterKey = provinces.isNotEmpty
+        ? 'P:${(provinces.toList()..sort()).join(',')}'
+        : 'S:$singleProvince|R:$region';
 
     // Aynı filter ise yeniden yükleme
     if (filterKey == _districtFilterKey && hasFilter) return;
@@ -624,34 +749,41 @@ class _ReportMiniMapState extends State<ReportMiniMap> {
 
     if (!hasFilter) return;
 
-    // Endpoint URL'ini oluştur
-    final params = <String, String>{};
-    if ((widget.districtProvinceFilter ?? '').isNotEmpty) {
-      params['province'] = widget.districtProvinceFilter!;
+    // Çekilecek URL listesi (çok-il → her il için ayrı istek, sonra merge).
+    final base = '${BaseService.webApiBase}/geo/borders/districts';
+    final urls = <String>[];
+    if (provinces.isNotEmpty) {
+      for (final p in provinces) {
+        urls.add('$base?province=${Uri.encodeComponent(p)}');
+      }
+    } else if (singleProvince.isNotEmpty) {
+      urls.add('$base?province=${Uri.encodeComponent(singleProvince)}');
+    } else {
+      urls.add('$base?region=${Uri.encodeComponent(region)}');
     }
-    if ((widget.districtRegionFilter ?? '').isNotEmpty) {
-      params['region'] = widget.districtRegionFilter!;
-    }
-    final qs = params.entries
-        .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
-        .join('&');
-    final url = '${BaseService.webApiBase}/geo/borders/districts?$qs';
 
     try {
-      final resp = await http.get(Uri.parse(url));
-      if (resp.statusCode != 200) {
-        debugPrint('[ReportMiniMap] district fetch ${resp.statusCode}: $url');
-        return;
+      final merged = <Map<String, dynamic>>[];
+      for (final url in urls) {
+        final resp = await http.get(Uri.parse(url));
+        if (resp.statusCode != 200) {
+          debugPrint('[ReportMiniMap] district fetch ${resp.statusCode}: $url');
+          continue;
+        }
+        final decoded = jsonDecode(resp.body) as Map<String, dynamic>;
+        final features = (decoded['features'] as List? ?? const [])
+            .cast<Map<String, dynamic>>();
+        merged.addAll(features);
       }
-      final decoded = jsonDecode(resp.body) as Map<String, dynamic>;
-      final features = (decoded['features'] as List? ?? const [])
-          .cast<Map<String, dynamic>>();
-      _districtFeatures = features;
+      if (merged.isEmpty) return;
+      _districtFeatures = merged;
+      final mergedJson =
+          jsonEncode({'type': 'FeatureCollection', 'features': merged});
 
       // GeoJSON'u source'a yaz
       await style.addSource(ml.GeoJsonSource(
         id: 'rmm-dist-src',
-        data: resp.body,
+        data: mergedJson,
       ));
       // Fill katmanı — çok hafif (subtle)
       await style.addLayer(
@@ -664,24 +796,81 @@ class _ReportMiniMapState extends State<ReportMiniMap> {
           },
         ),
       );
-      // Line katmanı — daha belirgin
+      // Line katmanı — ilçe (ince). İl sınırı (rmm-prov-line) daha kalın/parlak
+      // olduğu için hiyerarşi okunur (il > ilçe). A4: koyu basemap'te net ton.
       await style.addLayer(
         ml.LineStyleLayer(
           id: 'rmm-dist-line',
           sourceId: 'rmm-dist-src',
           paint: {
-            'line-color': '#3B82F6',
-            'line-width': 1.2,
-            'line-opacity': 0.55,
+            'line-color': '#60A5FA',
+            'line-width': 1.3,
+            'line-opacity': 0.75,
           },
         ),
       );
       debugPrint(
-        '[ReportMiniMap] ${features.length} ilçe polygonu yüklendi ($url)',
+        '[ReportMiniMap] ${merged.length} ilçe polygonu yüklendi (${urls.length} istek)',
       );
     } catch (e) {
       debugPrint('[ReportMiniMap] district render hatası: $e');
     }
+  }
+
+  /// 2026-06-01: 81 il (province) sınırını çiz — `/geo/borders/provinces`.
+  /// İlçe çizgisinden kalın/parlak (hiyerarşi: il > ilçe). `showProvinceBorders`
+  /// kapalıysa varsa temizler. Bir kez yüklenir (`_provinceLoaded`).
+  Future<void> _renderProvinceBoundary() async {
+    final style = _style;
+    if (style == null) return;
+
+    if (!widget.showProvinceBorders) {
+      try {
+        await style.removeLayer('rmm-prov-line');
+      } catch (_) {}
+      try {
+        await style.removeSource('rmm-prov-src');
+      } catch (_) {}
+      _provinceLoaded = false;
+      return;
+    }
+    if (_provinceLoaded) return;
+
+    final url = '${BaseService.webApiBase}/geo/borders/provinces';
+    try {
+      final resp = await http.get(Uri.parse(url));
+      if (resp.statusCode != 200) {
+        debugPrint('[ReportMiniMap] province fetch ${resp.statusCode}: $url');
+        return;
+      }
+      await style.addSource(ml.GeoJsonSource(id: 'rmm-prov-src', data: resp.body));
+      await style.addLayer(
+        ml.LineStyleLayer(
+          id: 'rmm-prov-line',
+          sourceId: 'rmm-prov-src',
+          paint: {
+            'line-color': '#93C5FD',
+            'line-width': 2.4,
+            'line-opacity': 0.9,
+          },
+        ),
+      );
+      _provinceLoaded = true;
+      debugPrint('[ReportMiniMap] 81 il sınırı yüklendi');
+    } catch (e) {
+      debugPrint('[ReportMiniMap] province render hatası: $e');
+    }
+  }
+
+  /// İki String listesinin eşitliğini sırayla karşılaştırır (didUpdateWidget).
+  static bool _sameList(List<String>? a, List<String>? b) {
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   /// Marker'lara göre kamerayı ortalar + uygun zoom hesaplar.

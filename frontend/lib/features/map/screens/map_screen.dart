@@ -32,6 +32,11 @@ import 'package:frontend/features/pins/controllers/pin_flow_controller.dart';
 import 'package:frontend/features/pins/widgets/pin_flow_overlay.dart';
 
 
+/// 2026-06-01: Native rüzgar partikül overlay'i (CPU CustomPaint) Windy tarzı
+/// GPU akışıyla yarışamadığı için native'de DEVRE DIŞI (web-only). Gelecekte
+/// native GPU partikül (shader/platform channel) eklenirse `true` yapılır.
+const bool _kNativeWindParticles = false;
+
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
 
@@ -144,12 +149,16 @@ class _MapScreenState extends State<MapScreen> {
                 onPinTap: (Pin pin) => _showPinDialog(pin),
               ),
 
-              // Rüzgar parçacık animasyonu — sadece native'de (web JS canvas kullanır)
-              if (!kIsWeb && mapViewModel.showWindParticles)
+              // Rüzgar parçacık animasyonu — native CPU CustomPaint, Windy GPU
+              // akışıyla yarışamıyor ("birkaç nokta") → 2026-06-01 native'de
+              // DEVRE DIŞI (web-only; Canlı Rüzgar toggle'ı da 'WEB' rozetli).
+              // `_kNativeWindParticles` ileride native GPU partikül gelince true.
+              if (_kNativeWindParticles && !kIsWeb && mapViewModel.showWindParticles)
                 Positioned.fill(
                   child: WindParticleOverlay(
                     vectors: mapViewModel.windVectors,
                     active: mapViewModel.showWindParticles,
+                    quality: mapViewModel.windQuality,
                   ),
                 ),
 

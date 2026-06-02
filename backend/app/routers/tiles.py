@@ -2,7 +2,7 @@ import asyncio
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Path, Request
 from fastapi.responses import Response
 from sqlalchemy import text
 from app.core.logger import logger
@@ -163,6 +163,37 @@ def _fetch_combined_tile(z: int, x: int, y: int) -> Optional[bytes]:
     finally:
         db.close()
     return b"".join(parts) if parts else None
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: GET /api/v1/tiles/tilejson.json
+# 2026-06-01 (B5 native): maplibre Flutter (android) VectorSource yalnızca `url`
+# (TileJSON) kabul ediyor — `tiles[]` ve data-URI desteklenmiyor. Bu endpoint
+# TileJSON döndürür; `tiles` URL'i isteğin host'undan türetilir (telefonun
+# eriştiği IP/host otomatik doğru olur, localhost sorununu da hafifletir).
+# ---------------------------------------------------------------------------
+@router.get("/tilejson.json")
+async def get_tilejson(request: Request, sl: str | None = None):
+    # 2026-06-01 (B5 native): native'de 3 ayrı VectorSource (hydro/restricted/
+    # energy) aynı .pbf URL'ini eş zamanlı isteyince maplibre/OkHttp duplicate
+    # stream'leri iptal ediyordu (stream was reset: CANCEL → tile hiç yüklenmiyor).
+    # `sl` query param tile URL'ine eklenir → her source'un tile URL'i AYRI olur,
+    # çakışma kalkar. .pbf endpoint param'ı yok sayar (aynı combined tile döner).
+    base = str(request.base_url).rstrip("/")
+    suffix = f"?sl={sl}" if sl else ""
+    return {
+        "tilejson": "2.2.0",
+        "name": "srrp-mvt",
+        "scheme": "xyz",
+        "tiles": [f"{base}/api/v1/tiles/{{z}}/{{x}}/{{y}}.pbf{suffix}"],
+        "minzoom": 6,
+        "maxzoom": 18,
+        "vector_layers": [
+            {"id": "hydro", "fields": {"feature_type": "String"}},
+            {"id": "restricted", "fields": {"feature_type": "String"}},
+            {"id": "energy", "fields": {}},
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------

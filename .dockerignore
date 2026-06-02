@@ -1,0 +1,33 @@
+# Docker build context dışı tutulacaklar (build hızı + sır sızdırmama)
+.git
+.gitignore
+.env
+*.log
+
+# Python
+**/__pycache__/
+**/*.pyc
+backend/venv/
+backend/.venv/
+.venv/
+backend/.pytest_cache/
+backend/.idea/
+
+# Flutter — build çıktıları + diğer platformlar (web build için gereksiz)
+frontend/build/
+frontend/.dart_tool/
+frontend/.idea/
+frontend/android/
+frontend/ios/
+frontend/windows/
+frontend/linux/
+frontend/macos/
+
+# Backend veri (3.5GB gis_osm_* + DEM vb.) — image'a GİRMEZ.
+# Sınır dosyaları (data/vector: ~47MB geojson+gadm) runtime'da VOLUME ile bağlanır
+# (docker-compose.prod.yml). Büyük gis_osm_* zaten PostGIS'e import edilmiş (pg_dump).
+backend/data/
+
+# Doküm, arşiv
+docs/
+_arsiv/

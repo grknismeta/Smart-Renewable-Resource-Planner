@@ -365,6 +365,8 @@ class _PotentialView extends StatelessWidget {
               // geniş — kullanıcı seçili ile odaklı kalır.
               boundsPaddingRatio: 0.20,
               districtProvinceFilter: province,
+              // 2026-06-01: ilçe sınırlarına ek olarak il (province) sınırı da.
+              showProvinceBorders: true,
               markerSize: ReportMarkerSize.compact,
               onMarkerTap: (m) {
                 // Marker label → DistrictScore (isim üzerinden eşle)

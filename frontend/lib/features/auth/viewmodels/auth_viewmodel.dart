@@ -14,6 +14,19 @@ class AuthViewModel extends BaseViewModel {
 
   bool? get isLoggedIn => _isLoggedIn;
 
+  // ── HESABIM (2026-06-02): mevcut kullanıcı profili ──────────────────────────
+  String? _email;
+  String? _fullName;
+  String? get email => _email;
+  String? get fullName => _fullName;
+  /// Görüntülenecek ad: full_name varsa o, yoksa e-postanın @ öncesi.
+  String get displayName {
+    if (_fullName != null && _fullName!.trim().isNotEmpty) return _fullName!.trim();
+    final e = _email ?? '';
+    final at = e.indexOf('@');
+    return at > 0 ? e.substring(0, at) : (e.isEmpty ? 'Kullanıcı' : e);
+  }
+
   AuthViewModel(this._apiService, this._storageService) {
     _checkLoginStatus();
   }
@@ -65,15 +78,83 @@ class AuthViewModel extends BaseViewModel {
     }
   }
 
+  // ── Google ile giriş (AUTH-3) ───────────────────────────────────────────────
+  Future<void> googleLogin(String idToken) async {
+    setBusy(true);
+    try {
+      await _apiService.auth.googleLogin(idToken);
+      _isLoggedIn = true;
+      notifyListeners();
+    } catch (e) {
+      _isLoggedIn = false;
+      setError(e.toString());
+      notifyListeners();
+      rethrow;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // ── Kayıt ──────────────────────────────────────────────────────────────────
-  Future<void> register(String email, String password) async {
+  Future<void> register(String email, String password, {String? fullName}) async {
+    if (password.length < 8) {
+      setError('Parola en az 8 karakter olmalı.');
+      throw Exception('Parola en az 8 karakter olmalı.');
+    }
     if (password.length > 72) {
       setError('Parola en fazla 72 karakter olabilir.');
       throw Exception('Parola en fazla 72 karakter olabilir.');
     }
     setBusy(true);
     try {
-      await _apiService.auth.register(email, password);
+      await _apiService.auth.register(email, password, fullName: fullName);
+    } catch (e) {
+      setError(e.toString());
+      rethrow;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ── HESABIM (2026-06-02) ────────────────────────────────────────────────────
+
+  /// Backend /users/me'den profil bilgilerini çeker ve state'e yazar.
+  Future<void> fetchMe() async {
+    try {
+      final me = await _apiService.auth.getMe();
+      _email = me['email'] as String?;
+      _fullName = me['full_name'] as String?;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[Auth] fetchMe hatası: $e');
+    }
+  }
+
+  /// Ad-soyad günceller (PATCH /users/me).
+  Future<void> updateName(String? fullName) async {
+    setBusy(true);
+    try {
+      final me = await _apiService.auth.updateProfile(fullName: fullName);
+      _email = me['email'] as String?;
+      _fullName = me['full_name'] as String?;
+      notifyListeners();
+    } catch (e) {
+      setError(e.toString());
+      rethrow;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /// Parola değiştirir. Min-8 ön kontrolü + backend doğrulaması.
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    if (newPassword.length < 8) {
+      setError('Yeni parola en az 8 karakter olmalı.');
+      throw Exception('Yeni parola en az 8 karakter olmalı.');
+    }
+    setBusy(true);
+    try {
+      await _apiService.auth.changePassword(currentPassword, newPassword);
     } catch (e) {
       setError(e.toString());
       rethrow;
@@ -86,6 +167,8 @@ class AuthViewModel extends BaseViewModel {
   Future<void> logout() async {
     await _storageService.deleteToken();
     _isLoggedIn = false;
+    _email = null;
+    _fullName = null;
     notifyListeners();
   }
 }

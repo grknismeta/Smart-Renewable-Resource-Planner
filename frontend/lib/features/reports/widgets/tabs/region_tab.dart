@@ -49,9 +49,18 @@ class RegionTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 2026-06-01: Genel Bakış'tan gelen bölge (pendingRegionId) İLK seçim olsun.
+    // Eskiden init() koşulsuz ilk bölgeyi (Marmara) yüklüyordu; landing'den gelen
+    // bölge _RegionBody'de postFrame ile seçiliyordu → iki yarışan _loadRegion
+    // (Marmara default + Ege pending), Marmara fetch'i sonra dönüp seçimi eziyordu.
+    // Pending'i doğrudan init'e vererek default Marmara yükü hiç oluşmaz.
+    // (Burada consume ETME — _RegionBody tüketir; ayrıca tab canlıyken yeniden
+    // yönlendirmeleri de o yönetir.)
+    final pending = context.read<ReportNavController>().pendingRegionId;
     return ChangeNotifierProvider(
       create: (ctx) =>
-          RegionViewModel(Provider.of<ApiService>(ctx, listen: false))..init(),
+          RegionViewModel(Provider.of<ApiService>(ctx, listen: false))
+            ..init(initialRegionId: pending),
       child: const _RegionBody(),
     );
   }

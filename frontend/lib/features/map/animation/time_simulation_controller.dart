@@ -170,11 +170,19 @@ class TimeSimulationController extends ChangeNotifier {
   void setInterval(String iv) {
     if (_interval == iv) return;
     _interval = iv;
-    // Saatlik mod max 30 gün — kullanıcı eski aralıkta kalmasın
+    // Saatlik mod: (1) veri aralığına hizala — boş fetch ("veri bulunamadı")
+    // önlenir, (2) max 30 gün DAHİL → Load tuşu griye dönmesin.
+    // 2026-06-01 (B6 #1): eski clamp `end-30 gün` span=31 üretiyordu → `span>30`
+    // validasyonu hata veriyor, Yükle griye dönüyordu (off-by-one). `end-29 gün`
+    // = 30 gün dahil → geçerli.
     if (iv == 'hourly') {
+      if (_dataHourlyMax != null) _endDate = _dataHourlyMax!;
+      if (_dataHourlyMin != null && _startDate.isBefore(_dataHourlyMin!)) {
+        _startDate = _dataHourlyMin!;
+      }
       final span = _endDate.difference(_startDate).inDays + 1;
       if (span > 30) {
-        _startDate = _endDate.subtract(const Duration(days: 30));
+        _startDate = _endDate.subtract(const Duration(days: 29)); // 30 gün dahil
       }
     }
     notifyListeners();

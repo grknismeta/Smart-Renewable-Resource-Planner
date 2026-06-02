@@ -249,20 +249,23 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
             vm.mlProjectionPanelOpen,
             globeActive ? null : vm.toggleMlProjectionPanel,
           ),
-          // Aşama I — PostGIS MVT vektör katmanları (3 toggle)
+          // Aşama I — PostGIS MVT vektör katmanları.
+          // 2026-06-01 (B5): maplibre 0.2.2 native MVT (VectorSource) render'ı
+          // kırılgan — tile istekleri iptal oluyor, katman çizilmiyor. Native'de
+          // (telefon+tablet+iOS) "Yakında" ile KAPALI; web'de tam çalışır.
           _toolButton(
-            'Su Kaynakları',
+            kIsWeb ? 'Su Kaynakları' : 'Su Kaynakları (Yakında)',
             Icons.water_drop_rounded,
             Colors.lightBlueAccent,
             vm.showHydroLayer,
-            globeActive ? null : vm.toggleHydroLayer,
+            (!kIsWeb || globeActive) ? null : vm.toggleHydroLayer,
           ),
           _toolButton(
-            'Yasaklı Bölgeler',
+            kIsWeb ? 'Yasaklı Bölgeler' : 'Yasaklı Bölgeler (Yakında)',
             Icons.block_rounded,
             Colors.redAccent,
             vm.showRestrictedZoneLayer,
-            globeActive ? null : vm.toggleRestrictedZoneLayer,
+            (!kIsWeb || globeActive) ? null : vm.toggleRestrictedZoneLayer,
           ),
           // 2026-05-17 — 'İletim Hatları' butonu kaldırıldı (pin sistemi
           // refactor sırasında kullanıcı isteğiyle UI'dan çıkarıldı). VM
@@ -485,19 +488,26 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                 ),
                 if (_effectsExpanded) ...[
                   const SizedBox(height: 6),
-                  // Canlı Rüzgar — gerçek zamanlı rüzgar partikül akışı
-                  // (eski "Canlı Akış"; "Rüzgar Partikülleri" bölümünden taşındı).
+                  // Canlı Rüzgar — gerçek zamanlı rüzgar partikül akışı.
+                  // 2026-06-01 (C1/C2): native Flutter CustomPaint (CPU) Windy
+                  // tarzı GPU partikül akışıyla yarışamıyor (her çizgi tek tek,
+                  // JNI projeksiyon) → telefonda "birkaç nokta" kalıyor. Web zaten
+                  // WebGL JS (Windy mantığı). Native'de "WEB" + disabled. Gerçek
+                  // native GPU partikül → deploy sonrası (shader/platform channel).
                   _effectRow('Canlı Rüzgar', Icons.air_rounded,
-                      vm.showWindParticles, Colors.cyanAccent,
-                      () => vm.toggleWindParticles(!vm.showWindParticles),
-                      badge: 'LIVE'),
-                  if (vm.isWindLoading)
+                      kIsWeb && vm.showWindParticles, Colors.cyanAccent,
+                      kIsWeb
+                          ? () => vm.toggleWindParticles(!vm.showWindParticles)
+                          : null,
+                      badge: kIsWeb ? 'LIVE' : 'WEB',
+                      disabled: !kIsWeb),
+                  if (kIsWeb && vm.isWindLoading)
                     Padding(
                       padding: const EdgeInsets.only(left: 36, top: 4),
                       child: Text('Rüzgar verisi yükleniyor…',
                           style: TextStyle(fontSize: 11, color: theme.secondaryTextColor)),
                     ),
-                  if (vm.showWindParticles && vm.windDataEmpty && !vm.isWindLoading)
+                  if (kIsWeb && vm.showWindParticles && vm.windDataEmpty && !vm.isWindLoading)
                     Padding(
                       padding: const EdgeInsets.only(left: 36, top: 4),
                       child: Text('Rüzgar verisi mevcut değil',
@@ -512,18 +522,22 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                       badge: _cloudLayerEnabled ? 'SAT' : 'YAKINDA',
                       disabled: !_cloudLayerEnabled),
                   // 3D Arazi — Sprint S2: AWS Terrarium CDN (terrarium PNG).
+                  // 2026-06-01 (B7): maplibre 0.2.2 native'de gerçek terrain
+                  // (setTerrain) yok → native'de "YAKINDA" + disabled. Web'de tam.
                   _effectRow(
                     '3D Arazi',
                     Icons.terrain_outlined,
-                    _threeDEffectsEnabled && vm.show3DTerrain,
+                    (_threeDEffectsEnabled && kIsWeb) && vm.show3DTerrain,
                     Colors.teal,
-                    _threeDEffectsEnabled ? vm.toggleShow3DTerrain : null,
-                    badge: _threeDEffectsEnabled ? 'DEM' : 'YAKINDA',
-                    disabled: !_threeDEffectsEnabled,
+                    (_threeDEffectsEnabled && kIsWeb)
+                        ? vm.toggleShow3DTerrain
+                        : null,
+                    badge: (_threeDEffectsEnabled && kIsWeb) ? 'DEM' : 'WEB',
+                    disabled: !(_threeDEffectsEnabled && kIsWeb),
                   ),
                   // 2026-05-17 S2 — Exaggeration slider: terrain aktifken
                   // dağların ne kadar abartılı görüneceğini ayarlar.
-                  if (_threeDEffectsEnabled && vm.show3DTerrain) ...[
+                  if (_threeDEffectsEnabled && kIsWeb && vm.show3DTerrain) ...[
                     const SizedBox(height: 4),
                     Row(children: [
                       Icon(Icons.height, size: 12, color: theme.secondaryTextColor),
@@ -642,23 +656,27 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
                     ),
                   ),
                   // O2: Kaynak seçici — OpenTopoMap (raster) vs kendi MVT.
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Row(
-                      children: [
-                        Text('Kaynak',
-                            style: TextStyle(
-                                color: theme.secondaryTextColor,
-                                fontSize: 11)),
-                        const Spacer(),
-                        _ContourSourceToggle(
-                          value: vm.contourSource,
-                          onChanged: vm.setContourSource,
-                          theme: theme,
-                        ),
-                      ],
+                  // 2026-06-01 (B10): native'de "Kendi" (self MVT) render edilmiyor
+                  // (native her zaman OpenTopoMap çiziyor) → seçici yanıltıcıydı
+                  // ("kendi yapınca değişmiyor"). Sadece WEB'de göster.
+                  if (kIsWeb)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(
+                        children: [
+                          Text('Kaynak',
+                              style: TextStyle(
+                                  color: theme.secondaryTextColor,
+                                  fontSize: 11)),
+                          const Spacer(),
+                          _ContourSourceToggle(
+                            value: vm.contourSource,
+                            onChanged: vm.setContourSource,
+                            theme: theme,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                   // O1.5/O2: Attribution chip — kaynağa göre.
                   Padding(
                     padding: const EdgeInsets.only(top: 4, bottom: 4),

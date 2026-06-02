@@ -17,7 +17,13 @@ class BaseService {
     if (kIsWeb) {
       try {
         final host = Uri.base.host; // window.location.hostname
-        if (host.isNotEmpty) return 'http://$host:8000';
+        // 2026-06-02 (deploy): DEV (localhost/127.0.0.1) → backend ayrı portta
+        // (8000). PROD → same-origin `/api` (Caddy reverse proxy backend'e
+        // yönlendirir). Böylece HTTPS sitede mixed-content olmaz, port gerekmez.
+        if (host == 'localhost' || host == '127.0.0.1' || host.isEmpty) {
+          return 'http://${host.isEmpty ? '127.0.0.1' : host}:8000';
+        }
+        return '${Uri.base.origin}/api';
       } catch (_) {}
     }
     return 'http://127.0.0.1:8000';

@@ -92,13 +92,18 @@ class SARIMAXForecaster:
     AUTO_MAX_Q = 2
     AUTO_MAX_D = 2
 
-    def __init__(self, seasonal_period: int = 12):
+    def __init__(self, seasonal_period: int = 12, use_auto_arima: bool = True):
         if not _SARIMAX_OK:
             raise RuntimeError(
                 f"statsmodels yüklü değil: {_SARIMAX_IMPORT_ERROR}. "
                 "Çalıştır: pip install statsmodels pmdarima"
             )
         self.seasonal_period = seasonal_period
+        # 2026-06-02: auto_arima (pmdarima stepwise) tek seri için ~saniyeler;
+        # BATCH'te (binlerce seri) saatlerce sürüyordu. use_auto_arima=False →
+        # sabit (1,1,1)(1,1,1,12) order kullan (~100× hızlı, climate serisi için
+        # makul). Canlı tek-istek (project_climatology) True bırakır.
+        self.use_auto_arima = use_auto_arima
 
     # ── Public API ──────────────────────────────────────────────────────────
 
@@ -274,7 +279,7 @@ class SARIMAXForecaster:
         self, ts: "pd.Series",
     ) -> Tuple[Tuple[int, int, int], Tuple[int, int, int, int], str]:
         """auto_arima yüklüyse onunla, yoksa makul default ile order seç."""
-        if _PMDARIMA_OK:
+        if _PMDARIMA_OK and self.use_auto_arima:
             try:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
@@ -496,13 +501,17 @@ def project_climatology(
         "discharge": "monthly_river_discharge",
     }
     target_field = field_map.get(metric)
-    if target_field is None:
+    # 2026-06-02 (B/#1): "wind" climatology JSON'unda yok; monthly_climate
+    # (wind_speed_mean) + daily aggregate'ten get_monthly_series_best ile gelir.
+    # Bu yüzden wind için climatology fallback ATLANIR (raise etme).
+    if target_field is None and metric != "wind":
         raise ValueError(f"metric geçersiz: {metric}")
 
     # Climatology — yalnızca son-çare fallback (zorunlu değil; uzun seri varsa
     # hiç kullanılmaz). Eskiden bulunamayınca raise ediyordu → kaldırıldı.
     monthly_fallback: Optional[list] = None
-    with SystemSessionLocal() as db:
+    if target_field:
+      with SystemSessionLocal() as db:
         variants = province_aliases(province)
         row = (
             db.query(Climatology)
@@ -548,12 +557,24 @@ def project_climatology(
         start_date = date.today().replace(day=1).replace(
             year=date.today().year - 5)
 
-    return forecaster.forecast(
+    fc = forecaster.forecast(
         series=series,
         start_date=start_date,
         horizon_months=years_ahead * 12,
         target_label=f"{province}_{resource}_{metric}",
     )
+    # 2026-06-02: Bu metriklerin (sunshine/precipitation/cloud/discharge/wind)
+    # hepsi fiziksel olarak NEGATİF OLAMAZ. SARIMAX ekstrapolasyonu nadiren
+    # negatif üretebiliyor (ör. düşük yağış aylarında −13 mm) → grafik yanlış
+    # görünüyor. Tahmin noktalarını [0, ∞) aralığına kıstır.
+    for p in fc.points:
+        if p.value is not None:
+            p.value = max(0.0, p.value)
+        if getattr(p, "lower", None) is not None:
+            p.lower = max(0.0, p.lower)
+        if getattr(p, "upper", None) is not None:
+            p.upper = max(0.0, p.upper)
+    return fc
 
 
 # ─── Pin Finansal Projeksiyon (M-C) ──────────────────────────────────────────

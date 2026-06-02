@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
 import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
+import 'package:frontend/features/auth/widgets/google_sign_in_button.dart';
 
 /// Sağ üstten açılan Auth paneli — Giriş ↔ Kayıt geçişli.
 /// [embedded] = true ise mobil sayfada doğrudan gömülü kullanılır (backdrop yok).
@@ -36,12 +39,20 @@ class _AuthDropdownState extends State<AuthDropdown>
   late final PageController _pageController;
   late int _currentPage;
 
+  final _nameCtrl = TextEditingController(); // AUTH-1: ad soyad (kayıt)
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   final _emailFocus = FocusNode();
 
   String? _errorMessage;
+
+  // AUTH-3: Google ile giriş. Web'de meta tag'teki client_id kullanılır; mobilde
+  // platform client'ı (sonra eklenecek). Giriş tamamlanınca onCurrentUserChanged.
+  final GoogleSignIn _googleSignIn =
+      GoogleSignIn(scopes: const ['email', 'profile']);
+  StreamSubscription<GoogleSignInAccount?>? _googleSub;
+  bool _googleBusy = false;
 
   @override
   void initState() {
@@ -66,6 +77,9 @@ class _AuthDropdownState extends State<AuthDropdown>
     );
     _slideController.forward();
 
+    // AUTH-3: Google giriş tamamlanınca (web buton / mobil signIn) tetiklenir.
+    _googleSub = _googleSignIn.onCurrentUserChanged.listen(_onGoogleUser);
+
     // Otomatik focus
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _emailFocus.requestFocus();
@@ -74,13 +88,43 @@ class _AuthDropdownState extends State<AuthDropdown>
 
   @override
   void dispose() {
+    _googleSub?.cancel();
     _slideController.dispose();
     _pageController.dispose();
+    _nameCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     _emailFocus.dispose();
     super.dispose();
+  }
+
+  /// AUTH-3: Google hesabı seçilince idToken'ı backend'e gönderir.
+  Future<void> _onGoogleUser(GoogleSignInAccount? account) async {
+    if (account == null || _googleBusy) return;
+    _googleBusy = true;
+    try {
+      final googleAuth = await account.authentication;
+      final idToken = googleAuth.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        if (mounted) {
+          setState(() => _errorMessage = 'Google kimlik doğrulaması alınamadı.');
+        }
+        return;
+      }
+      if (!mounted) return;
+      final auth = Provider.of<AuthViewModel>(context, listen: false);
+      await auth.googleLogin(idToken);
+      if (mounted) widget.onAuthSuccess();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage =
+            'Google girişi başarısız: '
+            '${e.toString().replaceAll('Exception:', '').trim()}');
+      }
+    } finally {
+      _googleBusy = false;
+    }
   }
 
   void _switchPage(int page) {
@@ -104,11 +148,16 @@ class _AuthDropdownState extends State<AuthDropdown>
       if (_currentPage == 0) {
         await auth.login(email, password);
       } else {
+        if (password.length < 8) {
+          setState(() => _errorMessage = 'Parola en az 8 karakter olmalı.');
+          return;
+        }
         if (password != _confirmCtrl.text.trim()) {
           setState(() => _errorMessage = 'Şifreler eşleşmiyor.');
           return;
         }
-        await auth.register(email, password);
+        await auth.register(email, password,
+            fullName: _nameCtrl.text.trim());
         await auth.login(email, password);
       }
       if (mounted) widget.onAuthSuccess();
@@ -231,7 +280,9 @@ class _AuthDropdownState extends State<AuthDropdown>
                   // Form sayfaları
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 250),
-                    height: _currentPage == 0 ? 230 : 290,
+                    // AUTH-3: Google bölümü (veya + buton) + kayıtta Ad Soyad
+                    // alanı eklendi → yükseklikler büyütüldü (içerik kırpılmasın).
+                    height: _currentPage == 0 ? 340 : 430,
                     child: PageView(
                       controller: _pageController,
                       onPageChanged: (i) => setState(() => _currentPage = i),
@@ -306,6 +357,26 @@ class _AuthDropdownState extends State<AuthDropdown>
     );
   }
 
+  /// AUTH-3: "veya" ayırıcı + Google ile giriş butonu (her iki formda).
+  Widget _googleSection(bool isDark) {
+    final faint = isDark ? Colors.white38 : Colors.black38;
+    return Column(
+      children: [
+        const SizedBox(height: 14),
+        Row(children: [
+          Expanded(child: Divider(color: faint.withValues(alpha: 0.3))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text('veya', style: TextStyle(color: faint, fontSize: 11)),
+          ),
+          Expanded(child: Divider(color: faint.withValues(alpha: 0.3))),
+        ]),
+        const SizedBox(height: 10),
+        GoogleSignInButton(googleSignIn: _googleSignIn),
+      ],
+    );
+  }
+
   Widget _buildLoginForm(bool isDark) {
     return Consumer<AuthViewModel>(
       builder: (context, auth, _) => SingleChildScrollView(
@@ -320,11 +391,14 @@ class _AuthDropdownState extends State<AuthDropdown>
                 isPassword: true, onSubmit: (_) => _submit()),
             const SizedBox(height: 24),
             _submitBtn(auth, 'Giriş Yap', const Color(0xFF3B82F6)),
-            const SizedBox(height: 10),
+            _googleSection(isDark),
+            const SizedBox(height: 6),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: () {},
+                // AUTH-2 (parola sıfırlama) backend/SMTP hazır olunca bağlanacak.
+                onPressed: () => setState(() =>
+                    _errorMessage = 'Parola sıfırlama yakında eklenecek.'),
                 child: Text('Şifremi Unuttum',
                     style: TextStyle(
                       color: isDark ? Colors.white30 : Colors.black38,
@@ -343,16 +417,20 @@ class _AuthDropdownState extends State<AuthDropdown>
       builder: (context, auth, _) => SingleChildScrollView(
         child: Column(
           children: [
+            _field(_nameCtrl, 'Ad Soyad', Icons.person_outline, isDark),
+            const SizedBox(height: 14),
             _field(_emailCtrl, 'E-posta', Icons.email_outlined, isDark,
                 keyboardType: TextInputType.emailAddress),
             const SizedBox(height: 14),
-            _field(_passwordCtrl, 'Şifre', Icons.lock_outline, isDark,
+            _field(_passwordCtrl, 'Şifre (en az 8 karakter)', Icons.lock_outline,
+                isDark,
                 isPassword: true),
             const SizedBox(height: 14),
             _field(_confirmCtrl, 'Şifre Tekrar', Icons.lock_reset, isDark,
                 isPassword: true, onSubmit: (_) => _submit()),
             const SizedBox(height: 24),
             _submitBtn(auth, 'Kayıt Ol', const Color(0xFF22C55E)),
+            _googleSection(isDark),
           ],
         ),
       ),

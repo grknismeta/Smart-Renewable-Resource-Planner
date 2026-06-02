@@ -16,6 +16,9 @@ dependencies:
   # --- Ağ ---
   http: ^1.6.0
 
+  # --- Auth (AUTH-3: Google ile giriş) ---
+  google_sign_in: ^6.2.2
+
   # --- Harita ---
   latlong2: ^0.9.1  # Pin dialog ve coğrafi hesaplamalar için LatLng tipi
   maplibre: ^0.2.2

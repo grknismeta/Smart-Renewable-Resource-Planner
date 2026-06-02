@@ -324,6 +324,11 @@ def select_best_monthly_forecast(
     """
     from app.services.ml_sarimax_service import SARIMAXForecaster
 
+    # 2026-06-02: BATCH'te auto_arima KAPALI (sabit order) → ~100× hızlı.
+    # Tek seri için auto_arima saniyeler sürüyordu; binlerce seride saatler.
+    def _fc():
+        return SARIMAXForecaster(use_auto_arima=False)
+
     # Holdout: son 12 ay (yeterliyse)
     has_holdout = len(series) >= 24
     train = series[:-12] if has_holdout else series
@@ -335,7 +340,7 @@ def select_best_monthly_forecast(
     sarimax_holdout_mape: Optional[float] = None
     if has_holdout:
         try:
-            f = SARIMAXForecaster().forecast(
+            f = _fc().forecast(
                 series=train, start_date=start_date,
                 horizon_months=12, target_label=label,
             )
@@ -376,7 +381,7 @@ def select_best_monthly_forecast(
 
     if best_method == "sarimax":
         try:
-            f = SARIMAXForecaster().forecast(
+            f = _fc().forecast(
                 series=series, start_date=start_date,
                 horizon_months=horizon_months, target_label=label,
             )

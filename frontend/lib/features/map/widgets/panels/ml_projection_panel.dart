@@ -54,10 +54,12 @@ class _MlProjectionPanelState extends State<MlProjectionPanel> {
   /// Mevcut (year, month) çiftinin global ay indeksi (0-based).
   int get _monthIndex => (_year - _minYear) * 12 + (_month - 1);
 
+  // 2026-06-02 (B): Tüm metrikler artık il+ilçe seviyesinde (monthly_climate +
+  // weather_data). wind = GERÇEK rüzgar hızı (eski cloud/precip proxy değil, ML-2
+  // çözümü). hydro 2026-06-01'de (ML-3) çıkarıldı.
   static const _resourceMetrics = <String, List<MapEntry<String, String>>>{
     'solar': [MapEntry('sunshine', 'Güneşlenme'), MapEntry('cloud', 'Bulutluluk')],
-    'wind': [MapEntry('cloud', 'Bulutluluk'), MapEntry('precipitation', 'Yağış')],
-    'hydro': [MapEntry('discharge', 'Nehir Debisi'), MapEntry('precipitation', 'Yağış')],
+    'wind': [MapEntry('wind', 'Rüzgar Hızı'), MapEntry('precipitation', 'Yağış')],
   };
 
   static const _scenarios = <MapEntry<String, String>>[
@@ -94,13 +96,16 @@ class _MlProjectionPanelState extends State<MlProjectionPanel> {
     await _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool animating = false}) async {
     if (!mounted) return;
     final seq = ++_seq;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    // Animasyonda spinner'ı her ay aç/kapa ETME (titreme + render gecikmesi).
+    if (!animating) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final api = context.read<ApiService>();
       // M-F: level=district → ilçe seviyesi (varsa) + il fallback.
@@ -147,17 +152,27 @@ class _MlProjectionPanelState extends State<MlProjectionPanel> {
       return;
     }
     setState(() => _playing = true);
-    // M-H.4: aylık adımlama (350ms — 10y × 12 ay × 350ms ≈ 42 sn full döngü)
-    _ticker = Timer.periodic(const Duration(milliseconds: 350), (_) {
-      if (!mounted) return;
+    _playLoop();
+  }
+
+  /// 2026-06-02 (ML anim fix): KENDİ-HIZINI-AYARLAYAN oynatma döngüsü.
+  /// Eski hal: sabit 350ms Timer her ay yeni fetch başlatıyordu; choropleth
+  /// fetch'i 350ms'den uzun sürünce `_seq` guard'ı önceki ayı İPTAL ediyordu →
+  /// o ayların rengi hiç render edilmiyordu (Tem→Eki 2027 gibi "donma").
+  /// Yeni hal: her ayın renklenmesini AWAIT et, sonra kısa bekle, sonra ilerle.
+  /// Böylece her ay mutlaka render edilir; akıcı + atlama yok.
+  Future<void> _playLoop() async {
+    while (mounted && _playing) {
       var nextIdx = _monthIndex + 1;
       if (nextIdx >= _totalMonths) nextIdx = 0;
       setState(() {
         _year = _minYear + nextIdx ~/ 12;
         _month = (nextIdx % 12) + 1;
       });
-      _load();
-    });
+      await _load(animating: true); // bu ayın choropleth'i render edilene kadar bekle
+      if (!mounted || !_playing) break;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
   }
 
   @override
@@ -218,9 +233,8 @@ class _MlProjectionPanelState extends State<MlProjectionPanel> {
               const SizedBox(width: 6),
               _chip('Wind', _resource == 'wind', () => _setResource('wind'),
                   const Color(0xFF3B82F6)),
-              const SizedBox(width: 6),
-              _chip('Hydro', _resource == 'hydro', () => _setResource('hydro'),
-                  const Color(0xFF06B6D4)),
+              // 2026-06-01 (ML-3): Hydro ML projeksiyondan çıkarıldı (kullanıcı
+              // kararı — hidro verisi ML'de sunulmayacak).
             ],
           ),
           const SizedBox(height: 6),
@@ -400,6 +414,7 @@ class _MlProjectionPanelState extends State<MlProjectionPanel> {
       case 'sunshine': return 'Güneşlenme (MJ/m²/gün)';
       case 'cloud': return 'Bulutluluk (%)';
       case 'precipitation': return 'Yağış (mm/ay)';
+      case 'wind': return 'Rüzgar Hızı (m/s)';
       case 'discharge': return 'Nehir Debisi (m³/s)';
       default: return m;
     }

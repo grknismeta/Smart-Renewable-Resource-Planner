@@ -137,7 +137,7 @@ def project_province_endpoint(
     ),
     metric: str = Query(
         "sunshine",
-        regex="^(sunshine|precipitation|cloud|discharge)$",
+        regex="^(sunshine|precipitation|cloud|discharge|wind)$",
         description="Climatology aylık metriği",
     ),
 ):
@@ -193,7 +193,7 @@ def scenario_province_endpoint(
     ),
     metric: str = Query(
         "sunshine",
-        regex="^(sunshine|precipitation|cloud|discharge)$",
+        regex="^(sunshine|precipitation|cloud|discharge|wind)$",
     ),
 ):
     """İl climatology SARIMAX baseline'ı + RCP4.5 + RCP8.5 senaryoları.
@@ -297,7 +297,7 @@ def ml_choropleth(
     if cached:
         return cached
 
-    valid_metrics = {"sunshine", "precipitation", "cloud", "discharge"}
+    valid_metrics = {"sunshine", "precipitation", "cloud", "discharge", "wind"}
     if metric not in valid_metrics:
         raise HTTPException(status_code=400, detail=f"metric geçersiz: {metric}")
 

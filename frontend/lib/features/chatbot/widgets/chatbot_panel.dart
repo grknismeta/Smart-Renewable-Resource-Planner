@@ -215,8 +215,11 @@ class _ChatbotPanelState extends State<ChatbotPanel> {
   Widget _welcome(ThemeViewModel theme) {
     return Padding(
       padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      // 2026-06-01: Küçük panel yüksekliğinde (mobil) içerik taşıyordu
+      // (RenderFlex overflow) → kaydırılabilir yap.
+      child: SingleChildScrollView(
+        child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(
             Icons.auto_awesome_rounded,
@@ -246,6 +249,7 @@ class _ChatbotPanelState extends State<ChatbotPanel> {
           _suggestionChip('Manisa\'nın güneş skorunu söyle', theme),
           _suggestionChip('10 MW rüzgar + 5 MW güneş kursak getirisi ne olur?', theme),
         ],
+        ),
       ),
     );
   }

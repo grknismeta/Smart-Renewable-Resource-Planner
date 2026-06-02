@@ -11,6 +11,7 @@ class User(UserBase):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
+    full_name = Column(String, nullable=True)  # 2026-06-01 (AUTH-1): ad soyad
     hashed_password = Column(String)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -334,6 +335,12 @@ class MlForecast(SystemBase):
             "scope", "province_name", "district_name", "resource",
             "metric", "scenario", "year", "month",
             name="uq_ml_forecast_key",
+            # 2026-06-02 (ML-1 fix): PG varsayılanı NULL'ları DISTINCT sayar →
+            # il-scope satırları (district_name NULL) on_conflict ile asla
+            # tekilleşmiyordu → her precompute koşusu il satırlarını TEKRAR
+            # ekliyordu (kirlilik). NULLS NOT DISTINCT (PG15+) ile NULL'lar eşit
+            # sayılır → upsert il satırlarında da çalışır.
+            postgresql_nulls_not_distinct=True,
         ),
         # Choropleth sorgusu: belirli metrik+senaryo+yıl için tüm iller
         Index("ix_ml_forecast_choropleth",

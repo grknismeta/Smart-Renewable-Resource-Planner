@@ -1,0 +1,23 @@
+# SRRP — Caddy reverse proxy + statik frontend + OTOMATİK HTTPS (2026-06-02)
+#
+# Caddy, srrp-app.com için Let's Encrypt sertifikasını otomatik alır ve yeniler
+# (DNS droplet'e bakıyor + 80/443 açık olmalı). nginx+certbot dansı gerekmez.
+#
+#   /api/*  → backend:8000  (/api prefix'i soyulur → backend /users/... görür)
+#   /*      → /srv (Flutter web build); bilinmeyen path → index.html (SPA routing)
+
+srrp-app.com, www.srrp-app.com {
+	encode gzip zstd
+	root * /srv
+
+	# Backend API — handle_path /api prefix'ini otomatik soyar
+	handle_path /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Flutter SPA — statik dosyalar; eşleşmeyen yol index.html'e düşer
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}

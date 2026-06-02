@@ -45,6 +45,11 @@ backend/turkey_districts_*BACKUP*.json
 backend/turkey_districts_part*.json
 backend/reference_coords.sql
 
+# DB dump / yedek (deploy transfer dosyaları — repoya GİTMEZ, büyük + veri)
+*.dump
+*.backup
+srrp_db.dump
+
 # Debug
 git_files.txt
 

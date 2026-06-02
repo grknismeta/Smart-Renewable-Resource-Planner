@@ -72,23 +72,35 @@ def _distinct_locations_daily(db, only_province: bool, province_filter):
         q = q.filter(WeatherData.province_name.in_(province_aliases(province_filter)))
     rows = q.distinct().all()
 
+    # 2026-06-02 (B): her lokasyon için HEM solar HEM wind resource emit edilir
+    # (DAILY_RESOURCE_METRICS iki resource'u da besler). Önceden sadece "solar"
+    # vardı → wind metrikleri (ve cloud/precip/ilçe) hiç hesaplanmıyordu.
+    resources = ("solar", "wind")
     out = []
     provinces_seen = set()
     if not only_province:
-        # İlçe satırları (1003 kombinasyon)
+        # İlçe satırları
         for p, d in rows:
-            out.append((p, d, "solar"))
+            for res in resources:
+                out.append((p, d, res))
             provinces_seen.add(p)
     else:
         provinces_seen = {p for p, _ in rows}
     # Her il için sentetik (province, None) — il-seviyesi forecast
     for p in sorted(provinces_seen):
-        out.append((p, None, "solar"))
+        for res in resources:
+            out.append((p, None, res))
     return out
 
-# Daily mode: hangi resource hangi metric'i besler
+# Daily mode: hangi resource hangi metric'i besler (2026-06-02 B genişletme).
+# Tümü monthly_climate (il, 20y) + weather_data (ilçe, daily) ile beslenir →
+# il VE ilçe seviyesinde tam kapsama. Önceden yalnız sunshine vardı → diğer
+# tüm metrik/ilçe kombinasyonları MOR (veri yok) görünüyordu.
+#   solar → sunshine (radyasyon), cloud (bulutluluk)
+#   wind  → wind (gerçek rüzgar hızı — ML-2 çözümü), precipitation (yağış)
 DAILY_RESOURCE_METRICS = {
-    "solar": ["sunshine"],  # weather_data shortwave_radiation_sum
+    "solar": ["sunshine", "cloud"],
+    "wind": ["wind", "precipitation"],
 }
 
 
@@ -102,6 +114,7 @@ def main(years: int, only_province: bool, province_filter, dry_run: bool,
         select_best_monthly_forecast,
     )
     from app.services.climate_scenarios import scenario_factor
+    from app.services.province_aliases import to_canonical
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     print("=" * 64)
@@ -132,6 +145,12 @@ def main(years: int, only_province: bool, province_filter, dry_run: bool,
             if resource not in resource_metrics:
                 continue
             scope = "province" if district is None else "district"
+            # 2026-06-02 (ML-1 fix): Kaynak tablolar il adını farklı kodlamada
+            # tutuyor (climatology=Türkçe, weather_data=ASCII). Seri ÇEKİMİ
+            # orijinal `prov` ile yapılır (kaynak satırı bulunsun), ama DB'ye
+            # YAZILAN ad daima Türkçe-canonical (GADM) olur → frontend choropleth
+            # eşleşir, tekrar kayıt oluşmaz. (Mor ilçe/il sorununun kökü buydu.)
+            prov_canon = to_canonical(prov)
             for metric in resource_metrics[resource]:
                 if use_daily:
                     # İl-scope'ta monthly_climate (20y, ~257 ay) tercih edilir;
@@ -150,6 +169,20 @@ def main(years: int, only_province: bool, province_filter, dry_run: bool,
                     skipped += 1
                     continue
 
+                # 2026-06-02 (MEVSİM FIX): Forecaster seriyi BİTİŞ ayından SONRA
+                # tahminler (future_idx = son ay + 1). Seri Haziran'da biterse
+                # forecast[0] = Temmuz olur; eski kod forecast[0]'ı Ocak sanıp
+                # etiketliyordu → mevsim ~6 ay kayıp TERS dönüyordu (yaz=düşük!).
+                # Çözüm: seriyi en yakın ARALIK'ta bitir → forecast Ocak'ta başlar
+                # → ay etiketleri doğru + tam takvim yılları.
+                _s_abs = start_date.year * 12 + (start_date.month - 1)
+                _last_abs = _s_abs + len(series) - 1
+                _trim = (_last_abs % 12 + 1) % 12   # son ay Aralık değilse kırp
+                if _trim and (len(series) - _trim) >= 24:
+                    series = series[:-_trim]
+                    _last_abs -= _trim
+                _fc_abs0 = _last_abs + 1             # forecast ilk ayı (Ocak), mutlak ay indeksi
+
                 label = f"{prov}_{district or '-'}_{resource}_{metric}"
                 try:
                     values, lowers, uppers, method, mape = \
@@ -164,22 +197,25 @@ def main(years: int, only_province: bool, province_filter, dry_run: bool,
                 loc_count += 1
                 rows = []
                 for i, v in enumerate(values):
-                    d = date(start_year + (i // 12), (i % 12) + 1, 1)
+                    # Doğru ay etiketi: forecast'ın GERÇEK başlangıç ayından say.
+                    _midx = _fc_abs0 + i
+                    d = date(_midx // 12, _midx % 12 + 1, 1)
                     year_offset = d.year - start_year
                     for scenario in SCENARIOS:
                         factor = scenario_factor(scenario, metric, year_offset)
                         rows.append({
                             "scope": scope,
-                            "province_name": prov,
+                            "province_name": prov_canon,
                             "district_name": district,
                             "resource": resource,
                             "metric": metric,
                             "scenario": scenario,
                             "year": d.year,
                             "month": d.month,
-                            "value": round(v * factor, 4),
-                            "lower": round((lowers[i] or v) * factor, 4),
-                            "upper": round((uppers[i] or v) * factor, 4),
+                            # 2026-06-02: metrikler negatif olamaz → [0,∞) kıstır
+                            "value": max(0.0, round(v * factor, 4)),
+                            "lower": max(0.0, round((lowers[i] or v) * factor, 4)),
+                            "upper": max(0.0, round((uppers[i] or v) * factor, 4)),
                             "method": method,
                             "mape": mape,
                         })

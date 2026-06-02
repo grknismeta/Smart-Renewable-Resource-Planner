@@ -122,6 +122,20 @@ except Exception as _idx_err:
         "[startup] Performans index'leri oluşturulamadı: %s", _idx_err,
     )
 
+# 2026-06-01 (AUTH-1): users tablosuna full_name kolonu. create_all mevcut
+# tabloya kolon EKLEMEZ → idempotent DDL (IF NOT EXISTS, tekrar çalışsa zarar yok).
+try:
+    from sqlalchemy import text as _sa_text
+    with UserEngine.begin() as _conn:
+        _conn.execute(_sa_text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR"
+        ))
+except Exception as _fn_err:
+    import logging
+    logging.getLogger(__name__).warning(
+        "[startup] full_name kolonu eklenemedi: %s", _fn_err,
+    )
+
 
 # ─── ONE-TIME MIGRATIONS ─────────────────────────────────────────────────────
 def _wind_migration_needed() -> bool:
@@ -326,10 +340,38 @@ Token almak için → `POST /users/login`
     lifespan=lifespan,
 )
 
-# CORS Ayarları
+# ─── CORS Ayarları (GÜV-3, 2026-06-02) ────────────────────────────────────────
+# Eski hal: allow_origins=["*"] + allow_credentials=True → hem güvensiz hem de
+# CORS spec'ine aykırı (tarayıcılar credential'lı istekte "*"i reddeder).
+# Yeni hal: env-tabanlı.
+#   • ALLOWED_ORIGINS set DEĞİLSE  → DEV modu: herhangi bir localhost portuna izin
+#     (flutter `flutter run -d chrome` rastgele port açabiliyor).
+#   • ALLOWED_ORIGINS set EDİLMİŞSE → PROD modu: yalnızca o origin listesi
+#     (virgülle ayrılmış). Deploy'da `.env`'e domain'i yazman yeterli.
+#   • ALLOWED_ORIGIN_REGEX (opsiyonel) → prod'da ek/özel desen gerekiyorsa.
+import logging as _cors_logging
+_cors_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
+if _cors_origins_env:
+    _cors_allow_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+    _cors_allow_origin_regex = os.getenv("ALLOWED_ORIGIN_REGEX") or None
+    _cors_mode = "PROD (env listesi)"
+else:
+    # Dev: localhost/127.0.0.1 herhangi bir portta (http/https)
+    _cors_allow_origins = []
+    _cors_allow_origin_regex = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
+    _cors_mode = "DEV (localhost:any)"
+
+_cors_logging.getLogger(__name__).info(
+    "[CORS] %s — origins=%s regex=%s",
+    _cors_mode,
+    _cors_allow_origins or "—",
+    _cors_allow_origin_regex or "—",
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_allow_origins,
+    allow_origin_regex=_cors_allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -40,6 +40,7 @@ _SCENARIO_DELTAS: Dict[str, Dict[str, float]] = {
         "cloud": -0.20,          # bulutluluk azalışı
         "precipitation": -0.30,  # yağış azalışı
         "discharge": -0.45,      # nehir debisi (bileşik)
+        "wind": -0.10,           # ortalama rüzgar hızı hafif azalış (2026-06-02 B-wind)
         "temperature": +0.05,    # °C/yıl yaklaşık (oransal değil ama tutarlılık için)
     },
     "rcp85": {
@@ -48,6 +49,7 @@ _SCENARIO_DELTAS: Dict[str, Dict[str, float]] = {
         "cloud": -0.40,
         "precipitation": -0.55,
         "discharge": -0.80,
+        "wind": -0.20,           # rüzgarda belirgin azalış (2026-06-02 B-wind)
         "temperature": +0.09,
     },
 }

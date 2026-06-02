@@ -328,7 +328,7 @@ class _ProvinceSelector extends StatelessWidget {
       MapEntry('cloud', 'Bulutluluk'),
     ],
     'wind': [
-      MapEntry('cloud', 'Bulutluluk'),
+      MapEntry('wind', 'Rüzgar Hızı (m/s)'),
       MapEntry('precipitation', 'Yağış'),
     ],
     'hydro': [
@@ -1195,7 +1195,7 @@ class _ProvinceProjectionViewState extends State<ProvinceProjectionView> {
       MapEntry('cloud', 'Bulutluluk'),
     ],
     'wind': [
-      MapEntry('cloud', 'Bulutluluk'),
+      MapEntry('wind', 'Rüzgar Hızı (m/s)'),
       MapEntry('precipitation', 'Yağış'),
     ],
     'hydro': [

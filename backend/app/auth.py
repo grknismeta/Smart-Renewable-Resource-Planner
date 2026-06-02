@@ -16,9 +16,21 @@ from .db.database import get_db, Session
 load_dotenv()
 
 # GÜVENLİK GÜNCELLEMESİ: Değerleri .env dosyasından çekiyoruz
-SECRET_KEY = os.getenv("SECRET_KEY", "uyari_lutfen_env_dosyasi_olustur")
+_SECRET_FALLBACK = "uyari_lutfen_env_dosyasi_olustur"
+SECRET_KEY = os.getenv("SECRET_KEY", _SECRET_FALLBACK)
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+
+# GÜV-1 (2026-06-01): SECRET_KEY .env'de set edilmemişse JWT'ler TAHMİN EDİLEBİLİR
+# (forgeable) → ciddi güvenlik açığı. Deploy'dan ÖNCE mutlaka güçlü bir değer set
+# edilmeli. Zayıf/varsayılan/kısa fallback kullanılıyorsa başlangıçta CRITICAL uyarı.
+if SECRET_KEY == _SECRET_FALLBACK or len(SECRET_KEY) < 32:
+    import logging as _logging
+    _logging.getLogger(__name__).critical(
+        "[GUVENLIK] SECRET_KEY zayif/varsayilan! .env'de guclu bir SECRET_KEY "
+        "(>=32 rastgele karakter) set edin; aksi halde JWT'ler taklit edilebilir. "
+        "Uret: python -c \"import secrets;print(secrets.token_urlsafe(48))\""
+    )
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/token")
@@ -77,3 +89,57 @@ async def get_current_active_user(current_user: schemas.UserResponse = Depends(g
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Kullanıcı aktif değil")
     return current_user
+
+
+# ─── GOOGLE OAUTH (AUTH-3, 2026-06-01) ───────────────────────────────────────
+# ID-token akışı: frontend Google'dan ID token alır → buraya gönderir → tokeninfo
+# ile doğrularız (audience = bizim client_id). Redirect/secret gerekmez.
+# Client ID PUBLIC'tir (frontend'e gömülür), .env'de override edilebilir.
+GOOGLE_CLIENT_ID = os.getenv(
+    "GOOGLE_CLIENT_ID",
+    "756480872473-fm4vb6j5u3ic9c5fhbrr0jhkmrl74m7e.apps.googleusercontent.com",
+)
+# Mobil client'lar eklenince audience listesine girer.
+GOOGLE_ALLOWED_AUDIENCES = {
+    a for a in [
+        GOOGLE_CLIENT_ID,
+        os.getenv("GOOGLE_ANDROID_CLIENT_ID"),
+        os.getenv("GOOGLE_IOS_CLIENT_ID"),
+    ] if a
+}
+
+
+def verify_google_id_token(id_token_str: str) -> dict:
+    """Google ID token'ı tokeninfo endpoint'iyle doğrular.
+
+    Geçerliyse claim dict'i (email, name, aud, iss...) döner; geçersizse
+    ValueError fırlatır. Ekstra paket gerektirmez (stdlib urllib).
+    """
+    import json as _json
+    import urllib.request as _urlreq
+    import urllib.parse as _urlparse
+
+    if not id_token_str or not isinstance(id_token_str, str):
+        raise ValueError("id_token boş")
+    url = "https://oauth2.googleapis.com/tokeninfo?" + _urlparse.urlencode(
+        {"id_token": id_token_str}
+    )
+    try:
+        with _urlreq.urlopen(url, timeout=10) as resp:
+            if resp.status != 200:
+                raise ValueError("token doğrulanamadı")
+            claims = _json.loads(resp.read().decode("utf-8"))
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"Google token doğrulama hatası: {e}")
+
+    if claims.get("aud") not in GOOGLE_ALLOWED_AUDIENCES:
+        raise ValueError("aud (client_id) eşleşmiyor")
+    if claims.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+        raise ValueError("iss geçersiz")
+    if not claims.get("email"):
+        raise ValueError("e-posta yok")
+    if str(claims.get("email_verified")).lower() != "true":
+        raise ValueError("e-posta doğrulanmamış")
+    return claims

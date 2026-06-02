@@ -20,6 +20,23 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="A new Flutter project.">
 
+  <!-- 2026-06-02 (deploy): API taban adresi. DEV (localhost) → backend :8000;
+       PROD → same-origin /api (Caddy reverse proxy backend'e yönlendirir).
+       JS shim'leri (window.SRRP_API_BASE) bunu okur; Dart tarafı api_client.dart
+       içinde aynı mantığı uygular. -->
+  <script>
+    (function () {
+      var h = location.hostname;
+      window.SRRP_API_BASE = (h === 'localhost' || h === '127.0.0.1')
+        ? 'http://' + h + ':8000'
+        : location.origin + '/api';
+    })();
+  </script>
+
+  <!-- AUTH-3 (2026-06-01): Google Sign-In (web) client ID — google_sign_in_web
+       plugin'i bu meta tag'i okur. PUBLIC değer. -->
+  <meta name="google-signin-client_id" content="756480872473-fm4vb6j5u3ic9c5fhbrr0jhkmrl74m7e.apps.googleusercontent.com">
+
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -151,6 +168,17 @@
           setTimeout(function() { _srrpApplyAdminBorderFixes(instance); }, 150);
           // MapLibre varsayılan 'grab' cursor'ını kaldır — 'default' kullan
           instance.getCanvas().style.cursor = 'default';
+          // 2026-06-02: İstenen sayfa-durumunu (maxBounds + interactive) yeniden
+          // uygula. Fresh build'de (örn. yeni port) harita constructor'ı Dart'ın
+          // setMaxBounds/setInteractive çağrısından SONRA çalışabiliyor; o çağrılar
+          // _srrpMap null iken global'e yazılıp burada (harita hazırken) uygulanır.
+          // Aksi halde landing sınırları/kilidi düşüyordu (sınır dışına çıkılabiliyordu).
+          try {
+            if (window._srrpDesiredMaxBounds) {
+              instance.setMaxBounds(window._srrpDesiredMaxBounds);
+            }
+            window.srrpSetMapInteractive(window._mapInteractive !== false);
+          } catch (_) {}
         });
 
         // Drag sırasında grabbing cursor — başka durumda default
@@ -1042,8 +1070,16 @@
           if (typeof v === 'number' && isFinite(v)) vals.push(v);
         }
         if (vals.length === 0) { window.srrpSetChoropleth('none', null); return; }
-        var mn = Math.min.apply(null, vals);
-        var mx = Math.max.apply(null, vals);
+        // 2026-06-02 (ML renk fix): Ham min/max yerine 5–95 PERSENTİL ile
+        // normalize. Tek bir aykırı düşük (0/clamp) veya yüksek değer ölçeği
+        // gerip, ilçelerin çoğunu mor uca sıkıştırıyor, birkaç ilçeyi parlak
+        // "ada" yapıyordu. Persentil ile aykırılar uç renge KISILIR, gövde tüm
+        // viridis gradyanını kullanır → komşu ilçeler arası fark görünür.
+        var _sorted = vals.slice().sort(function(a, b) { return a - b; });
+        function _pct(arr, p) { return arr[Math.round((arr.length - 1) * p)]; }
+        var mn = _pct(_sorted, 0.05);
+        var mx = _pct(_sorted, 0.95);
+        if (mx - mn < 1e-9) { mn = _sorted[0]; mx = _sorted[_sorted.length - 1]; }
         if (mx - mn < 1e-9) mx = mn + 1;
         // Viridis 7-stop, veri aralığına yayılmış
         var pal = ['#440154','#414487','#2a788e','#22a884','#7ad151','#bddf26','#fde725'];
@@ -2024,16 +2060,20 @@
     };
 
     // ── Harita sınırlandırma (maxBounds) ──────────────────────────────
+    // İstenen sınır global'de saklanır → harita henüz hazır değilse (fresh build,
+    // yeni port) style.load handler'ı hazır olunca yeniden uygular.
     window.srrpSetMaxBounds = function (swLng, swLat, neLng, neLat) {
+      window._srrpDesiredMaxBounds = [[swLng, swLat], [neLng, neLat]];
       const map = window._srrpMap;
-      if (!map) return;
+      if (!map) return; // style.load yeniden uygular
       try {
-        map.setMaxBounds([[swLng, swLat], [neLng, neLat]]);
+        map.setMaxBounds(window._srrpDesiredMaxBounds);
         console.log('[SRRP] maxBounds ayarlandı:', swLng, swLat, neLng, neLat);
       } catch (e) { console.error('[SRRP] srrpSetMaxBounds:', e); }
     };
 
     window.srrpClearMaxBounds = function () {
+      window._srrpDesiredMaxBounds = null;
       const map = window._srrpMap;
       if (!map) return;
       try { map.setMaxBounds(null); } catch (e) {}
@@ -2056,7 +2096,11 @@
     // Kullanıcı başka uygulamaya geçip döndüğünde interaktivite kilitli kalmasın.
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden && window._srrpMap) {
-        window.srrpSetMapInteractive(true);
+        // 2026-06-02: Sabit `true` yerine SAKLI durumu uygula. Landing harita
+        // etkileşimi kapalı (_mapInteractive=false) olduğunda, sekmeye geri
+        // dönünce zorla açılıp landing'in sürüklenebilir/sınırsız olmasına yol
+        // açıyordu. Artık sayfanın istediği durum korunur.
+        window.srrpSetMapInteractive(window._mapInteractive !== false);
         window._srrpClickGuard = false;
       }
     });
@@ -3719,7 +3763,7 @@
   (function () {
     // ── KALİBRASYON SABİTLERİ (kareye bakıp ayarlanır) ──────────────────
     var MODEL_URL  = { wind: 'models/wind_turbine.glb', solar: 'models/solar_panel.glb' };
-    var VIS_METERS = { wind: 1600, solar: 900 };   // görsel boyut (mercator metre)
+    var VIS_METERS = { wind: 1900, solar: 640 };   // görsel boyut (mercator metre) — 2026-06-01: türbin büyütüldü, panel küçültüldü
     var BLADE_AXIS = 'z';                            // bıçak dönüş ekseni (x|y|z)
     var BLADE_RPM_RATED = 15;                        // rated rüzgarda ~RPM
     var MODEL_UP_FIX = Math.PI / 2;                  // Y-up model → Z-up dünya

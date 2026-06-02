@@ -328,46 +328,85 @@ class _ScenarioDetailPanel extends StatelessWidget {
     final result = scenario.resultData;
     final hasResult = result != null && result.isNotEmpty;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _Header(scenario: scenario, accent: accent),
-        const SizedBox(height: 12),
-
-        // 2026-05-25 (Fix6): Senaryo pin'lerinin mini haritası — coğrafi dağılım
-        // görsel olarak anlaşılsın. Pin tıklayınca Santral tab'ı (4) açılır.
-        _ScenarioPinMap(scenarioId: scenario.id, accent: accent),
-        const SizedBox(height: 12),
-
-        // Üretim özeti
-        if (hasResult)
-          _ProductionSummary(result: result, accent: accent)
-        else
-          _NotCalculated(busy: busy, onRecalculate: onRecalculate),
-        const SizedBox(height: 12),
-
-        // Finans
-        if (loadingFinancials)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 20),
-            child: Center(
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.cyanAccent),
-              ),
+    // Sol kolon: harita + üretim özeti. Sağ kolon: finans + nakit akışı + pin.
+    final leftCol = <Widget>[
+      // 2026-05-25 (Fix6): Senaryo pin'lerinin mini haritası — coğrafi dağılım
+      // görsel olarak anlaşılsın. Pin tıklayınca Santral tab'ı (4) açılır.
+      _ScenarioPinMap(scenarioId: scenario.id, accent: accent),
+      const SizedBox(height: 12),
+      if (hasResult)
+        _ProductionSummary(result: result, accent: accent)
+      else
+        _NotCalculated(busy: busy, onRecalculate: onRecalculate),
+    ];
+    final rightCol = <Widget>[
+      if (loadingFinancials)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.cyanAccent),
             ),
-          )
-        else if (financials != null) ...[
-          _FinancialCards(metrics: financials!),
-          const SizedBox(height: 12),
-          _CashflowChart(metrics: financials!, accent: accent),
-          const SizedBox(height: 12),
-          _PinList(metrics: financials!),
-        ],
+          ),
+        )
+      else if (financials != null) ...[
+        _FinancialCards(metrics: financials!),
+        const SizedBox(height: 12),
+        _CashflowChart(metrics: financials!, accent: accent),
+        const SizedBox(height: 12),
+        _PinList(metrics: financials!),
       ],
-    );
+    ];
+
+    // 2026-06-01: İl Analizi gibi geniş ekranda (≥1100) iki kolon yan yana
+    // (sol: harita+üretim, sağ: finans). Dar/mobilde tek kolon üst üste.
+    // Kolonlar içeriğe göre boyutlanır (dikey Expanded yok) → scroll içinde
+    // güvenli, "unbounded height" hatası oluşmaz.
+    return LayoutBuilder(builder: (ctx, c) {
+      final wide = c.maxWidth >= 1100;
+      if (wide) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _Header(scenario: scenario, accent: accent),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: leftCol,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 2,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: rightCol,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Header(scenario: scenario, accent: accent),
+          const SizedBox(height: 12),
+          ...leftCol,
+          const SizedBox(height: 12),
+          ...rightCol,
+        ],
+      );
+    });
   }
 }
 
@@ -1293,13 +1332,27 @@ class _ScenarioPinMap extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         ReportMiniMap(
-          // 2026-06-01: 220 çok inceydi → 320. boundsPadding 0.5→1.6: pin'ler
-          // Ankara gibi kümelendiğinde maxBounds çok dar kalıp yatay pan'i
-          // kilitliyordu; geniş padding → bağlam + sağa/sola pan alanı.
+          // 2026-06-01: maxBounds pin bbox'una bağlıyken web'de pan kilitleniyor
+          // + tüm Türkiye görünmüyordu, mobilde de boundary tutmuyordu. Çözüm:
+          // maxBounds = TÜM TÜRKİYE (her yere pan + ülke geneli görünür), kamera
+          // yine pin'lere fit (bounds). İl + pin illerinin ilçe sınırları çizilir.
           height: 320,
           markers: markers,
           bounds: bounds,
-          boundsPadding: 1.6,
+          maxBoundsOverride: ml.LngLatBounds(
+            longitudeWest: trW - 0.3,
+            latitudeSouth: trS - 0.3,
+            longitudeEast: trE + 0.3,
+            latitudeNorth: trN + 0.3,
+          ),
+          showProvinceBorders: true,
+          districtProvinceFilters: pins
+              .map((p) => p.city)
+              .whereType<String>()
+              .map((c) => c.trim())
+              .where((c) => c.isNotEmpty)
+              .toSet()
+              .toList(),
           // Pin tipini renge yansıtmak için fixedColor değil, score-color hili.
           // Daha doğru renklendirme için marker tipini score değil renge map'le:
           // ReportMiniMap'in _colorFor 0-100 score üstünden renk veriyor — biz

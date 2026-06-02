@@ -1,6 +1,12 @@
+import re
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Optional, Dict, Literal, Any
 from datetime import datetime, date
+
+# 2026-06-01 (güvenlik): basit e-posta format regex'i. EmailStr yerine regex —
+# `email-validator` paket bağımlılığı eklemeden çalışır. Login eşleşmesini
+# bozmamak için lowercase YAPMIYORUZ (yalnız strip + format).
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 # --- AUTH & USER ---
 class Token(BaseModel):
@@ -12,9 +18,31 @@ class TokenData(BaseModel):
 
 class UserBase(BaseModel):
     email: str
+    full_name: Optional[str] = None  # 2026-06-01 (AUTH-1): ad soyad
 
 class UserCreate(UserBase):
     password: str
+
+    # 2026-06-02 (fix): E-posta validasyonu UserBase'den BURAYA taşındı. UserBase'de
+    # iken UserResponse'u da (okuma) etkiliyordu; DB'de eski/geçersiz e-posta
+    # (ör. "user") olan kullanıcı /users/me'de 500 (ResponseValidationError)
+    # veriyordu. Validasyon yalnız KAYIT girişinde anlamlı.
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not _EMAIL_RE.match(v):
+            raise ValueError("Geçerli bir e-posta adresi girin.")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, v: str) -> str:
+        # 2026-06-01 (güvenlik): minimum parola uzunluğu. Yalnız KAYIT'ta
+        # geçerli — mevcut kullanıcı login'ini etkilemez.
+        if v is None or len(v) < 8:
+            raise ValueError("Parola en az 8 karakter olmalı.")
+        return v
 
 class UserResponse(UserBase):
     id: int
@@ -22,6 +50,29 @@ class UserResponse(UserBase):
     created_at: Optional[datetime] = None
     class Config:
         from_attributes = True
+
+# AUTH-3 (2026-06-01): Google ID-token ile giriş isteği.
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+
+# HESABIM (2026-06-02): profil güncelleme — şimdilik yalnız ad-soyad düzenlenir.
+# E-posta login anahtarı olduğu için burada değiştirilmez (ayrı/ileride akış).
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+
+# HESABIM (2026-06-02): parola değiştirme. new_password min-8 (kayıttaki kuralla aynı).
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new_password(cls, v: str) -> str:
+        if v is None or len(v) < 8:
+            raise ValueError("Yeni parola en az 8 karakter olmalı.")
+        if len(v) > 72:
+            raise ValueError("Yeni parola en fazla 72 karakter olabilir.")
+        return v
 
 # --- EKİPMAN ---
 class EquipmentBase(BaseModel):

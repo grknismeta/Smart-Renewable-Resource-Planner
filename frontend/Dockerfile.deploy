@@ -1,0 +1,15 @@
+# SRRP frontend deploy (2026-06-02): Flutter web build → Caddy ile servis.
+# Build context = PROJE KÖKÜ (hem frontend/ hem kökteki Caddyfile gerekli).
+#
+#   docker compose -f docker-compose.prod.yml build caddy
+
+# ── Stage 1: Flutter web release build ──────────────────────────────────────
+FROM ghcr.io/cirruslabs/flutter:stable AS build
+WORKDIR /app
+COPY frontend/ ./
+RUN flutter pub get && flutter build web --release
+
+# ── Stage 2: Caddy (statik servis + reverse proxy + otomatik HTTPS) ─────────
+FROM caddy:2-alpine
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /app/build/web /srv

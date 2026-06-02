@@ -35,6 +35,17 @@ const _bordersSourceId    = 'srrp-borders';
 const _bordersFillLayerId = 'srrp-borders-fill';
 const _bordersLineLayerId = 'srrp-borders-line';
 
+// B5 (2026-06-01): PostGIS MVT vektör katmanları. Paket source-layer'ı SOURCE
+// üzerinde tanımlıyor (VectorSource.sourceLayer) → her source-layer için ayrı
+// VectorSource (aynı tile URL). Web tek source + layer-level source-layer.
+const _mvtHydroSrc       = 'srrp-mvt-hydro-src';
+const _mvtRestrictedSrc  = 'srrp-mvt-restricted-src';
+const _mvtEnergySrc      = 'srrp-mvt-energy-src';
+const _mvtHydroFillId    = 'srrp-mvt-hydro-fill';
+const _mvtHydroLineId    = 'srrp-mvt-hydro-line';
+const _mvtRestrictedId   = 'srrp-mvt-restricted-fill';
+const _mvtEnergyId       = 'srrp-mvt-energy-line';
+
 // İl modu overlay: seçili ilin ilçeleri + mavi sınır (ana borders'ın üstünde)
 const _overlaySourceId    = 'srrp-overlay-borders';
 const _overlayFillLayerId = 'srrp-overlay-fill';
@@ -200,6 +211,11 @@ class MapViewMapLibre extends StatefulWidget {
   /// Aktif native MapController referansı (state tarafından atanır).
   static ml.MapController? _activeController;
 
+  /// 2026-06-01 (B4): Aktif State referansı — static ML choropleth metodlarının
+  /// canlı haritaya (style + render) erişebilmesi için. StyleLoaded'da atanır,
+  /// dispose'da temizlenir.
+  static _MapViewMapLibreState? _activeState;
+
   /// Wind overlay gibi dış widget'ların kamera dönüşümü yapabilmesi için.
   static ml.MapController? get activeControllerForOverlay => _activeController;
 
@@ -250,9 +266,15 @@ class MapViewMapLibre extends StatefulWidget {
   static void toggleContour(bool enabled, double opacity,
       {String source = 'opentopo'}) {}
   static void setContourOpacity(double opacity) {}
-  // M-B.2/3 — ML projeksiyon choropleth native'de henüz desteksiz (web-only).
-  static void setMlChoropleth(String dataJson) {}
-  static void clearMlChoropleth() {}
+  // M-B.2/3 — ML projeksiyon choropleth. 2026-06-01 (B4): native'e port edildi.
+  // Aktif State'e köprülenir; State yoksa (harita kapalı) no-op.
+  static void setMlChoropleth(String dataJson) {
+    _activeState?._applyMlChoropleth(dataJson);
+  }
+
+  static void clearMlChoropleth() {
+    _activeState?._clearMlChoropleth();
+  }
   // 2026-05-08 Madde 1: Pin preview marker (native polish Sprint 2).
   static void showPreviewPin(LatLng? point) {}
   // Madde 5+6+7: Coğrafi anchor — native polish Sprint 2.
@@ -274,6 +296,13 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   ml.StyleController? _style;
   bool _styleLoaded = false;
   bool _syncing = false;
+  // 2026-06-01: widget dispose edildi mi — async style callback'leri (özellikle
+  // ML choropleth) teardown sonrası native source'a dokunup SIGSEGV yaratmasın.
+  bool _disposed = false;
+  // B8: globe durumu (build'de güncellenir) — move event'inde Provider okumamak
+  // için cache. + constrain re-entrancy kilidi.
+  bool _globeForConstrain = false;
+  bool _constraining = false;
 
   List<Pin>                _lastPins    = [];
   List<CityWeatherSummary> _lastSummary = [];
@@ -285,10 +314,13 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   bool _hillshadeActive = false;
   bool _lastTerrain     = false;
 
-  // Aşama I: MVT vektör katmanları — native stub (Aşama 4 polish'te tam destek)
+  // B5 (2026-06-01): MVT vektör katmanları — VectorSource ile NATIVE destek.
   bool _lastHydroLayer = false;
   bool _lastRestrictedLayer = false;
   bool _lastEnergyCorridorLayer = false;
+  bool _mvtHydroActive = false;
+  bool _mvtRestrictedActive = false;
+  bool _mvtEnergyActive = false;
   bool _lastClustering  = false;
   bool _clusterLayersActive = false;
   bool _lastCloud       = false;
@@ -299,6 +331,15 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   double _lastContourOpacity = 0.55;
   bool   _contourActive      = false;
   bool _bordersActive   = false;
+  // 2026-06-01: Yüklü sınır KATMANININ türü/içeriği. `_bordersActive` (tek bool)
+  // province/district ayrımı yapamadığı için mod geçişinde (ör. Bölge→İlçe) yeni
+  // sınırlar yüklenmiyordu. Bu key ile guard "doğru tür yüklü mü" diye bakar.
+  // Format: 'none' | 'prov:<regionFilter|all>:<region|unique>' | 'dist:<prov|all>:<highlight>'
+  String _borderKind = 'none';
+  // 2026-06-01 (B3): Tematik harita (choropleth) aktifken seçim FILL'i çizilmez
+  // (sadece sınır çizgisi) → tematik renk gizlenmez. Toggle olunca sınırların
+  // yeniden çizilmesi için son durum izlenir.
+  bool _lastThematicActive = false;
   bool _overlayActive   = false;
   bool _lastProvincesMode = false;
   SelectionLevel _lastSelectionLevel = SelectionLevel.none;
@@ -308,8 +349,23 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
   // Choropleth
   ChoroplethMode _lastChoropleth = ChoroplethMode.none;
+  // 2026-06-01 (B6): son render edilen choropleth data referansı. Zaman
+  // simülasyonunda metrik sabit ama her frame YENİ data map'i geliyor →
+  // identity değişimiyle "frame değişti, yeniden çiz" tespiti.
+  Map<String, dynamic>? _lastChoroData;
   bool _choroplethSourceAdded = false;
   bool _choroplethLayerActive = false;
+
+  // 2026-06-01 (B4): ML projeksiyon choropleth (ayrı katman — weather
+  // choropleth'ten bağımsız). `_lastMlChoroJson` style reload sonrası
+  // yeniden uygulamak için saklanır.
+  bool _mlChoroSourceAdded = false;
+  bool _mlChoroLayerActive = false;
+  String? _lastMlChoroJson;
+  // 2026-06-01: ML animasyonunda (yıl/ay slider) hızlı setMlChoropleth çağrıları
+  // → yalnız EN SON isteği render et (backlog/churn önler). Kilit beklerken
+  // eskiyen istekler `seq != _mlSeq` ile atlanır.
+  int _mlSeq = 0;
 
   // Animation province polygon layer
   // 1.B (yeniden): _animProvActive / _lastAnimFrame state'i emekliye ayrıldı.
@@ -337,10 +393,17 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
   @override
   void dispose() {
+    // 2026-06-01: önce dispose bayrağı + style geçersiz — uçuşan async style
+    // op'ları (ML choropleth, sync) teardown'dan sonra native'e dokunmasın.
+    _disposed = true;
+    _styleLoaded = false;
     _vmRef?.removeListener(_onVmChanged);
-    // Bu widget kapanırken aktif controller referansını temizle
+    // Bu widget kapanırken aktif controller + state referanslarını temizle
     if (MapViewMapLibre._activeController != null) {
       MapViewMapLibre._activeController = null;
+    }
+    if (identical(MapViewMapLibre._activeState, this)) {
+      MapViewMapLibre._activeState = null;
     }
     super.dispose();
   }
@@ -430,6 +493,9 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _lastHydroLayer = false;
         _lastRestrictedLayer = false;
         _lastEnergyCorridorLayer = false;
+        _mvtHydroActive = false;
+        _mvtRestrictedActive = false;
+        _mvtEnergyActive = false;
         _lastClustering = false;
         _clusterLayersActive = false;
         _lastCloud = false;
@@ -443,10 +509,17 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _lastSelectedRegion = null;
         _lastSelectedDistrict = null;
         _lastChoropleth = ChoroplethMode.none;
+        _lastChoroData = null;
         _choroplethSourceAdded = false;
         _choroplethLayerActive = false;
+        // B4: yeni style → ML choropleth katmanı da gitti; flag'leri sıfırla.
+        _mlChoroSourceAdded = false;
+        _mlChoroLayerActive = false;
         _lastPins    = [];
         _lastSummary = [];
+
+        // B4: static ML choropleth metodları bu canlı State'e köprülensin.
+        MapViewMapLibre._activeState = this;
 
         await _initLayers();
 
@@ -455,6 +528,12 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         if (mounted) {
           final vm = Provider.of<MapViewModel>(context, listen: false);
           await _syncAll(vm);
+        }
+
+        // B4: style reload öncesi ML choropleth açıktıysa yeniden uygula
+        // (seq'li giriş — _applyMlChoropleth kilit + coalesce yönetir).
+        if (mounted && !_disposed && _lastMlChoroJson != null) {
+          _applyMlChoropleth(_lastMlChoroJson!);
         }
 
       case ml.MapEventClick(:final point):
@@ -469,10 +548,78 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
           final vm = Provider.of<MapViewModel>(context, listen: false);
           await _updateClusterData(vm.filteredPins);
         }
+        // B8 (2026-06-01): maplibre 0.2.2 native MapOptions.maxBounds'ı zorlamıyor.
+        // SADECE pan/zoom BİTİNCE (CameraIdle) kontrol et — pan sırasında SÜREKLİ
+        // clamp ekranı titretip kaydırmayı engelliyordu. "Çıkarsan geri gönder"
+        // mantığı: serbest pan, bırakınca Türkiye dışındaysa yumuşakça geri dön.
+        if (mounted && !_globeForConstrain) _constrainToTurkey();
 
       default:
         break;
     }
+  }
+
+  // B8: Türkiye pan-sınırı bbox'u (küçük deniz marjı). Görünür bölge bunun
+  // dışına taşarsa kamera anında içeri itilir.
+  static const _panMargin = 0.3;
+
+  /// B8 (2026-06-01): Globe kapalıyken GÖRÜNÜR bölge Türkiye bbox dışına taşarsa
+  /// kamerayı anında (moveCamera) içeri iter — web'deki maxBounds duvarı gibi.
+  /// Merkez değil KENAR bazlı: dikey ekranda komşu ülke (İran/İlam vb.) kenardan
+  /// görünmesin. Re-entrancy kilidi (moveCamera yeni move event tetikler).
+  void _constrainToTurkey() {
+    if (_constraining) return;
+    final ctrl = MapViewMapLibre._activeController;
+    if (ctrl == null) return;
+    ml.LngLatBounds vis;
+    ml.MapCamera? cam;
+    try {
+      vis = ctrl.getVisibleRegionSync();
+      cam = ctrl.camera;
+    } catch (_) {
+      return;
+    }
+    if (cam == null) return;
+
+    final tw = MapConstants.turkeyMinLon - _panMargin;
+    final te = MapConstants.turkeyMaxLon + _panMargin;
+    final ts = MapConstants.turkeyMinLat - _panMargin;
+    final tn = MapConstants.turkeyMaxLat + _panMargin;
+
+    final vw = vis.longitudeWest.toDouble();
+    final ve = vis.longitudeEast.toDouble();
+    final vs = vis.latitudeSouth.toDouble();
+    final vn = vis.latitudeNorth.toDouble();
+
+    double dLon = 0, dLat = 0;
+    // Yatay: görünür genişlik sınırdan büyükse ortala, değilse taşan kenarı it.
+    if ((ve - vw) >= (te - tw)) {
+      dLon = ((tw + te) / 2) - ((vw + ve) / 2);
+    } else if (vw < tw) {
+      dLon = tw - vw;
+    } else if (ve > te) {
+      dLon = te - ve;
+    }
+    if ((vn - vs) >= (tn - ts)) {
+      dLat = ((ts + tn) / 2) - ((vs + vn) / 2);
+    } else if (vs < ts) {
+      dLat = ts - vs;
+    } else if (vn > tn) {
+      dLat = tn - vn;
+    }
+
+    if (dLon.abs() < 1e-5 && dLat.abs() < 1e-5) return; // tamamen içeride
+    _constraining = true;
+    final c = cam.center;
+    // Idle'da tek sefer → yumuşak animasyon ("geri gönderildin" hissi),
+    // pan sırasında titreme yok.
+    ctrl
+        .animateCamera(
+          center: ml.Position(c.lng.toDouble() + dLon, c.lat.toDouble() + dLat),
+          zoom: cam.zoom,
+          nativeDuration: const Duration(milliseconds: 350),
+        )
+        .whenComplete(() => _constraining = false);
   }
 
   // ─── Pin Etkileşimi ───────────────────────────────────────────────
@@ -593,6 +740,21 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     return false;
   }
 
+  /// 2026-06-01 (B2): turkey_provinces.json'da 81 il dışında bir de NAME_1="Ege"
+  /// adlı bogus feature var (bölge adı, il değil — Ege adaları/dissolve artığı).
+  /// İl/Bölge modunda ada gibi görünüyordu. Gerçek illerde NAME_1 asla bir
+  /// bölge adı olmaz → bölge-adlı feature'ları ele. (district'lerde NAME_1 = il
+  /// olduğundan bu kontrol onları etkilemez.)
+  static final Set<String> _regionNamesNorm = <String>{
+    'Marmara', 'Ege', 'Akdeniz', 'İç Anadolu', 'Karadeniz',
+    'Doğu Anadolu', 'Güneydoğu Anadolu',
+  }.map(_normalizeForMatch).toSet();
+
+  static bool _isRegionName(String? s) {
+    if (s == null || s.isEmpty) return false;
+    return _regionNamesNorm.contains(_normalizeForMatch(s));
+  }
+
   /// Feature'ın centroid'inin Türkiye sınırları içinde olup olmadığını kontrol eder.
   /// Web tarafındaki _filterDistrictGeoJson() ile aynı mantık.
   static bool _isFeatureInTurkey(Map<String, dynamic> feature) {
@@ -604,6 +766,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
           _hasNonTurkishChar(props['NAME_1'] as String?)) {
         return false;
       }
+      // B2: "Ege" gibi bölge-adlı bogus feature (il değil) → ele.
+      if (_isRegionName(props['NAME_1'] as String?)) return false;
       final geom = feature['geometry'] as Map<String, dynamic>?;
       if (geom == null) return false;
       final type = geom['type'] as String?;
@@ -1063,7 +1227,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
   /// İlçe sınırlarını yükler ve haritada gösterir.
   /// [provinceName] null ise tüm Türkiye ilçeleri gösterilir (İlçe modu).
-  Future<void> _loadDistrictBorders(String? provinceName, {String? highlightDistrict}) async {
+  Future<void> _loadDistrictBorders(String? provinceName,
+      {String? highlightDistrict, bool suppressFill = false}) async {
     final style = _style;
     if (style == null || !_styleLoaded) return;
 
@@ -1116,18 +1281,21 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         data: colorizedJson,
       ));
 
-      // Renkli dolgu — her ilçe farklı renk
-      await style.addLayer(
-        ml.FillStyleLayer(
-          id: _bordersFillLayerId,
-          sourceId: _bordersSourceId,
-          paint: <String, Object>{
-            'fill-color': ['get', '_color'],
-            'fill-opacity': 1.0,
-          },
-        ),
-        belowLayerId: _pinsShadowLayerId,
-      );
+      // B3: Tematik harita aktifken FILL çizme → choropleth rengi gizlenmesin.
+      // (Seçili ilçe vurgusu ayrıca _showDistrictHighlight mavi çerçevesiyle.)
+      if (!suppressFill) {
+        await style.addLayer(
+          ml.FillStyleLayer(
+            id: _bordersFillLayerId,
+            sourceId: _bordersSourceId,
+            paint: <String, Object>{
+              'fill-color': ['get', '_color'],
+              'fill-opacity': 1.0,
+            },
+          ),
+          belowLayerId: _pinsShadowLayerId,
+        );
+      }
 
       // Sınır çizgileri
       await style.addLayer(
@@ -1144,6 +1312,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       );
 
       _bordersActive = true;
+      _borderKind = 'dist:${provinceName ?? "all"}:${highlightDistrict ?? ""}:'
+          '${suppressFill ? "nofill" : "fill"}';
     } catch (e) {
       debugPrint('[MapLibre-Native] İlçe sınırları yükleme hatası: $e');
     } finally {
@@ -1152,7 +1322,15 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   }
 
   /// İl sınırlarını yükler — bölge filtresi varsa sadece o bölgenin illeri.
-  Future<void> _loadProvinceBorders({String? regionFilter}) async {
+  /// [useRegionColors]: true → iller bölge rengiyle (Bölge modu). false → her il
+  /// kendi unique (graph) rengiyle (İl modu). 2026-06-01 (B1): eskiden hep true
+  /// idi → İl modu da Bölge modu gibi bölge renkli görünüyordu. Web'de İl modu
+  /// `_addUniqueColorLayer` (unique), Bölge modu region-dissolve → ona hizalandı.
+  Future<void> _loadProvinceBorders({
+    String? regionFilter,
+    bool useRegionColors = true,
+    bool suppressFill = false,
+  }) async {
     final style = _style;
     if (style == null || !_styleLoaded) return;
 
@@ -1177,7 +1355,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       // Deep copy + graph coloring (komşu iller farklı renk alır)
       final colorized = _colorizeFeatures(
         features.map((f) => jsonDecode(jsonEncode(f))).toList(),
-        useRegionColors: true,
+        useRegionColors: useRegionColors,
       );
 
       // Güvenlik: stale source/layer kalmış olabilir
@@ -1190,18 +1368,21 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         data: colorized,
       ));
 
-      // Renkli dolgu — her il farklı renk
-      await style.addLayer(
-        ml.FillStyleLayer(
-          id: _bordersFillLayerId,
-          sourceId: _bordersSourceId,
-          paint: <String, Object>{
-            'fill-color': ['get', '_color'],
-            'fill-opacity': 1.0,
-          },
-        ),
-        belowLayerId: _pinsShadowLayerId,
-      );
+      // B3: Tematik harita aktifken FILL çizme → choropleth rengi gizlenmesin.
+      // Sadece sınır çizgisi üstte kalır.
+      if (!suppressFill) {
+        await style.addLayer(
+          ml.FillStyleLayer(
+            id: _bordersFillLayerId,
+            sourceId: _bordersSourceId,
+            paint: <String, Object>{
+              'fill-color': ['get', '_color'],
+              'fill-opacity': 1.0,
+            },
+          ),
+          belowLayerId: _pinsShadowLayerId,
+        );
+      }
 
       // Sınır çizgileri
       await style.addLayer(
@@ -1218,6 +1399,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       );
 
       _bordersActive = true;
+      _borderKind = 'prov:${regionFilter ?? "all"}:'
+          '${useRegionColors ? "region" : "unique"}:${suppressFill ? "nofill" : "fill"}';
     } catch (e) {
       debugPrint('[MapLibre-Native] İl sınırları yükleme hatası: $e');
     } finally {
@@ -1234,6 +1417,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     try { await style.removeLayer(_bordersFillLayerId); } catch (_) {}
     try { await style.removeSource(_bordersSourceId); } catch (_) {}
     _bordersActive = false;
+    _borderKind = 'none';
     // Overlay + ilçe highlight katmanlarını da temizle
     await _removeOverlayLayers();
     await _removeDistrictHighlight();
@@ -1770,31 +1954,128 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     }
   }
 
-  // ─── MVT Vector Layer Sync (Aşama I — PostGIS overlay'leri) ──────────
+  // ─── MVT Vector Layer Sync (B5 — PostGIS overlay'leri) ──────────────
   //
-  // **Native'de stub** — Flutter MapLibre paketi 0.2.2 layer-level
-  // `source-layer` özelliğini desteklemiyor; tek tile'dan birden çok
-  // source-layer (hydro/restricted/energy) çekme yolu eksik. Web'de tam
-  // çalışıyor (`map_view_maplibre_web.dart` JS shim üzerinden).
-  //
-  // Native MVT desteği için iki yol (Aşama 4 polish):
-  //   1. Her source-layer için ayrı `VectorSource` (3 source, aynı tile URL)
-  //   2. Custom platform channel ile native MapLibre SDK'ya doğrudan erişim
-  //
-  // Şimdilik state'i logla, no-op bırak — UI toggle'ları görünür kalır,
-  // mobil testte etki yok. Demo web odaklı.
+  // 2026-06-01: NATIVE destek eklendi. maplibre 0.2.2 `VectorSource`'ta
+  // `sourceLayer` alanını destekliyor (source başına bir source-layer) → her
+  // source-layer (hydro/restricted/energy) için aynı tile URL'li ayrı
+  // VectorSource. Web tek source + layer-level source-layer kullanır.
   Future<void> _syncMvtLayers(MapViewModel vm) async {
-    if (vm.showHydroLayer != _lastHydroLayer ||
-        vm.showRestrictedZoneLayer != _lastRestrictedLayer ||
-        vm.showEnergyCorridorLayer != _lastEnergyCorridorLayer) {
-      debugPrint(
-        '[MapLibre-Native] MVT toggle stub — '
-        'hydro=${vm.showHydroLayer} restricted=${vm.showRestrictedZoneLayer} '
-        'energy=${vm.showEnergyCorridorLayer} (Aşama 4: native MVT desteği)',
-      );
-      _lastHydroLayer = vm.showHydroLayer;
-      _lastRestrictedLayer = vm.showRestrictedZoneLayer;
-      _lastEnergyCorridorLayer = vm.showEnergyCorridorLayer;
+    final style = _style;
+    if (style == null || !_styleLoaded) return;
+
+    final hydro = vm.showHydroLayer;
+    final restricted = vm.showRestrictedZoneLayer;
+    final energy = vm.showEnergyCorridorLayer;
+    if (hydro == _lastHydroLayer &&
+        restricted == _lastRestrictedLayer &&
+        energy == _lastEnergyCorridorLayer) {
+      return;
+    }
+    _lastHydroLayer = hydro;
+    _lastRestrictedLayer = restricted;
+    _lastEnergyCorridorLayer = energy;
+
+    // 2026-06-01: maplibre 0.2.2 ANDROID VectorSource SADECE `url` (TileJSON)
+    // destekliyor (`tiles[]` → `source.url!` null crash; data-URI de parse
+    // edilemiyor "Unable to parse resourceUrl"). Backend'in TileJSON endpoint'ini
+    // veriyoruz; o da `tiles` URL'ini isteğin host'undan türetir.
+    final base = vm.apiService.analysis.baseUrl.replaceAll(RegExp(r'/+$'), '');
+    final tileSrcUrl = '$base/api/v1/tiles/tilejson.json';
+
+    // ── HYDRO (göl/baraj/nehir) — fill + line ──
+    if (hydro && !_mvtHydroActive) {
+      try {
+        await style.addSource(ml.VectorSource(
+          id: _mvtHydroSrc, url: '$tileSrcUrl?sl=hydro',
+          sourceLayer: 'hydro', minZoom: 6, maxZoom: 18,
+        ));
+        await style.addLayer(
+          ml.FillStyleLayer(
+            id: _mvtHydroFillId, sourceId: _mvtHydroSrc,
+            // 2026-06-01: native'de iç içe `match` ifadesi parse edilmiyordu
+            // (katman hiç çizilmiyordu) → düz tek renk. Su = mavi.
+            paint: <String, Object>{
+              'fill-color': '#1E5BA8',
+              'fill-opacity': 0.55,
+              'fill-outline-color': '#0E3A6E',
+            },
+          ),
+          belowLayerId: _pinsShadowLayerId,
+        );
+        await style.addLayer(
+          ml.LineStyleLayer(
+            id: _mvtHydroLineId, sourceId: _mvtHydroSrc,
+            paint: <String, Object>{
+              'line-color': '#9FD8FF', 'line-width': 0.8, 'line-opacity': 0.8,
+            },
+          ),
+          belowLayerId: _pinsShadowLayerId,
+        );
+        _mvtHydroActive = true;
+      } catch (e) {
+        debugPrint('[MapLibre-Native] MVT hydro ekleme hatası: $e');
+      }
+    } else if (!hydro && _mvtHydroActive) {
+      try { await style.removeLayer(_mvtHydroLineId); } catch (_) {}
+      try { await style.removeLayer(_mvtHydroFillId); } catch (_) {}
+      try { await style.removeSource(_mvtHydroSrc); } catch (_) {}
+      _mvtHydroActive = false;
+    }
+
+    // ── RESTRICTED (askeri/koruma) — fill (kırmızı tonları) ──
+    if (restricted && !_mvtRestrictedActive) {
+      try {
+        await style.addSource(ml.VectorSource(
+          id: _mvtRestrictedSrc, url: '$tileSrcUrl?sl=restricted',
+          sourceLayer: 'restricted', minZoom: 6, maxZoom: 18,
+        ));
+        await style.addLayer(
+          ml.FillStyleLayer(
+            id: _mvtRestrictedId, sourceId: _mvtRestrictedSrc,
+            // 2026-06-01: match yerine düz kırmızı (native parse sorunu).
+            paint: <String, Object>{
+              'fill-color': '#C62828',
+              'fill-opacity': 0.42,
+              'fill-outline-color': '#7F0000',
+            },
+          ),
+          belowLayerId: _pinsShadowLayerId,
+        );
+        _mvtRestrictedActive = true;
+      } catch (e) {
+        debugPrint('[MapLibre-Native] MVT restricted ekleme hatası: $e');
+      }
+    } else if (!restricted && _mvtRestrictedActive) {
+      try { await style.removeLayer(_mvtRestrictedId); } catch (_) {}
+      try { await style.removeSource(_mvtRestrictedSrc); } catch (_) {}
+      _mvtRestrictedActive = false;
+    }
+
+    // ── ENERGY (iletim hatları) — line ──
+    if (energy && !_mvtEnergyActive) {
+      try {
+        await style.addSource(ml.VectorSource(
+          id: _mvtEnergySrc, url: '$tileSrcUrl?sl=energy',
+          sourceLayer: 'energy', minZoom: 6, maxZoom: 18,
+        ));
+        await style.addLayer(
+          ml.LineStyleLayer(
+            id: _mvtEnergyId, sourceId: _mvtEnergySrc,
+            paint: <String, Object>{
+              'line-color': '#FFD54F', 'line-width': 1.4, 'line-opacity': 0.85,
+            },
+          ),
+          belowLayerId: _pinsShadowLayerId,
+        );
+        _mvtEnergyActive = true;
+      } catch (e) {
+        debugPrint('[MapLibre-Native] MVT energy ekleme hatası: $e');
+      }
+    } else if (!energy && _mvtEnergyActive) {
+      try { await style.removeLayer(_mvtEnergyId); } catch (_) {}
+      try { await style.removeSource(_mvtEnergySrc); } catch (_) {}
+      _mvtEnergyActive = false;
     }
   }
 
@@ -1964,13 +2245,17 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     final province = vm.selectedProvinceName;
     final region = vm.selectedRegionName;
     final district = vm.selectedDistrictName;
+    // B3: Tematik harita (choropleth/ML) aktifse seçim FILL'i bastırılır (sadece
+    // sınır çizgisi) → tematik renk gizlenmesin. Toggle da değişim sayılır.
+    final thematicActive = _choroplethLayerActive || _mlChoroLayerActive;
 
     // Hiç değişim yoksa çık
     if (show == _lastProvincesMode &&
         level == _lastSelectionLevel &&
         province == _lastSelectedProvince &&
         region == _lastSelectedRegion &&
-        district == _lastSelectedDistrict) {
+        district == _lastSelectedDistrict &&
+        thematicActive == _lastThematicActive) {
       return;
     }
 
@@ -1982,6 +2267,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     _lastSelectedProvince = province;
     _lastSelectedRegion = region;
     _lastSelectedDistrict = district;
+    _lastThematicActive = thematicActive;
 
     if (!show) {
       await _removeBorderLayers();
@@ -2000,8 +2286,18 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
       if (level == SelectionLevel.district && initial == SelectionLevel.province) {
         // İL MODU → ilçe seviyesine geçildi: il sınırlarını koru, üstüne overlay ekle
-        if (!_bordersActive) {
-          await _loadProvinceBorders(); // Tüm iller (filtre yok)
+        // 2026-06-01: guard `!_bordersActive` yerine `_borderKind` — başka moddan
+        // (Bölge=region renk / İlçe=district) gelince eski sınırlar kalmasın.
+        // Zaten province-UNIQUE yüklüyse (region-scoped olsa bile) koru — yeniden
+        // yükleyip görünümü tüm illere genişletme.
+        final fillTok = thematicActive ? 'nofill' : 'fill';
+        final hasProvinceUnique = _borderKind.startsWith('prov:') &&
+            _borderKind.contains(':unique') &&
+            _borderKind.endsWith(':$fillTok');
+        if (!hasProvinceUnique) {
+          // B1: İl modu → her il unique (graph) renk; bölge rengi değil.
+          await _loadProvinceBorders(
+              useRegionColors: false, suppressFill: thematicActive); // Tüm iller
         }
         // Sadece il değiştiğinde overlay'ı güncelle (aynı ilde ilçe seçiminde değiştirme)
         if (province != null && (provinceChanged || !_overlayActive)) {
@@ -2010,22 +2306,29 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       } else if (level == SelectionLevel.district && initial == SelectionLevel.district) {
         // İLÇE MODU: tüm ilçeler, seçim renkleri değişmez
         await _removeOverlayLayers();
-        if (!_bordersActive) {
-          // İlk yüklemede tüm ilçeleri göster (province=null)
-          await _loadDistrictBorders(null);
+        // 2026-06-01: Bölge/İl modundan İlçe moduna geçince `_bordersActive` hâlâ
+        // true (eski province sınırları) → eskiden ilçeler yüklenmiyor, renk
+        // değişmiyordu. `_borderKind` ile "tüm ilçeler yüklü değilse yükle".
+        final desiredDistAll = 'dist:all::${thematicActive ? "nofill" : "fill"}';
+        if (_borderKind != desiredDistAll) {
+          await _loadDistrictBorders(null, suppressFill: thematicActive);
         }
         // İlçe seçildiğinde borderleri yeniden çizme — sadece mavi çerçeve
       } else if (level == SelectionLevel.district) {
         // Bölge modu → ilçe seviyesi: overlay temizle, klasik ilçe sınırları yükle
         await _removeOverlayLayers();
-        await _loadDistrictBorders(province, highlightDistrict: district);
+        await _loadDistrictBorders(province,
+            highlightDistrict: district, suppressFill: thematicActive);
       } else if (level == SelectionLevel.region) {
+        // BÖLGE modu → iller bölge rengiyle (region color blocks).
         await _removeOverlayLayers();
-        await _loadProvinceBorders(regionFilter: null);
+        await _loadProvinceBorders(
+            regionFilter: null, useRegionColors: true, suppressFill: thematicActive);
       } else {
-        // Province (İl) modu ve Region → Province geçişi
+        // Province (İl) modu ve Region → Province geçişi → her il unique renk.
         await _removeOverlayLayers();
-        await _loadProvinceBorders(regionFilter: region);
+        await _loadProvinceBorders(
+            regionFilter: region, useRegionColors: false, suppressFill: thematicActive);
         if (regionChanged && region != null) {
           _flyToRegionBounds(region);
         }
@@ -2108,9 +2411,17 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     final data = vm.choroplethData;
     final hasData = data != null && data.isNotEmpty;
 
-    // Mod aynı VE katman zaten aktifse (veya data yok) → atla
-    if (mode == _lastChoropleth && (_choroplethLayerActive || !hasData)) return;
+    // 2026-06-01 (B6): eskiden sadece mode'a bakıyordu → zaman simülasyonunda
+    // metrik sabit ama frame data'sı her tikte değişiyordu, native güncellemiyordu
+    // ("tek renk, değişmiyor"). Artık data identity değişince yeniden çizilir.
+    final dataChanged = !identical(data, _lastChoroData);
+    if (mode == _lastChoropleth &&
+        !dataChanged &&
+        (_choroplethLayerActive || !hasData)) {
+      return;
+    }
     _lastChoropleth = mode;
+    _lastChoroData = data;
 
     // Önceki katmanı kaldır
     if (_choroplethLayerActive) {
@@ -2124,43 +2435,14 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
     if (mode == ChoroplethMode.none || data == null || data.isEmpty) return;
 
-    // District GeoJSON'ı cache'den al
     try {
-      final raw = await _fetchDistrictsGeoJson();
-      if (raw == null) return;
-
-      // Ham GeoJSON'ı kopyala — orijinal cache'e dokunma
-      final geojson = jsonDecode(raw) as Map<String, dynamic>;
-      // Türkiye dışındaki feature'ları filtrele (Yunan adaları vb.)
-      final features = (geojson['features'] as List? ?? [])
-          .cast<Map<String, dynamic>>()
-          .where(_isFeatureInTurkey)
-          .toList();
-      geojson['features'] = features;
+      // 2026-06-01 (B6 perf): cache'li parsed + Türkiye-filtreli feature listesi
+      // — animasyonda her frame ~10MB GeoJSON yeniden decode edilmesin (frame'ler
+      // ilerleyemiyordu). Cache MUTATE EDİLMEZ; aşağıda yeni feature objeleri kurulur.
+      final src = await _getDistrictFeatures();
+      if (_disposed || !_styleLoaded || _style == null) return;
+      if (src.isEmpty) return;
       final dataKey = mode.dataKey;
-
-      // Her feature'a choropleth_value property ekle
-      for (final f in features) {
-        final props = f['properties'] as Map<String, dynamic>? ?? {};
-        final name1 = props['NAME_1'] ?? '';
-        final name2 = props['NAME_2'] ?? '';
-        final key = '$name1|$name2';
-        final entry = data[key];
-        if (entry is Map) {
-          props['choropleth_value'] = (entry[dataKey] as num?)?.toDouble() ?? 0.0;
-        } else {
-          props['choropleth_value'] = 0.0;
-        }
-      }
-
-      // Dinamik ölçeklendirme: gerçek değerlerden percentile hesapla
-      final vals = <double>[];
-      for (final f in features) {
-        final v = (f['properties'] as Map)['choropleth_value'] as double;
-        if (v != 0.0) vals.add(v);
-      }
-      if (vals.isEmpty) return;
-      vals.sort();
 
       // ── Sabit fiziksel skala — gerçek değer → renk eşlemesi ──────────
       // Sıcaklık, rüzgar, ışınım için fiziksel anlamlı eşik değerleri.
@@ -2227,36 +2509,39 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         ramp.add([t, stop[1]]);
       }
       // ─── Rengi önceden hesapla (pre-compute) ─────────────────────────
-      // MapLibre Native düşük zoom'da polygon'ları basitleştirirken
-      // interpolate expression sorunlu olabiliyor. Rengi doğrudan
-      // feature property olarak string'e yazarak bu sorundan kaçınırız.
-      // Verisi olmayan feature'ları tamamen çıkar (siyah polygon sorununu önler).
-      features.removeWhere((f) {
-        final v = ((f['properties'] as Map)['choropleth_value'] as num?)?.toDouble() ?? 0.0;
-        return v == 0.0;
-      });
-      for (final f in features) {
-        final props = f['properties'] as Map<String, dynamic>? ?? {};
-        final v = (props['choropleth_value'] as num?)?.toDouble() ?? 0.0;
-        // Normalize: 0..1 aralığına çek
+      // MapLibre Native düşük zoom'da interpolate expression'ı bozuyor → rengi
+      // feature property'sine string olarak yazıyoruz. Verisi 0/olmayan ilçe
+      // atlanır (siyah polygon önlenir). YENİ feature objeleri → cache mutate yok.
+      final colored = <Map<String, dynamic>>[];
+      for (final f in src) {
+        final props = f['properties'] as Map<String, dynamic>? ?? const {};
+        final key = '${props['NAME_1'] ?? ''}|${props['NAME_2'] ?? ''}';
+        final entry = data[key];
+        final v = (entry is Map)
+            ? ((entry[dataKey] as num?)?.toDouble() ?? 0.0)
+            : 0.0;
+        if (v == 0.0) continue;
         final t = ((v - physMin) / physRange).clamp(0.0, 1.0);
-        // Ramp'ta en yakın iki stop arasında interpolasyon
         String color = ramp.last[1] as String;
         for (int i = 0; i < ramp.length - 1; i++) {
           final t0 = ramp[i][0] as double;
           final t1 = ramp[i + 1][0] as double;
           if (t >= t0 && t <= t1) {
-            // Basit: daha yakın olan stop'un rengini al
             color = (t - t0 <= t1 - t) ? ramp[i][1] as String : ramp[i + 1][1] as String;
             break;
           }
         }
-        props['_choro_color'] = color;
+        colored.add({
+          'type': 'Feature',
+          'properties': {'_choro_color': color},
+          'geometry': f['geometry'],
+        });
       }
+      if (colored.isEmpty) return;
 
       await style.addSource(ml.GeoJsonSource(
         id: _choroplethSourceId,
-        data: jsonEncode(geojson),
+        data: jsonEncode({'type': 'FeatureCollection', 'features': colored}),
       ));
       _choroplethSourceAdded = true;
 
@@ -2274,6 +2559,187 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     }
   }
 
+  // ─── ML Projeksiyon Choropleth (B4) ────────────────────────────────
+  // Weather choropleth'ten ayrı katman. Veri: {"İl|İlçe": değer} /
+  // {"İl": değer} / {değer nesnesi}. Viridis gradyanı min..max. Renk
+  // feature property'sine pre-compute edilir (native interpolate sorunu yok).
+  static const _mlChoroSourceId = 'srrp-ml-choro-src';
+  static const _mlChoroLayerId  = 'srrp-ml-choro-fill';
+
+  void _applyMlChoropleth(String dataJson) {
+    if (_disposed) return;
+    _lastMlChoroJson = dataJson;
+    final seq = ++_mlSeq;
+    _renderMlChoropleth(dataJson, seq);
+  }
+
+  void _clearMlChoropleth() {
+    _lastMlChoroJson = null;
+    _clearMlChoroLocked();
+  }
+
+  /// 2026-06-01 (CRASH FIX): ML choropleth op'larını `_syncAll` ile AYNI
+  /// `_syncing` kilidinde serialize eder. ML source mutasyonu, `_syncAll`'ın
+  /// border removeSource'u ile EŞ ZAMANLI çalışınca maplibre'nin GeoJSON
+  /// parse-callback'i serbest bırakılmış source'a dokunup SIGSEGV veriyordu
+  /// (reset crash'i). Kilit alınamazsa (dispose/teardown) false döner → no-op.
+  Future<bool> _acquireSyncLock() async {
+    var tries = 0;
+    while (_syncing) {
+      if (_disposed) return false;
+      await Future.delayed(const Duration(milliseconds: 16));
+      if (++tries > 300) return false; // ~5 sn güvenlik tavanı
+    }
+    if (_disposed || !_styleLoaded || _style == null) return false;
+    _syncing = true;
+    return true;
+  }
+
+  /// Kilit TUTAN çağıran tarafından çağrılır (kendi kilit almaz → deadlock yok).
+  Future<void> _removeMlChoroLayersUnlocked() async {
+    final style = _style;
+    if (style == null) return;
+    if (_mlChoroLayerActive) {
+      try { await style.removeLayer(_mlChoroLayerId); } catch (_) {}
+      _mlChoroLayerActive = false;
+    }
+    if (_mlChoroSourceAdded) {
+      try { await style.removeSource(_mlChoroSourceId); } catch (_) {}
+      _mlChoroSourceAdded = false;
+    }
+  }
+
+  Future<void> _clearMlChoroLocked() async {
+    if (!await _acquireSyncLock()) return;
+    try {
+      await _removeMlChoroLayersUnlocked();
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  double? _mlNum(dynamic e) {
+    if (e is num) return e.toDouble();
+    if (e is Map && e['value'] is num) return (e['value'] as num).toDouble();
+    return null;
+  }
+
+  Future<void> _renderMlChoropleth(String dataJson, int seq) async {
+    // Kilit al — _syncAll/border op'larıyla eşzamanlı GeoJSON mutasyonu yok.
+    if (!await _acquireSyncLock()) return;
+    try {
+      // Kilidi beklerken daha yeni bir istek geldiyse bunu atla (coalesce).
+      if (seq != _mlSeq) return;
+      final style = _style;
+      if (style == null) return;
+      final raw = jsonDecode(dataJson);
+      if (raw is! Map) return;
+
+      // Değer aralığı (min..max) — viridis gradyanını buna yay.
+      final vals = <double>[];
+      raw.forEach((k, v) {
+        if (k == '_meta') return;
+        final n = _mlNum(v);
+        if (n != null && n.isFinite) vals.add(n);
+      });
+      if (vals.isEmpty) {
+        _lastMlChoroJson = null;
+        await _removeMlChoroLayersUnlocked();
+        return;
+      }
+      var mn = vals.reduce((a, b) => a < b ? a : b);
+      var mx = vals.reduce((a, b) => a > b ? a : b);
+      if (mx - mn < 1e-9) mx = mn + 1;
+
+      const viridis = [
+        '#440154', '#414487', '#2a788e', '#22a884',
+        '#7ad151', '#bddf26', '#fde725',
+      ];
+
+      // İl-seviyesi normalize index — composite/düz anahtar tutmazsa son çare.
+      final provNorm = <String, double>{};
+      raw.forEach((k, v) {
+        if (k == '_meta' || (k as String).contains('|')) return;
+        final n = _mlNum(v);
+        if (n != null) provNorm[_normName(k)] = n;
+      });
+
+      // Parse edilmiş + Türkiye-filtreli ilçe feature cache'i (tek sefer parse;
+      // animasyonda her frame ~10MB GeoJSON yeniden decode edilmesin).
+      final features = await _getDistrictFeatures();
+      // await sonrası teardown/style reload kontrolü.
+      if (_disposed || !_styleLoaded || _style == null) return;
+      if (features.isEmpty) return;
+
+      // Her feature → değer (composite → il → normalize il) + viridis rengi.
+      final colored = <Map<String, dynamic>>[];
+      for (final f in features) {
+        final props = f['properties'] as Map<String, dynamic>? ?? {};
+        final n1 = (props['NAME_1'] ?? '').toString();
+        final n2 = (props['NAME_2'] ?? '').toString();
+        final val = _mlNum(raw['$n1|$n2']) ??
+            _mlNum(raw[n1]) ??
+            provNorm[_normName(n1)];
+        if (val == null || !val.isFinite) continue;
+        final t = ((val - mn) / (mx - mn)).clamp(0.0, 1.0);
+        final idx =
+            (t * (viridis.length - 1)).round().clamp(0, viridis.length - 1);
+        colored.add({
+          'type': 'Feature',
+          'properties': {'_ml_color': viridis[idx]},
+          'geometry': f['geometry'],
+        });
+      }
+      if (colored.isEmpty) {
+        _lastMlChoroJson = null;
+        await _removeMlChoroLayersUnlocked();
+        return;
+      }
+
+      // Eski katmanı temizle (kilidi zaten tutuyoruz → unlocked).
+      await _removeMlChoroLayersUnlocked();
+      if (_disposed || _style == null) return;
+
+      await style.addSource(ml.GeoJsonSource(
+        id: _mlChoroSourceId,
+        data: jsonEncode({'type': 'FeatureCollection', 'features': colored}),
+      ));
+      _mlChoroSourceAdded = true;
+
+      await style.addLayer(ml.FillStyleLayer(
+        id: _mlChoroLayerId,
+        sourceId: _mlChoroSourceId,
+        paint: {
+          'fill-color': ['get', '_ml_color'],
+          'fill-opacity': 0.82,
+        },
+      ), belowLayerId: _pinsShadowLayerId);
+      _mlChoroLayerActive = true;
+      debugPrint('[MapLibre-Native] ML choropleth: ${colored.length} polygon, '
+          'aralık $mn..$mx');
+    } catch (e) {
+      debugPrint('[MapLibre-Native] ML choropleth hatası: $e');
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  /// İl adı normalize (diakritik/kısaltma köprüsü) — web `_srrpNormName` ile
+  /// aynı amaç. Büyük/küçük Türkçe harfleri açıkça eşler, sonra ASCII lower.
+  static String _normName(String s) {
+    final r = s
+        .replaceAll('â', 'a').replaceAll('Â', 'a')
+        .replaceAll('î', 'i').replaceAll('Î', 'i')
+        .replaceAll('û', 'u').replaceAll('Û', 'u')
+        .replaceAll('ı', 'i').replaceAll('İ', 'i')
+        .replaceAll('ş', 's').replaceAll('Ş', 's')
+        .replaceAll('ç', 'c').replaceAll('Ç', 'c')
+        .replaceAll('ğ', 'g').replaceAll('Ğ', 'g')
+        .replaceAll('ö', 'o').replaceAll('Ö', 'o')
+        .replaceAll('ü', 'u').replaceAll('Ü', 'u');
+    return r.toLowerCase().replaceAll(RegExp(r'\s+'), '').trim();
+  }
+
 
   // ─── Build ────────────────────────────────────────────────────────
 
@@ -2282,6 +2748,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     final vm       = Provider.of<MapViewModel>(context);
     final styleUrl = vm.mlBaseStyle.styleUrl;
     final isGlobe  = vm.showGlobe;
+    _globeForConstrain = isGlobe; // B8: move event'inde Provider okumamak için
 
     // Dikey/yatay yönelime göre sınır ve zoom ayarı
     final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;

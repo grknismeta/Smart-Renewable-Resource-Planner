@@ -50,12 +50,25 @@ class _LandingScreenState extends State<LandingScreen> {
   void _onAuthSuccess() {
     setState(() => _authOpen = false);
     if (!mounted) return;
+    _resetMapStateForMain();
     Navigator.of(context).pushReplacementNamed('/map');
   }
 
   void _continueAsGuest() {
     if (!mounted) return;
+    _resetMapStateForMain();
     Navigator.of(context).pushReplacementNamed('/map');
+  }
+
+  /// 2026-06-02: /map'e geçmeden ÖNCE landing'in koyduğu kısıtları temizle.
+  /// Landing harita etkileşimini kapatıp (_mapInteractive=false) Türkiye sınırı
+  /// koyuyor; bu değerler JS global'inde saklanıp her style.load'da yeniden
+  /// uygulanıyor. pushReplacement eski rotayı (landing) YENİ rota (/map) build +
+  /// style.load OLDUKTAN SONRA dispose ettiği için, dispose'daki reset geç kalıyor
+  /// ve ana harita KİLİTLİ açılıyordu. Bu yüzden reset navigasyondan ÖNCE yapılır.
+  void _resetMapStateForMain() {
+    MapViewMapLibre.clearMaxBounds();
+    MapViewMapLibre.setInteractive(true);
   }
 
   @override
@@ -512,6 +525,17 @@ class _LandingMapState extends State<_LandingMap> {
     super.initState();
     // Harita yüklenene kadar bekle, sonra vitrin modunu kur
     _waitForMapAndSetup();
+  }
+
+  @override
+  void dispose() {
+    // 2026-06-02: Landing, harita etkileşimini kapatıp Türkiye sınırı koyuyor.
+    // Bu durum JS global'lerinde saklanıyor ve style.load'da yeniden uygulanıyor.
+    // /map sayfasına geçerken sıfırlanmazsa, ana harita kilitli + sınırlı açılır.
+    // Bu yüzden landing'den çıkarken varsayılana (serbest + sınırsız) döndürülür.
+    MapViewMapLibre.clearMaxBounds();
+    MapViewMapLibre.setInteractive(true);
+    super.dispose();
   }
 
   /// Harita hazır olana kadar bekler, sonra vitrin modunu kurar.

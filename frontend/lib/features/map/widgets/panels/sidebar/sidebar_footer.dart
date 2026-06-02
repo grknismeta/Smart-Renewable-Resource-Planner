@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/core/theme/theme_view_model.dart';
 import 'package:frontend/features/auth/viewmodels/auth_viewmodel.dart';
+import 'package:frontend/features/auth/widgets/account_dialog.dart';
 import 'package:frontend/features/help/help_dialog.dart';
 import 'package:frontend/features/settings/settings_dialog.dart';
 
@@ -52,6 +53,15 @@ class SidebarFooter extends StatelessWidget {
             color: theme.secondaryTextColor,
             onTap: () => HelpDialog.show(context),
           ),
+
+          // Hesabım (yalnız giriş yapıldıysa) — HESABIM 2026-06-02
+          if (!isGuest)
+            _buildMenuItem(
+              icon: Icons.account_circle_outlined,
+              label: "Hesabım",
+              color: theme.secondaryTextColor,
+              onTap: () => AccountDialog.show(context),
+            ),
 
           // Giriş/Çıkış
           _buildAuthButton(context),

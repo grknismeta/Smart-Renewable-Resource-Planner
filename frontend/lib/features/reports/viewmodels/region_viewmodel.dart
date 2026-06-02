@@ -48,14 +48,22 @@ class RegionViewModel extends BaseViewModel {
     await _loadRegion(regionId);
   }
 
+  // 2026-06-01: "En son istek kazanır" token'ı. Birden çok _loadRegion aynı
+  // anda uçarsa (init default + landing pending, ya da hızlı bölge değişimi)
+  // geç dönen eski cevabın yeni seçimi ezmesini engeller.
+  int _loadToken = 0;
+
   Future<void> _loadRegion(String regionId) async {
+    final token = ++_loadToken;
     setBusy(true);
     try {
       final detail = await _apiService.analysis.fetchRegionDetail(regionId);
+      if (token != _loadToken) return; // bayat → daha yeni bir seçim yapıldı
       _selectedRegionId = regionId;
       _selectedRegion = detail;
       setBusy(false);
     } catch (e, st) {
+      if (token != _loadToken) return;
       debugPrint('RegionVM.loadRegion hata: $e\n$st');
       setError(e.toString());
     }
