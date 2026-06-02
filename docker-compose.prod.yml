@@ -69,9 +69,10 @@ services:
         condition: service_healthy
     volumes:
       - backend_data:/app/data
-      # Sınır (il/ilçe) vektör dosyaları — image'a baked DEĞİL (gitignore + boyut).
-      # Bu ~47MB dosyayı droplet'te repo'ya koy (deploy rehberi); buradan mount edilir.
-      - ./backend/data/vector:/app/backend/data/vector:ro
+      # Backend runtime data (gitignore'da, image'a baked DEĞİL): sınır vektörleri
+      # (vector/) + tr_stats/tr_regions/mock_climate JSON'ları. Droplet'te repo'ya
+      # konup buradan mount edilir. (Büyük gis_osm_* droplet'te yok, sorun değil.)
+      - ./backend/data:/app/backend/data:ro
     # Host'a port AÇILMAZ — caddy iç ağ üzerinden backend:8000'e erişir
 
   caddy:
