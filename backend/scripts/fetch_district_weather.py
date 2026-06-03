@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import re
 import sys
 import time
@@ -47,7 +48,10 @@ except Exception:
 API_URL = "https://archive-api.open-meteo.com/v1/archive"
 RATE_DELAY = 2.0
 RL_WAIT = 65.0
-MAX_RETRY = 6
+MAX_RETRY = 3            # 429 transient genelde 1-2 denemede geçer; 3 yeterli
+# Üst üste bu kadar ilçe 429 ile tükenirse KOTA DOLU say → pass'i erken bitir
+# (kuru kotada her ilçeyi 3×65sn beklemek günlerce sürerdi). Resume ile kayıp yok.
+ABORT_AFTER_RL = 3
 
 # Open-Meteo daily değişkeni → weather_data kolonu
 DAILY_VARS = [
@@ -70,18 +74,22 @@ OUT_COLS = [
 
 
 def _fetch(lat: float, lon: float, start: str, end: str):
+    """Returns (daily_dict | None, rate_limited: bool). rate_limited=True ise
+    429 nedeniyle başarısız (kota); çağıran üst üste 429'da pass'i durdurur."""
     params = {
         "latitude": lat, "longitude": lon,
         "start_date": start, "end_date": end,
         "daily": ",".join(DAILY_VARS),
         "timezone": "Europe/Istanbul",
     }
+    saw_429 = False
     for attempt in range(MAX_RETRY):
         try:
             r = requests.get(API_URL, params=params, timeout=90)
             if r.status_code == 200:
-                return r.json().get("daily")
+                return r.json().get("daily"), False
             if r.status_code == 429:
+                saw_429 = True
                 print(f"      … 429, {RL_WAIT:.0f}sn bekle ({attempt+1}/{MAX_RETRY})")
                 time.sleep(RL_WAIT)
                 continue
@@ -94,11 +102,11 @@ def _fetch(lat: float, lon: float, start: str, end: str):
                     print(f"      … end_date {m.group(1)}'e kısıldı, retry")
                     continue
             print(f"      ! HTTP {r.status_code}: {r.text[:120]}")
-            return None
+            return None, False
         except Exception as e:
             print(f"      ! istek hatası: {e} — 10sn bekle")
             time.sleep(10)
-    return None
+    return None, saw_429
 
 
 def _rows(daily: dict, prov: str, dist: str, lat: float, lon: float):
@@ -126,6 +134,8 @@ def main():
     p.add_argument("--start", default="2015-01-01")
     p.add_argument("--end", default=(date.today() - timedelta(days=1)).isoformat())
     p.add_argument("--out", default=None, help="çıktı CSV (varsayılan weather_shard_<i>.csv)")
+    p.add_argument("--fresh", action="store_true",
+                   help="mevcut CSV'yi SIFIRDAN yaz (resume yapma)")
     a = p.parse_args()
 
     out_path = a.out or f"weather_shard_{a.shard}.csv"
@@ -134,32 +144,87 @@ def main():
     # Deterministik shard (round-robin) — tüm makinelerde aynı sıralama
     mine = [d for i, d in enumerate(all_d) if i % a.of == a.shard]
 
+    # ── RESUME (2026-06-03): Open-Meteo kotası tek IP'de hızla doluyor; tek
+    # seferde 975 ilçe bitmiyor. Çıktı CSV varsa ÇEKİLMİŞ (province,district)
+    # çiftlerini oku → atla, dosyaya EKLE (append). Atlanan/429 yiyen ilçeler
+    # CSV'ye yazılmadığı için sonraki çalıştırmada otomatik TEKRAR denenir.
+    # Böylece script'i kota açıldıkça defalarca çalıştır → veri birikir, kayıp yok.
+    done = set()
+    resume = (not a.fresh) and os.path.exists(out_path) and os.path.getsize(out_path) > 0
+    if resume:
+        try:
+            with open(out_path, encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    prov_n = (row.get("province_name") or "").strip()
+                    dist_n = (row.get("district_name") or "").strip()
+                    if prov_n:
+                        done.add((prov_n, dist_n))
+        except Exception as e:
+            print(f"  ! mevcut CSV okunamadı ({e}) — sıfırdan yazılacak")
+            resume = False
+            done = set()
+
+    todo = [d for d in mine
+            if (d["province"].strip(), d["district"].strip()) not in done]
+
     print("=" * 64)
-    print(f"  İlçe weather backfill — shard {a.shard}/{a.of}")
-    print(f"  {len(mine)}/{len(all_d)} ilçe · {a.start}→{a.end} · out={out_path}")
+    print(f"  İlçe weather backfill — shard {a.shard}/{a.of}"
+          + ("  [RESUME]" if resume else ""))
+    print(f"  {len(mine)} ilçe · {len(done)} hazır · {len(todo)} kalan"
+          f" · {a.start}→{a.end} · out={out_path}")
     print("=" * 64)
 
+    if not todo:
+        print("  Tüm ilçeler zaten çekilmiş — yapılacak iş yok.")
+        return
+
     written = 0
-    with open(out_path, "w", encoding="utf-8", newline="") as fo:
+    fetched = 0
+    skipped = 0
+    consec_rl = 0
+    aborted = False
+    mode = "a" if resume else "w"
+    with open(out_path, mode, encoding="utf-8", newline="") as fo:
         w = csv.writer(fo)
-        w.writerow(OUT_COLS)
-        for i, d in enumerate(mine, 1):
+        if not resume:
+            w.writerow(OUT_COLS)
+        for i, d in enumerate(todo, 1):
             prov, dist = d["province"], d["district"]
             lat, lon = float(d["lat"]), float(d["lon"])
-            daily = _fetch(lat, lon, a.start, a.end)
+            daily, rate_limited = _fetch(lat, lon, a.start, a.end)
             time.sleep(RATE_DELAY)
             if not daily:
-                print(f"  [{i}/{len(mine)}] {prov}/{dist}: yanıtsız — atlandı")
+                skipped += 1
+                consec_rl = consec_rl + 1 if rate_limited else 0
+                reason = "kota/429" if rate_limited else "yanıtsız"
+                print(f"  [{i}/{len(todo)}] {prov}/{dist}: {reason} — atlandı "
+                      f"(sonraki çalıştırmada tekrar denenecek)")
+                # Üst üste ABORT_AFTER_RL kez 429 → kota dolu, pass'i bitir.
+                if consec_rl >= ABORT_AFTER_RL:
+                    aborted = True
+                    print(f"\n  ⛔ Üst üste {consec_rl} ilçe kota (429) nedeniyle "
+                          f"alınamadı → KOTA DOLU görünüyor, çekim durduruldu.")
+                    break
                 continue
+            consec_rl = 0
             rows = _rows(daily, prov, dist, lat, lon)
             w.writerows(rows)
             written += len(rows)
+            fetched += 1
             fo.flush()
-            if i % 20 == 0:
-                print(f"  ... {i}/{len(mine)} ilçe, {written} satır")
+            if i % 10 == 0:
+                print(f"  ... {i}/{len(todo)} | {fetched} çekildi, {skipped} atlandı, "
+                      f"{written} satır")
 
+    remaining = len(todo) - fetched
     print("\n" + "=" * 64)
-    print(f"  BİTTİ — {written} günlük satır → {out_path}")
+    print(f"  {'DURDURULDU (kota)' if aborted else 'BİTTİ'} — bu pass: {fetched} ilçe "
+          f"çekildi, {skipped} atlandı, {written} yeni satır → {out_path}")
+    print(f"  Toplam ilerleme: {len(done) + fetched}/{len(mine)} ilçe hazır, "
+          f"{remaining} kaldı.")
+    if remaining > 0:
+        print(f"  → Kota açılınca (genelde saat başı / ertesi gün) AYNI komutu "
+              f"TEKRAR çalıştır — resume otomatik, kalan {remaining} denenir.")
     print("=" * 64)
 
 
