@@ -34,23 +34,27 @@ from typing import Dict, List
 # Kaynak yaklaşımı: IPCC AR6 WG1 Atlas (Mediterranean) + Türkiye iklim
 # projeksiyon literatürü ortalaması, yıllığa indirgenmiş.
 _SCENARIO_DELTAS: Dict[str, Dict[str, float]] = {
+    # 2026-06-03 (ML-4): İLLÜSTRATİF değerler — bilimsel IPCC delta'ları yıllık
+    # çok küçüktü (rcp85 güneş +0.30%/yıl → 10y ~%3), senaryolar haritada ayrışmıyordu.
+    # ~3.5x büyütüldü → slider boyunca baseline/rcp45/rcp85 belirgin farklı.
+    # (Yön bilimsel: güneş↑ bulut↓ yağış↓ debi↓ rüzgar↓; büyüklük demo amaçlı.)
     "rcp45": {
-        "sunshine": +0.15,       # açık gün artışı
-        "irradiance": +0.15,
-        "cloud": -0.20,          # bulutluluk azalışı
-        "precipitation": -0.30,  # yağış azalışı
-        "discharge": -0.45,      # nehir debisi (bileşik)
-        "wind": -0.10,           # ortalama rüzgar hızı hafif azalış (2026-06-02 B-wind)
-        "temperature": +0.05,    # °C/yıl yaklaşık (oransal değil ama tutarlılık için)
+        "sunshine": +0.5,        # açık gün artışı
+        "irradiance": +0.5,
+        "cloud": -0.7,           # bulutluluk azalışı
+        "precipitation": -1.0,   # yağış azalışı
+        "discharge": -1.5,       # nehir debisi (bileşik)
+        "wind": -0.35,           # ortalama rüzgar hızı azalış
+        "temperature": +0.18,    # °C/yıl yaklaşık
     },
     "rcp85": {
-        "sunshine": +0.30,
-        "irradiance": +0.30,
-        "cloud": -0.40,
-        "precipitation": -0.55,
-        "discharge": -0.80,
-        "wind": -0.20,           # rüzgarda belirgin azalış (2026-06-02 B-wind)
-        "temperature": +0.09,
+        "sunshine": +1.0,
+        "irradiance": +1.0,
+        "cloud": -1.4,
+        "precipitation": -2.0,
+        "discharge": -2.8,
+        "wind": -0.7,
+        "temperature": +0.35,
     },
 }
 
