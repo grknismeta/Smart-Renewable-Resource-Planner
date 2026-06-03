@@ -29,9 +29,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sys
 import time
-from datetime import date
+from datetime import date, timedelta
 
 try:
     import requests
@@ -84,6 +85,14 @@ def _fetch(lat: float, lon: float, start: str, end: str):
                 print(f"      … 429, {RL_WAIT:.0f}sn bekle ({attempt+1}/{MAX_RETRY})")
                 time.sleep(RL_WAIT)
                 continue
+            # Arşiv kesim tarihi (örn "...to 2026-06-02") günden güne değişir;
+            # 400 gelince izin verilen max tarihi yakalayıp end_date'i kıs, retry.
+            if r.status_code == 400 and "end_date" in r.text and "allowed range" in r.text:
+                m = re.search(r"to (\d{4}-\d{2}-\d{2})", r.text)
+                if m and params["end_date"] != m.group(1):
+                    params["end_date"] = m.group(1)
+                    print(f"      … end_date {m.group(1)}'e kısıldı, retry")
+                    continue
             print(f"      ! HTTP {r.status_code}: {r.text[:120]}")
             return None
         except Exception as e:
@@ -115,7 +124,7 @@ def main():
     p.add_argument("--shard", type=int, default=0, help="bu makinenin shard indeksi")
     p.add_argument("--of", type=int, default=1, help="toplam shard sayısı")
     p.add_argument("--start", default="2015-01-01")
-    p.add_argument("--end", default=date.today().isoformat())
+    p.add_argument("--end", default=(date.today() - timedelta(days=1)).isoformat())
     p.add_argument("--out", default=None, help="çıktı CSV (varsayılan weather_shard_<i>.csv)")
     a = p.parse_args()
 
