@@ -6,7 +6,10 @@ import 'package:frontend/core/network/api_client.dart';
 class AuthService extends BaseService {
   AuthService(super.storageService);
 
-  Future<String> login(String email, String password) async {
+  /// 2026-06-03 (AUTH-USERNAME): [identifier] e-posta VEYA kullanıcı adı olabilir;
+  /// OAuth2 form alanı adı 'username' (standart) — backend get_user_by_login
+  /// '@' varlığına göre ayrıştırır.
+  Future<String> login(String identifier, String password) async {
     final uri = Uri.parse('$baseUrl/users/token');
 
     late final http.Response response;
@@ -14,7 +17,7 @@ class AuthService extends BaseService {
       response = await http.post(
         uri,
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: {'username': email, 'password': password},
+        body: {'username': identifier, 'password': password},
       );
     } catch (e) {
       debugPrint('[Auth] Network hatası: $e');
@@ -29,7 +32,7 @@ class AuthService extends BaseService {
       return token;
     } else {
       // Backend'in döndürdüğü hata mesajını kullan
-      String detail = 'Giriş başarısız. Hatalı e-posta veya parola.';
+      String detail = 'Giriş başarısız. Hatalı e-posta/kullanıcı adı veya parola.';
       try {
         final body = json.decode(response.body);
         if (body is Map && body['detail'] != null) {
@@ -67,7 +70,8 @@ class AuthService extends BaseService {
     throw Exception(detail);
   }
 
-  Future<void> register(String email, String password, {String? fullName}) async {
+  Future<void> register(String email, String password,
+      {String? fullName, String? username}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/users/register'),
       headers: await getHeaders(token: null),
@@ -77,6 +81,9 @@ class AuthService extends BaseService {
         // AUTH-1: ad soyad (opsiyonel)
         if (fullName != null && fullName.trim().isNotEmpty)
           'full_name': fullName.trim(),
+        // AUTH-USERNAME (2026-06-03): kullanıcı adı (opsiyonel)
+        if (username != null && username.trim().isNotEmpty)
+          'username': username.trim(),
       }),
     );
     if (response.statusCode != 201) {
@@ -127,12 +134,19 @@ class AuthService extends BaseService {
     throw Exception('Profil bilgisi alınamadı (${response.statusCode}).');
   }
 
-  /// HESABIM: ad-soyad günceller (PATCH /users/me). Güncellenmiş profili döndürür.
-  Future<Map<String, dynamic>> updateProfile({String? fullName}) async {
+  /// HESABIM: profil günceller (PATCH /users/me). Yalnız verilen alanlar
+  /// gönderilir (null → backend dokunmaz). Güncellenmiş profili döndürür.
+  Future<Map<String, dynamic>> updateProfile({
+    String? fullName,
+    String? username,
+  }) async {
     final response = await http.patch(
       Uri.parse('$baseUrl/users/me'),
       headers: await getHeaders(),
-      body: json.encode({'full_name': fullName}),
+      body: json.encode({
+        if (fullName != null) 'full_name': fullName,
+        if (username != null) 'username': username,
+      }),
     );
     if (response.statusCode == 200) {
       return json.decode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;

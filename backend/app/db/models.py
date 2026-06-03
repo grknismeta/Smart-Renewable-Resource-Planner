@@ -11,6 +11,10 @@ class User(UserBase):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
+    # 2026-06-03 (AUTH-USERNAME): benzersiz kullanıcı adı (opsiyonel/nullable —
+    # eski + OAuth kullanıcılarında NULL). Giriş e-posta VEYA username ile.
+    # Lowercase saklanır (büyük/küçük harf duyarsız eşleşme).
+    username = Column(String, unique=True, index=True, nullable=True)
     full_name = Column(String, nullable=True)  # 2026-06-01 (AUTH-1): ad soyad
     hashed_password = Column(String, nullable=True)  # OAuth kullanıcısında NULL
     is_active = Column(Boolean, default=True)

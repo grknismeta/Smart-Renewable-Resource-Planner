@@ -136,6 +136,26 @@ except Exception as _fn_err:
         "[startup] full_name kolonu eklenemedi: %s", _fn_err,
     )
 
+# 2026-06-03 (AUTH-USERNAME): users.username kolonu + benzersiz index. create_all
+# mevcut tabloya kolon EKLEMEZ → idempotent DDL. Bu MİGRASYON YENİ KODDAN ÖNCE
+# çalışmalı: aksi halde User sorguları (login dahil) "column username does not
+# exist" ile patlar. nullable + UNIQUE → çoklu NULL serbest (eski kullanıcılar).
+try:
+    from sqlalchemy import text as _sa_text
+    with UserEngine.begin() as _conn:
+        _conn.execute(_sa_text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR"
+        ))
+        _conn.execute(_sa_text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username "
+            "ON users (username)"
+        ))
+except Exception as _un_err:
+    import logging
+    logging.getLogger(__name__).warning(
+        "[startup] username kolonu eklenemedi: %s", _un_err,
+    )
+
 
 # ─── ONE-TIME MIGRATIONS ─────────────────────────────────────────────────────
 def _wind_migration_needed() -> bool:

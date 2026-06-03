@@ -13,10 +13,29 @@ from app import auth
 def get_user_by_email(db: Session, email: str):
     return db.query(models.User).filter(models.User.email == email).first()
 
+def get_user_by_username(db: Session, username: str):
+    """2026-06-03 (AUTH-USERNAME): kullanıcı adı ile (lowercase eşleşme)."""
+    if not username:
+        return None
+    return db.query(models.User).filter(
+        models.User.username == username.strip().lower()
+    ).first()
+
+def get_user_by_login(db: Session, identifier: str):
+    """2026-06-03: Giriş tanımlayıcısı e-posta VEYA kullanıcı adı olabilir.
+    '@' içeriyorsa e-posta; aksi halde username. Güvenli taraf: ikisini de dene."""
+    ident = (identifier or "").strip()
+    if not ident:
+        return None
+    if "@" in ident:
+        return get_user_by_email(db, ident) or get_user_by_username(db, ident)
+    return get_user_by_username(db, ident) or get_user_by_email(db, ident)
+
 def create_user(db: Session, user: schemas.UserCreate):
     hashed_password = auth.get_password_hash(user.password)
     db_user = models.User(
         email=user.email,
+        username=user.username,  # schema'da normalize edildi (lowercase/None)
         full_name=(user.full_name or '').strip() or None,
         hashed_password=hashed_password,
     )
@@ -69,6 +88,23 @@ def update_user_profile(db: Session, user: models.User, full_name: Optional[str]
     db.commit()
     db.refresh(user)
     return user
+
+
+def set_user_username(db: Session, user: models.User, username: str) -> bool:
+    """HESABIM (2026-06-03): kullanıcı adını ayarlar/değiştirir (lowercase,
+    schema'da doğrulanmış). Başka kullanıcıda kayıtlıysa False (çağıran 409
+    döner). Başarılıysa True."""
+    existing = get_user_by_username(db, username)
+    if existing and existing.id != user.id:
+        return False
+    user.username = username  # zaten normalize (lowercase/None)
+    try:
+        db.commit()
+        db.refresh(user)
+        return True
+    except IntegrityError:
+        db.rollback()
+        return False
 
 
 def update_user_password(db: Session, user: models.User, new_password: str):

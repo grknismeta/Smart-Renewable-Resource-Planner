@@ -49,10 +49,16 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Bu email adresi zaten kayıtlı."
         )
-    
+    # 2026-06-03 (AUTH-USERNAME): kullanıcı adı verilmişse benzersiz olmalı.
+    if user.username and crud.get_user_by_username(db, user.username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bu kullanıcı adı zaten alınmış.",
+        )
+
     new_user = crud.create_user(db=db, user=user)
     if not new_user:
         raise HTTPException(
@@ -119,8 +125,22 @@ def update_users_me(
     current_user: models.User = Depends(auth.get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """HESABIM (2026-06-02): profil güncelle (şimdilik yalnız ad-soyad)."""
-    return crud.update_user_profile(db, current_user, payload.full_name)
+    """HESABIM (2026-06-02): profil güncelle (ad-soyad + 2026-06-03 kullanıcı adı).
+
+    Alan None ise DOKUNULMAZ (kısmi güncelleme); böylece sadece username
+    gönderilince full_name silinmez (ve tersi)."""
+    # 2026-06-03 (AUTH-USERNAME): username verilmişse benzersiz ayarla.
+    if payload.username is not None:
+        ok = crud.set_user_username(db, current_user, payload.username)
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Bu kullanıcı adı zaten alınmış.",
+            )
+    if payload.full_name is not None:
+        crud.update_user_profile(db, current_user, payload.full_name)
+    db.refresh(current_user)
+    return current_user
 
 
 @router.post("/me/change-password", status_code=status.HTTP_204_NO_CONTENT)

@@ -8,6 +8,26 @@ from datetime import datetime, date
 # bozmamak için lowercase YAPMIYORUZ (yalnız strip + format).
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# 2026-06-03 (AUTH-USERNAME): kullanıcı adı formatı. 3-30 karakter; harf, rakam,
+# alt çizgi ve nokta. '@' YASAK → login'de e-postadan kesin ayrışır. Lowercase
+# normalize (büyük/küçük harf duyarsız benzersizlik + giriş).
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9_.]{3,30}$")
+
+
+def _normalize_username(v: Optional[str]) -> Optional[str]:
+    """Boş/None → None; aksi halde strip+lowercase + format doğrula."""
+    if v is None:
+        return None
+    v = v.strip()
+    if v == "":
+        return None
+    if not _USERNAME_RE.match(v):
+        raise ValueError(
+            "Kullanıcı adı 3-30 karakter olmalı; harf, rakam, _ ve . içerebilir "
+            "('@' kullanılamaz)."
+        )
+    return v.lower()
+
 # --- AUTH & USER ---
 class Token(BaseModel):
     access_token: str
@@ -18,10 +38,17 @@ class TokenData(BaseModel):
 
 class UserBase(BaseModel):
     email: str
+    username: Optional[str] = None  # 2026-06-03 (AUTH-USERNAME): benzersiz ad
     full_name: Optional[str] = None  # 2026-06-01 (AUTH-1): ad soyad
 
 class UserCreate(UserBase):
     password: str
+
+    # 2026-06-03: kayıtta username opsiyonel; verilirse format doğrula + normalize.
+    @field_validator("username")
+    @classmethod
+    def _validate_username_create(cls, v):
+        return _normalize_username(v)
 
     # 2026-06-02 (fix): E-posta validasyonu UserBase'den BURAYA taşındı. UserBase'de
     # iken UserResponse'u da (okuma) etkiliyordu; DB'de eski/geçersiz e-posta
@@ -60,6 +87,17 @@ class GoogleAuthRequest(BaseModel):
 # E-posta login anahtarı olduğu için burada değiştirilmez (ayrı/ileride akış).
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
+    # 2026-06-03 (AUTH-USERNAME): Hesabım'dan kullanıcı adı belirle/değiştir.
+    # None → değiştirme yok; "" → temizle (None'a çek); dolu → normalize+doğrula.
+    username: Optional[str] = None
+
+    @field_validator("username")
+    @classmethod
+    def _validate_username_update(cls, v):
+        # "" anlamlı (temizle) → None'a normalize, format hatası verme.
+        if v is None or v.strip() == "":
+            return None
+        return _normalize_username(v)
 
 # HESABIM (2026-06-02): parola değiştirme. new_password min-8 (kayıttaki kuralla aynı).
 class PasswordChange(BaseModel):

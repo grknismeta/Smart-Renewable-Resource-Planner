@@ -40,6 +40,7 @@ class _AuthDropdownState extends State<AuthDropdown>
   late int _currentPage;
 
   final _nameCtrl = TextEditingController(); // AUTH-1: ad soyad (kayıt)
+  final _usernameCtrl = TextEditingController(); // AUTH-USERNAME: kullanıcı adı (kayıt)
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
@@ -92,6 +93,7 @@ class _AuthDropdownState extends State<AuthDropdown>
     _slideController.dispose();
     _pageController.dispose();
     _nameCtrl.dispose();
+    _usernameCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
@@ -137,7 +139,9 @@ class _AuthDropdownState extends State<AuthDropdown>
     final password = _passwordCtrl.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      setState(() => _errorMessage = 'Lütfen e-posta ve şifre giriniz.');
+      setState(() => _errorMessage = _currentPage == 0
+          ? 'Lütfen e-posta/kullanıcı adı ve şifre giriniz.'
+          : 'Lütfen e-posta ve şifre giriniz.');
       return;
     }
 
@@ -157,7 +161,8 @@ class _AuthDropdownState extends State<AuthDropdown>
           return;
         }
         await auth.register(email, password,
-            fullName: _nameCtrl.text.trim());
+            fullName: _nameCtrl.text.trim(),
+            username: _usernameCtrl.text.trim());
         await auth.login(email, password);
       }
       if (mounted) widget.onAuthSuccess();
@@ -282,7 +287,7 @@ class _AuthDropdownState extends State<AuthDropdown>
                     duration: const Duration(milliseconds: 250),
                     // AUTH-3: Google bölümü (veya + buton) + kayıtta Ad Soyad
                     // alanı eklendi → yükseklikler büyütüldü (içerik kırpılmasın).
-                    height: _currentPage == 0 ? 340 : 430,
+                    height: _currentPage == 0 ? 340 : 500,
                     child: PageView(
                       controller: _pageController,
                       onPageChanged: (i) => setState(() => _currentPage = i),
@@ -382,9 +387,9 @@ class _AuthDropdownState extends State<AuthDropdown>
       builder: (context, auth, _) => SingleChildScrollView(
         child: Column(
           children: [
-            _field(_emailCtrl, 'E-posta', Icons.email_outlined, isDark,
+            _field(_emailCtrl, 'E-posta veya Kullanıcı Adı',
+                Icons.alternate_email, isDark,
                 focusNode: _emailFocus,
-                keyboardType: TextInputType.emailAddress,
                 onSubmit: (_) => _submit()),
             const SizedBox(height: 14),
             _field(_passwordCtrl, 'Şifre', Icons.lock_outline, isDark,
@@ -418,6 +423,9 @@ class _AuthDropdownState extends State<AuthDropdown>
         child: Column(
           children: [
             _field(_nameCtrl, 'Ad Soyad', Icons.person_outline, isDark),
+            const SizedBox(height: 14),
+            _field(_usernameCtrl, 'Kullanıcı Adı (opsiyonel)',
+                Icons.alternate_email, isDark),
             const SizedBox(height: 14),
             _field(_emailCtrl, 'E-posta', Icons.email_outlined, isDark,
                 keyboardType: TextInputType.emailAddress),

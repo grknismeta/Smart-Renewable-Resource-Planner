@@ -44,17 +44,18 @@ def verify_password(plain_password, hashed_password):
 def get_password_hash(password):
     return pwd_context.hash(password)
 
-def authenticate_user(db: Session, email: str, password: str):
+def authenticate_user(db: Session, identifier: str, password: str):
     """
-    Kullanıcıyı email ve parolaya göre doğrular.
-    Başarılıysa User modelini, değilse False döndürür.
+    Kullanıcıyı tanımlayıcı (e-posta VEYA kullanıcı adı) + parolaya göre doğrular.
+    2026-06-03 (AUTH-USERNAME): get_user_by_login '@' içeriyorsa e-posta, aksi
+    halde username arar (ikisini de dener). Başarılıysa User, değilse False.
     """
-    user = crud.get_user_by_email(db, email)
+    user = crud.get_user_by_login(db, identifier)
     if not user:
         return False # Kullanıcı bulunamadı
     if not verify_password(password, str(user.hashed_password)):
         return False # Şifre yanlış
-    
+
     return user
 
 def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None):

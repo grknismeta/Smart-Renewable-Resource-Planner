@@ -17,13 +17,16 @@ class AuthViewModel extends BaseViewModel {
   // ── HESABIM (2026-06-02): mevcut kullanıcı profili ──────────────────────────
   String? _email;
   String? _fullName;
+  String? _username; // 2026-06-03 (AUTH-USERNAME)
   bool _hasPassword = true; // 2026-06-03: OAuth kullanıcısı false → "Şifre Belirle"
   String? get email => _email;
   String? get fullName => _fullName;
+  String? get username => _username;
   bool get hasPassword => _hasPassword;
-  /// Görüntülenecek ad: full_name varsa o, yoksa e-postanın @ öncesi.
+  /// Görüntülenecek ad: full_name → username → e-postanın @ öncesi.
   String get displayName {
     if (_fullName != null && _fullName!.trim().isNotEmpty) return _fullName!.trim();
+    if (_username != null && _username!.trim().isNotEmpty) return _username!.trim();
     final e = _email ?? '';
     final at = e.indexOf('@');
     return at > 0 ? e.substring(0, at) : (e.isEmpty ? 'Kullanıcı' : e);
@@ -98,7 +101,8 @@ class AuthViewModel extends BaseViewModel {
   }
 
   // ── Kayıt ──────────────────────────────────────────────────────────────────
-  Future<void> register(String email, String password, {String? fullName}) async {
+  Future<void> register(String email, String password,
+      {String? fullName, String? username}) async {
     if (password.length < 8) {
       setError('Parola en az 8 karakter olmalı.');
       throw Exception('Parola en az 8 karakter olmalı.');
@@ -109,7 +113,8 @@ class AuthViewModel extends BaseViewModel {
     }
     setBusy(true);
     try {
-      await _apiService.auth.register(email, password, fullName: fullName);
+      await _apiService.auth.register(email, password,
+          fullName: fullName, username: username);
     } catch (e) {
       setError(e.toString());
       rethrow;
@@ -126,6 +131,7 @@ class AuthViewModel extends BaseViewModel {
       final me = await _apiService.auth.getMe();
       _email = me['email'] as String?;
       _fullName = me['full_name'] as String?;
+      _username = me['username'] as String?;
       _hasPassword = (me['has_password'] as bool?) ?? true;
       notifyListeners();
     } catch (e) {
@@ -159,6 +165,25 @@ class AuthViewModel extends BaseViewModel {
       final me = await _apiService.auth.updateProfile(fullName: fullName);
       _email = me['email'] as String?;
       _fullName = me['full_name'] as String?;
+      _username = me['username'] as String?;
+      notifyListeners();
+    } catch (e) {
+      setError(e.toString());
+      rethrow;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /// HESABIM (2026-06-03): kullanıcı adı belirler/değiştirir (PATCH /users/me).
+  /// Alınmışsa backend 409 → hata mesajı.
+  Future<void> updateUsername(String username) async {
+    setBusy(true);
+    try {
+      final me = await _apiService.auth.updateProfile(username: username);
+      _email = me['email'] as String?;
+      _fullName = me['full_name'] as String?;
+      _username = me['username'] as String?;
       notifyListeners();
     } catch (e) {
       setError(e.toString());
@@ -191,6 +216,7 @@ class AuthViewModel extends BaseViewModel {
     _isLoggedIn = false;
     _email = null;
     _fullName = null;
+    _username = null;
     notifyListeners();
   }
 }

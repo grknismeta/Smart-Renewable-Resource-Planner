@@ -25,12 +25,14 @@ class AccountDialog extends StatefulWidget {
 
 class _AccountDialogState extends State<AccountDialog> {
   final _nameCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController(); // AUTH-USERNAME (2026-06-03)
   final _currentPwCtrl = TextEditingController();
   final _newPwCtrl = TextEditingController();
   final _confirmPwCtrl = TextEditingController();
 
   bool _loading = true;
   bool _savingName = false;
+  bool _savingUsername = false;
   bool _changingPw = false;
   bool _showPasswordSection = false;
   String? _msg;
@@ -47,12 +49,14 @@ class _AccountDialogState extends State<AccountDialog> {
     await auth.fetchMe();
     if (!mounted) return;
     _nameCtrl.text = auth.fullName ?? '';
+    _usernameCtrl.text = auth.username ?? '';
     setState(() => _loading = false);
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _usernameCtrl.dispose();
     _currentPwCtrl.dispose();
     _newPwCtrl.dispose();
     _confirmPwCtrl.dispose();
@@ -79,6 +83,29 @@ class _AccountDialogState extends State<AccountDialog> {
       _flash(e.toString().replaceAll('Exception:', '').trim(), Colors.redAccent);
     } finally {
       if (mounted) setState(() => _savingName = false);
+    }
+  }
+
+  Future<void> _saveUsername() async {
+    final auth = Provider.of<AuthViewModel>(context, listen: false);
+    final u = _usernameCtrl.text.trim();
+    if (u.isEmpty) {
+      _flash('Kullanıcı adı boş olamaz.', Colors.orange);
+      return;
+    }
+    setState(() {
+      _savingUsername = true;
+      _msg = null;
+    });
+    try {
+      await auth.updateUsername(u);
+      _usernameCtrl.text = auth.username ?? u;
+      _flash('Kullanıcı adı güncellendi — bununla da giriş yapabilirsin.',
+          Colors.green);
+    } catch (e) {
+      _flash(e.toString().replaceAll('Exception:', '').trim(), Colors.redAccent);
+    } finally {
+      if (mounted) setState(() => _savingUsername = false);
     }
   }
 
@@ -240,6 +267,47 @@ class _AccountDialogState extends State<AccountDialog> {
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 18),
+
+                      // ── Kullanıcı Adı (AUTH-USERNAME) ──
+                      _label('Kullanıcı Adı', theme),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _field(_usernameCtrl, 'kullanici_adi', theme,
+                                icon: Icons.alternate_email),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            height: 46,
+                            child: ElevatedButton(
+                              onPressed: _savingUsername ? null : _saveUsername,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF3B82F6),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                              ),
+                              child: _savingUsername
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white))
+                                  : const Text('Kaydet'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '3-30 karakter; harf, rakam, _ ve . — e-posta yerine '
+                        'bununla da giriş yapabilirsin.',
+                        style: TextStyle(
+                            color: theme.secondaryTextColor.withValues(alpha: 0.7),
+                            fontSize: 11),
                       ),
                       const SizedBox(height: 18),
 
