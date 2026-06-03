@@ -118,7 +118,15 @@ class _MlProjectionPanelState extends State<MlProjectionPanel> {
         scenario: _scenario, level: 'district',
       );
       if (!mounted || seq != _seq) return;
-      MapViewMapLibre.setMlChoropleth(jsonEncode(resp.scores));
+      // _meta.nmin/nmax: scenario-bağımsız renk aralığı (baseline 5-95 pct).
+      // RCP senaryolarının magnitüd kayması haritada görünsün diye tüm
+      // senaryolar bu aralığa göre boyanır (yoksa çarpan normalizasyonda
+      // sadeleşip baseline=rcp45=rcp85 renkleri aynı çıkıyordu).
+      final payload = <String, dynamic>{...resp.scores};
+      if (resp.normMin != null && resp.normMax != null) {
+        payload['_meta'] = {'nmin': resp.normMin, 'nmax': resp.normMax};
+      }
+      MapViewMapLibre.setMlChoropleth(jsonEncode(payload));
       setState(() {
         _loading = false;
         _valMin = resp.min;

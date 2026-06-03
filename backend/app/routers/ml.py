@@ -342,6 +342,39 @@ def ml_choropleth(
                 dist_rows = dist_q.group_by(
                     MlForecast.province_name, MlForecast.district_name).all()
 
+            # ── Scenario-BAĞIMSIZ renk ölçeği (RCP renklendirme fix) ──────────
+            # RCP delta'sı bir yıl için TÜM lokasyonlara AYNI çarpan uygular.
+            # Her senaryoyu kendi min/max'ına göre normalize edince çarpan
+            # normalizasyonda sadeleşir → baseline/rcp45/rcp85 renkleri AYNI
+            # çıkar ("RCP renklendirmiyor"). Çözüm: tüm senaryolar BASELINE
+            # değer aralığına göre normalize edilir → RCP magnitüd kayması renge
+            # yansır (örn. rcp85 yağış↓ → harita topluca koyulaşır). Aşağıda
+            # baseline değerleri (aynı yıl/ay/level) çekilir; norm aralığı = 5-95
+            # persentili (frontend ile aynı), response'ta norm_min/norm_max.
+            def _baseline_avg_vals(sc_level):
+                bq = db.query(func.avg(MlForecast.value)).filter(
+                    MlForecast.resource == resource,
+                    MlForecast.metric == metric,
+                    MlForecast.scenario == "baseline",
+                    MlForecast.year == year,
+                )
+                if month is not None:
+                    bq = bq.filter(MlForecast.month == month)
+                if sc_level == "district":
+                    bq = bq.filter(
+                        MlForecast.scope == "district",
+                        MlForecast.district_name.isnot(None),
+                    ).group_by(
+                        MlForecast.province_name, MlForecast.district_name)
+                else:
+                    bq = bq.filter(MlForecast.scope == "province").group_by(
+                        MlForecast.province_name)
+                return [float(r[0]) for r in bq.all() if r[0] is not None]
+
+            baseline_vals = _baseline_avg_vals(level)
+            if not baseline_vals and level == "district":
+                baseline_vals = _baseline_avg_vals("province")
+
         scores: dict = {}
         # İlçe verisi (varsa) önce — "İl|İlçe" anahtarı
         for prov, dist, v in dist_rows:
@@ -367,6 +400,17 @@ def ml_choropleth(
         except Exception as e:
             logger.debug("ml_choropleth alias expand fail: %s", e)
         vals = list(scores.values())
+        # Scenario-bağımsız norm aralığı = baseline 5-95 persentili (frontend ile
+        # aynı). Frontend bu aralığı kullanırsa RCP magnitüd kayması renge yansır.
+        def _pct(arr, p):
+            return arr[min(len(arr) - 1, max(0, round((len(arr) - 1) * p)))]
+        norm_min = norm_max = None
+        if baseline_vals:
+            bs = sorted(baseline_vals)
+            norm_min = round(_pct(bs, 0.05), 2)
+            norm_max = round(_pct(bs, 0.95), 2)
+            if norm_max - norm_min < 1e-9:
+                norm_min, norm_max = round(bs[0], 2), round(bs[-1], 2)
         result = {
             "metric": metric,
             "resource": resource,
@@ -376,6 +420,8 @@ def ml_choropleth(
             "count": len(scores),
             "min": min(vals) if vals else None,
             "max": max(vals) if vals else None,
+            "norm_min": norm_min,
+            "norm_max": norm_max,
             "scores": scores,
             "note": (
                 "İlçe verisi yok; il değerleri kullanılıyor"

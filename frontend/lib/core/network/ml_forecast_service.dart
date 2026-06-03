@@ -197,6 +197,11 @@ class MlChoropleth {
   final int year;
   final double? min;
   final double? max;
+  // Scenario-bağımsız renk normalizasyon aralığı (baseline 5-95 pct). RCP
+  // senaryolarının magnitüd kaymasının haritada görünmesi için TÜM senaryolar
+  // bu aralığa göre boyanır. null ise frontend kendi persentilini hesaplar.
+  final double? normMin;
+  final double? normMax;
   final Map<String, double> scores; // il adı → yıllık ortalama değer
 
   const MlChoropleth({
@@ -207,6 +212,8 @@ class MlChoropleth {
     required this.year,
     required this.min,
     required this.max,
+    required this.normMin,
+    required this.normMax,
     required this.scores,
   });
 
@@ -225,6 +232,8 @@ class MlChoropleth {
       year: (j['year'] as num?)?.toInt() ?? 0,
       min: (j['min'] as num?)?.toDouble(),
       max: (j['max'] as num?)?.toDouble(),
+      normMin: (j['norm_min'] as num?)?.toDouble(),
+      normMax: (j['norm_max'] as num?)?.toDouble(),
       scores: scores,
     );
   }

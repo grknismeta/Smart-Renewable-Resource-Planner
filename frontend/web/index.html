@@ -1079,6 +1079,17 @@
         function _pct(arr, p) { return arr[Math.round((arr.length - 1) * p)]; }
         var mn = _pct(_sorted, 0.05);
         var mx = _pct(_sorted, 0.95);
+        // 2026-06-03 (RCP renk fix): _meta.nmin/nmax verilmişse onu kullan —
+        // scenario-bağımsız (baseline) aralık. RCP delta'sı tüm lokasyonlara aynı
+        // çarpan olduğundan, kendi min/max'ına göre normalize edilince renk
+        // değişmiyordu; sabit baseline aralığı kullanınca RCP magnitüd kayması
+        // (örn. rcp85 yağış↓ → harita topluca koyulaşır) görünür hale gelir.
+        var _meta = raw._meta;
+        if (_meta && typeof _meta.nmin === 'number' && typeof _meta.nmax === 'number'
+            && isFinite(_meta.nmin) && isFinite(_meta.nmax) && _meta.nmax > _meta.nmin) {
+          mn = _meta.nmin;
+          mx = _meta.nmax;
+        }
         if (mx - mn < 1e-9) { mn = _sorted[0]; mx = _sorted[_sorted.length - 1]; }
         if (mx - mn < 1e-9) mx = mn + 1;
         // Viridis 7-stop, veri aralığına yayılmış
