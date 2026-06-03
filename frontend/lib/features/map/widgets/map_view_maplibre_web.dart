@@ -266,8 +266,9 @@ const _heatmapTempId = 'srrp-heatmap-temp';
 // bağlı değildi (dead code). Kaldırıldı 2026-05-08. MVT vektör katmanları
 // (hydro/restricted/energy_corridor) ayrı `srrp-mvt-overlays` source'u kullanır.
 
-const _hillshadeSourceId = 'srrp-hillshade-dem';
-const _hillshadeLayerId = 'srrp-hillshade';
+// 2026-06-03 — _hillshadeSourceId/_hillshadeLayerId KALDIRILDI: web'de terrain
+// hillshade artık yalnız JS shim (srrpSetTerrain) tarafından yönetiliyor
+// (native-paket katmanı çakışma + kapatınca raster-dem sızması yapıyordu).
 
 // Neon veri noktası katmanları (heatmap source üzerinde)
 const _dataGlowLayerId = 'srrp-data-glow';
@@ -765,7 +766,6 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   bool _rasterRendering = false;
   MlHeatmapMode _lastRasterMode = MlHeatmapMode.none;
   int _lastRasterPtLen = -1;
-  bool _hillshadeActive = false;
   bool _lastGlobe = false;
   bool _lastBuildings = false;
   bool _lastTerrain = false;
@@ -1328,7 +1328,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
         _syncing = false;
 
         // Tüm durum ve cache'leri sıfırla
-        _solarActive = _windActive = _tempActive = _hillshadeActive = false;
+        _solarActive = _windActive = _tempActive = false;
         _lastHeatmap = MlHeatmapMode.none;
         _lastRadius = 40.0;
         _lastIntensity = 1.0;
@@ -2565,68 +2565,30 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     if (style == null || !_styleLoaded || show == _lastTerrain) return;
     _lastTerrain = show;
 
+    // 2026-06-03 — KASMA FIX: native-paket HillshadeStyleLayer/RasterDemSource
+    // KALDIRILDI. Bu WEB dosyası; native ekleme aynı maplibre-gl-js map'ine
+    // gidiyordu ve native `_hillshadeLayerId` = 'srrp-hillshade' JS shim'in
+    // eklediği layer ID'siyle ÇAKIŞIYORDU. Native, JS shim'den ÖNCE
+    // 'srrp-hillshade'i ekleyince JS shim kendi hillshade'ini atlıyor → görünen
+    // hillshade native demotiles raster-dem kaynağına bağlı kalıyordu. 3D arazi
+    // KAPATILIRKEN native `removeLayer/removeSource` web plugininde güvenilir
+    // çalışmıyor (sessiz `catch`) → `srrp-hillshade-dem` (raster-dem) kaynağı
+    // SIZIYOR → boşta bile ~4-5 render/sn kalıcı repaint = "kesintisiz kasma".
+    // JS shim (srrpSetTerrain) terrain+hillshade+sky'ı tek başına eksiksiz kurup
+    // TEMİZ kapatıyor (canlıda render-loop ölçümüyle doğrulandı: kapatınca
+    // 0 render/sn, sıfır artık). Artık tek kaynak: JS shim.
     if (show) {
-      // Hillshade source
-      try {
-        await style.addSource(
-          ml.RasterDemSource(
-            id: _hillshadeSourceId,
-            url: 'https://demotiles.maplibre.org/terrain-tiles/tiles.json',
-            tileSize: 256,
-          ),
-        );
-      } catch (_) {} // Zaten varsa hata verir — yoksay
-
-      // Hillshade görsel katmanı (native pakette desteklenir)
-      if (!_hillshadeActive) {
-        try {
-          await style.addLayer(
-            ml.HillshadeStyleLayer(
-              id: _hillshadeLayerId,
-              sourceId: _hillshadeSourceId,
-              paint: <String, Object>{
-                'hillshade-illumination-direction': 335,
-                'hillshade-illumination-anchor': 'viewport',
-                'hillshade-exaggeration': 0.45,
-                'hillshade-shadow-color': '#000000',
-                'hillshade-highlight-color': '#ffffff',
-              },
-            ),
-            belowLayerId: _pinsShadowLayerId,
-          );
-          _hillshadeActive = true;
-        } catch (e) {
-          debugPrint('[MapLibre] hillshade layer hatası: $e');
-        }
-      }
-
-      // Gerçek 3D terrain + gökyüzü + kamera eğimi (JS shim)
-      if (kIsWeb) {
-        _jsSetTerrain(true);
-        _jsSetSky(true);
-        _jsSetPitch(55.0); // fill-extrusion için pitch şart
-      }
+      _jsSetTerrain(true);
+      _jsSetSky(true);
+      _jsSetPitch(55.0); // fill-extrusion için pitch şart
     } else {
-      // Kaldır
-      if (_hillshadeActive) {
-        try {
-          await style.removeLayer(_hillshadeLayerId);
-        } catch (_) {}
-        _hillshadeActive = false;
-      }
-      try {
-        await style.removeSource(_hillshadeSourceId);
-      } catch (_) {}
-
-      if (kIsWeb) {
-        _jsSetTerrain(false);
-        _jsSetSky(false);
-        // Binalar da açıksa pitch koru, değilse sıfırla
-        final vm = mounted
-            ? Provider.of<MapViewModel>(context, listen: false)
-            : null;
-        if (vm != null && !vm.show3DBuildings) _jsSetPitch(0.0);
-      }
+      _jsSetTerrain(false);
+      _jsSetSky(false);
+      // Binalar da açıksa pitch koru, değilse sıfırla
+      final vm = mounted
+          ? Provider.of<MapViewModel>(context, listen: false)
+          : null;
+      if (vm != null && !vm.show3DBuildings) _jsSetPitch(0.0);
     }
   }
 
