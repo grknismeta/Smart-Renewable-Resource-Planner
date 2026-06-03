@@ -63,6 +63,12 @@ services:
       - ALGORITHM=HS256
       - ACCESS_TOKEN_EXPIRE_MINUTES=1440
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://srrp-app.com,https://www.srrp-app.com}
+      # Coğrafya analiz motoru — AÇIK olmalı, yoksa main.py /geo stub'ı mount eder
+      # → check-suitability HER konuma {suitable:true} döner → yasaklı alanlara
+      # (su/yerleşim/askeri/milli park) kurulum engellenmez. true = gerçek PostGIS
+      # analizi (hydro_features + restricted_zones + populated_areas + eğim).
+      # GADM geojson (data/vector/) mount edili olmalı (borders ile aynı dosya).
+      - GEO_ANALYSIS_ENABLED=${GEO_ANALYSIS_ENABLED:-true}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-flash-latest}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-756480872473-fm4vb6j5u3ic9c5fhbrr0jhkmrl74m7e.apps.googleusercontent.com}

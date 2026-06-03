@@ -7,9 +7,13 @@ class EquipmentService extends BaseService {
   EquipmentService(super.storageService);
 
   Future<List<Equipment>> fetchEquipments({String? type}) async {
+    // Trailing slash ŞART: backend route'u @router.get("/") → '/equipments'
+    // (slash'sız) 307 redirect üretir. Prod'da Caddy /api'yi soyduğu için bu
+    // redirect kırılgan (Location /api önekini kaybedebilir → SPA'ya düşer →
+    // boş liste → "Model bulunamadı"). '/equipments/' ile redirect HİÇ oluşmaz.
     final query = type != null ? '?type=$type' : '';
     final response = await http.get(
-      Uri.parse('$baseUrl/equipments$query'),
+      Uri.parse('$baseUrl/equipments/$query'),
       headers: await getHeaders(),
     );
 

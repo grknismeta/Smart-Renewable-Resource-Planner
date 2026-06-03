@@ -102,3 +102,8 @@ backend/data/dem/*
 
 # Deploy transfer arşivleri (repoya girmez)
 *.tar.gz
+
+# Backfill ÇIKTI CSV'leri (büyük hava verisi — repoya GİTMEZ; districts.csv INPUT kalır)
+backend/scripts/w*.csv
+backend/scripts/weather_shard_*.csv
+backend/scripts/weather_district*.csv
