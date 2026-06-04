@@ -30,6 +30,7 @@ import 'package:frontend/features/chatbot/viewmodels/chat_viewmodel.dart';
 import 'package:frontend/features/chatbot/widgets/chatbot_panel.dart';
 import 'package:frontend/features/pins/controllers/pin_flow_controller.dart';
 import 'package:frontend/features/pins/widgets/pin_flow_overlay.dart';
+import 'package:frontend/features/landing/showcase_pins.dart';
 
 
 /// 2026-06-01: Native rüzgar partikül overlay'i (CPU CustomPaint) Windy tarzı
@@ -88,6 +89,23 @@ class _MapScreenState extends State<MapScreen> {
       );
       // Harita pan/zoom event'inde pin anchor'ı yenile.
       MapViewMapLibre.registerAnchorListener(_onMapMovedRecomputeAnchor);
+
+      // 2026-06-04: MİSAFİR (Keşfet) salt-okunur keşif modu. Landing'den PUSH
+      // ile gelinir (landing dispose OLMAZ → onun kapattığı etkileşim + Türkiye
+      // sınırı JS global'inde kalır). Bu yüzden burada:
+      //   • etkileşimi AÇ (pan/zoom yapılabilsin),
+      //   • Türkiye sınırını koru (keşif Türkiye-kilitli, tutarlı),
+      //   • vitrin pinlerini göster (fetchPins misafirde zaten erken döner →
+      //     srrp-pins kaynağını ezmez, çakışma yok).
+      final guest =
+          Provider.of<AuthViewModel>(context, listen: false).isLoggedIn != true;
+      if (guest) {
+        MapViewMapLibre.setInteractive(true);
+        MapViewMapLibre.setMaxBounds(24.0, 34.0, 46.0, 44.0);
+        final isDark =
+            Provider.of<ThemeViewModel>(context, listen: false).isDarkMode;
+        MapViewMapLibre.setShowcasePins(buildShowcaseGeoJson(isDark: isDark));
+      }
     });
   }
 
@@ -307,29 +325,32 @@ class _MapScreenState extends State<MapScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      AnimatedBuilder(
-                        animation: pinFlow,
-                        builder: (_, __) {
-                          final placing = pinFlow.mode == PinFlowMode.placing;
-                          return MapControlButton(
-                            icon: Icons.add_location_alt_outlined,
-                            tooltip: placing
-                                ? "Santral Kur — Haritada tıklayın"
-                                : "Santral Kur",
-                            onTap: () {
-                              if (placing) {
-                                pinFlow.cancelPlacing();
-                              } else {
-                                pinFlow.enterPlacing();
-                              }
-                            },
-                            color: placing
-                                ? Colors.greenAccent
-                                : Colors.blueAccent,
-                            theme: theme,
-                          );
-                        },
-                      ),
+                      // 2026-06-04: "Santral Kur" yalnız giriş yapana. Misafir
+                      // (Keşfet) salt-okunur — pin kuramaz/düzenleyemez.
+                      if (isAuthenticated)
+                        AnimatedBuilder(
+                          animation: pinFlow,
+                          builder: (_, __) {
+                            final placing = pinFlow.mode == PinFlowMode.placing;
+                            return MapControlButton(
+                              icon: Icons.add_location_alt_outlined,
+                              tooltip: placing
+                                  ? "Santral Kur — Haritada tıklayın"
+                                  : "Santral Kur",
+                              onTap: () {
+                                if (placing) {
+                                  pinFlow.cancelPlacing();
+                                } else {
+                                  pinFlow.enterPlacing();
+                                }
+                              },
+                              color: placing
+                                  ? Colors.greenAccent
+                                  : Colors.blueAccent,
+                              theme: theme,
+                            );
+                          },
+                        ),
                       if (isAuthenticated) ...[
                         SizedBox(width: btnGap),
                         // 2026-05-25 (G10): AI buton + canlı status indicator

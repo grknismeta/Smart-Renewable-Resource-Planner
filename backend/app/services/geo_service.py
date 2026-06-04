@@ -92,9 +92,10 @@ class GeoService:
         # _get_location_info imzası geri uyum için (point, lat, lon) — keyword
         # arg ile çağır, pozisyonel olursa point=lat olur ve lookup patlar.
         loc_info = self._get_location_info(lat=lat, lon=lon)
-        elevation, slope = self._get_terrain_data(lat, lon)
 
-        # 1. Türkiye sınırı kontrolü (province bulunamadıysa = sınır dışı)
+        # 1. Türkiye sınırı kontrolü (province bulunamadıysa = sınır dışı).
+        # 2026-06-04 (PERF): Bu kontrol elevation API'sinden ÖNCE — Türkiye
+        # dışı tık için ağ çağrısı hiç yapılmaz (anında döner).
         if not loc_info.get("province"):
             error = "Arazi sınırları dışında (Türkiye dışı veya su)."
             return self._final_response(
@@ -103,6 +104,11 @@ class GeoService:
                 [], [], [],
                 loc_info, 0, 0, lat, lon,
             )
+
+        # 2026-06-04 (PERF): elevation/slope Open-Meteo'ya ağ çağrısı (cache miss'te
+        # yavaş, hele backfill IP'yi zorlarken). Kısa timeout + graceful (0,0)
+        # fallback _get_terrain_data içinde; başarısız olursa eğim kontrolü atlanır.
+        elevation, slope = self._get_terrain_data(lat, lon)
 
         # 2. Üç enerji türü için ayrı analiz
         solar = self._analyze_solar(lat, lon, slope)
@@ -194,10 +200,13 @@ class GeoService:
             lats = f"{lat_r},{lat_r + lat_offset},{lat_r - lat_offset},{lat_r},{lat_r}"
             lons = f"{lon_r},{lon_r},{lon_r},{lon_r + lon_offset},{lon_r - lon_offset}"
 
+            # 2026-06-04 (PERF): timeout 5→2.5sn. Open-Meteo yavaş/throttled ise
+            # hızlı vazgeç → suitability eğimsiz (slope=0) döner; konum analizi
+            # kullanıcıyı bekletmez. Eğim yalnız aşırı-dik araziyi eler (nadir).
             resp = requests.get(
                 self._ELEVATION_API_URL,
                 params={"latitude": lats, "longitude": lons},
-                timeout=5,
+                timeout=2.5,
             )
             resp.raise_for_status()
             data = resp.json()
