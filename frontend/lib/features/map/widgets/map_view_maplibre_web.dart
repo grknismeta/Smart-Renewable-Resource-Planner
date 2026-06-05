@@ -1945,8 +1945,10 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     // srrpSetMapInteractive(false) bir önceki oturumdan kalıyorsa sıfırlar.
     if (kIsWeb) _jsSetMapInteractive(true);
 
-    // Türkiye sınırları — harita dışına kaydırılamaz.
-    if (kIsWeb) _jsSetMaxBounds(24.0, 34.0, 46.0, 44.0);
+    // 2026-06-05 (TÜRKİYE-ONLY bounds): maxBounds artık JS tarafında TEK kaynak
+    // (_SRRP_TR_BOUNDS, her style.load'da + globe-aware uygulanır). Buradan
+    // ayrıca setMaxBounds çağrısı KALDIRILDI — aksi halde globe açıkken stil
+    // yenilenince haritayı yanlışlıkla Türkiye'ye sınırlardı.
 
     // 1. Heatmap source
     try {

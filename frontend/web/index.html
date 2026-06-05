@@ -174,8 +174,18 @@
           // _srrpMap null iken global'e yazılıp burada (harita hazırken) uygulanır.
           // Aksi halde landing sınırları/kilidi düşüyordu (sınır dışına çıkılabiliyordu).
           try {
-            if (window._srrpDesiredMaxBounds) {
-              instance.setMaxBounds(window._srrpDesiredMaxBounds);
+            // 2026-06-05 (TÜRKİYE-ONLY): maxBounds HER style.load'da uygulanır.
+            // Global yoksa sabit TR kutusuna düş → harita ASLA sınırsız kalmaz
+            // (tarayıcı/timing fark etmez; "harita dışarı çıkıyor" bug'ı biter).
+            // İSTİSNA: globe (dünya) modu açıkken sınır UYGULANMAZ (dünya gezinir).
+            if (window._srrpGlobeActive) {
+              instance.setMaxBounds(null);
+            } else {
+              instance.setMaxBounds(
+                window._srrpDesiredMaxBounds ||
+                window._SRRP_TR_BOUNDS ||
+                [[25.0, 35.3], [45.6, 42.6]]
+              );
             }
             window.srrpSetMapInteractive(window._mapInteractive !== false);
           } catch (_) {}
@@ -1858,7 +1868,10 @@
       try {
         map.setProjection({ type: enable ? 'globe' : 'mercator' });
         if (enable) {
-          // Global mod: sınır kısıtlamasını kaldır, dünya gezinebilir
+          // Global mod: sınır kısıtlamasını kaldır, dünya gezinebilir.
+          // 2026-06-05: _srrpGlobeActive bayrağı — style.load handler'ı globe
+          // açıkken TR sınırını ZORLAMASIN (yoksa dünya görünümü kırılırdı).
+          window._srrpGlobeActive = true;
           window._srrpSavedMaxBounds = map.getMaxBounds();
           map.setMaxBounds(null);
           // İl/ilçe sınırlarını gizle
@@ -1872,11 +1885,12 @@
           console.log('[SRRP] Globe ON — maxBounds kaldırıldı, sınırlar gizlendi');
         } else {
           // Türkiye moduna dön
-          // 1. Sınır kısıtlamasını geri yükle
-          if (window._srrpSavedMaxBounds) {
-            map.setMaxBounds(window._srrpSavedMaxBounds);
-            window._srrpSavedMaxBounds = null;
-          }
+          // 2026-06-05: globe bayrağını kapat + TR varsayılan sınırını geri uygula
+          // (stale _srrpSavedMaxBounds yerine sabit TR kutusu → her zaman doğru).
+          window._srrpGlobeActive = false;
+          window._srrpSavedMaxBounds = null;
+          window._srrpDesiredMaxBounds = window._SRRP_TR_BOUNDS;
+          map.setMaxBounds(window._SRRP_TR_BOUNDS);
           // 2. İl/ilçe sınırlarını tekrar göster
           borderLayerIds.forEach(function(id) {
             try { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible'); } catch(_) {}
@@ -2085,9 +2099,19 @@
       } catch (e) { console.error('[SRRP] srrpSetMapInteractive:', e); }
     };
 
-    // ── Harita sınırlandırma (maxBounds) ──────────────────────────────
-    // İstenen sınır global'de saklanır → harita henüz hazır değilse (fresh build,
-    // yeni port) style.load handler'ı hazır olunca yeniden uygular.
+    // ── Harita sınırlandırma (maxBounds) — TÜRKİYE-ONLY ───────────────
+    // 2026-06-05 (BOUNDS yeniden tasarım): Uygulama yalnızca Türkiye'yi
+    // kapsar. Eski sistem "landing kilitli / main serbest / guest kilitli"yi
+    // paylaşımlı global + style.load timing'iyle yönetiyordu → tarayıcıya göre
+    // sızıyordu. Yeni ilke: TÜRKİYE sınırı HER ZAMAN aktif, asla null'a
+    // çekilmez. Her style.load'da uygulanır (aşağıda). Tek doğruluk kaynağı:
+    // _SRRP_TR_BOUNDS. Bu yüzden tarayıcı/timing fark etmez — harita Türkiye
+    // dışına çıkamaz.
+    // Kutu: [[SW lng, SW lat], [NE lng, NE lat]] — TR + adalar (Gökçeada) +
+    // Hatay güneyi dahil, hafif padding.
+    window._SRRP_TR_BOUNDS = [[25.0, 35.3], [45.6, 42.6]];
+    window._srrpDesiredMaxBounds = window._SRRP_TR_BOUNDS;
+
     window.srrpSetMaxBounds = function (swLng, swLat, neLng, neLat) {
       window._srrpDesiredMaxBounds = [[swLng, swLat], [neLng, neLat]];
       const map = window._srrpMap;
@@ -2098,11 +2122,14 @@
       } catch (e) { console.error('[SRRP] srrpSetMaxBounds:', e); }
     };
 
+    // 2026-06-05: "clear" artık SINIRSIZ bırakmaz — TR varsayılanına döndürür.
+    // (Eski clearMaxBounds çağrıları (login/landing geçişleri) böylece haritayı
+    // Türkiye dışına açmaz; geriye-uyumlu + güvenli.)
     window.srrpClearMaxBounds = function () {
-      window._srrpDesiredMaxBounds = null;
+      window._srrpDesiredMaxBounds = window._SRRP_TR_BOUNDS;
       const map = window._srrpMap;
       if (!map) return;
-      try { map.setMaxBounds(null); } catch (e) {}
+      try { map.setMaxBounds(window._SRRP_TR_BOUNDS); } catch (e) {}
     };
 
     // ── Vitrin pinleri (landing showcase) ─────────────────────────────

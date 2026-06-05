@@ -91,17 +91,15 @@ class _MapScreenState extends State<MapScreen> {
       MapViewMapLibre.registerAnchorListener(_onMapMovedRecomputeAnchor);
 
       // 2026-06-04: MİSAFİR (Keşfet) salt-okunur keşif modu. Landing'den PUSH
-      // ile gelinir (landing dispose OLMAZ → onun kapattığı etkileşim + Türkiye
-      // sınırı JS global'inde kalır). Bu yüzden burada:
-      //   • etkileşimi AÇ (pan/zoom yapılabilsin),
-      //   • Türkiye sınırını koru (keşif Türkiye-kilitli, tutarlı),
-      //   • vitrin pinlerini göster (fetchPins misafirde zaten erken döner →
-      //     srrp-pins kaynağını ezmez, çakışma yok).
+      // ile gelinir (landing dispose OLMAZ → onun kapattığı etkileşim JS
+      // global'inde kalır). Bu yüzden burada etkileşimi AÇ + vitrin pinlerini
+      // göster (fetchPins misafirde zaten erken döner → srrp-pins ezilmez).
+      // 2026-06-05: Türkiye sınırı artık JS default'unda (her style.load) →
+      // burada setMaxBounds'a gerek yok; harita her hâlükârda Türkiye-kilitli.
       final guest =
           Provider.of<AuthViewModel>(context, listen: false).isLoggedIn != true;
       if (guest) {
         MapViewMapLibre.setInteractive(true);
-        MapViewMapLibre.setMaxBounds(24.0, 34.0, 46.0, 44.0);
         final isDark =
             Provider.of<ThemeViewModel>(context, listen: false).isDarkMode;
         MapViewMapLibre.setShowcasePins(buildShowcaseGeoJson(isDark: isDark));

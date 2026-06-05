@@ -64,14 +64,13 @@ class _LandingScreenState extends State<LandingScreen> {
     Navigator.of(context).pushNamed('/map', arguments: {'guest': true});
   }
 
-  /// 2026-06-02: /map'e geçmeden ÖNCE landing'in koyduğu kısıtları temizle.
-  /// Landing harita etkileşimini kapatıp (_mapInteractive=false) Türkiye sınırı
-  /// koyuyor; bu değerler JS global'inde saklanıp her style.load'da yeniden
-  /// uygulanıyor. pushReplacement eski rotayı (landing) YENİ rota (/map) build +
-  /// style.load OLDUKTAN SONRA dispose ettiği için, dispose'daki reset geç kalıyor
-  /// ve ana harita KİLİTLİ açılıyordu. Bu yüzden reset navigasyondan ÖNCE yapılır.
+  /// 2026-06-02: /map'e geçmeden ÖNCE landing'in kapattığı ETKİLEŞİMİ aç.
+  /// Landing dekoratif arka planda `setInteractive(false)` yapıyor; ana haritaya
+  /// geçerken açılmalı (pushReplacement landing'i geç dispose ettiği için
+  /// navigasyondan ÖNCE yapılır).
+  /// 2026-06-05: maxBounds ARTIK her zaman Türkiye (JS default) → clearMaxBounds
+  /// çağrısı kaldırıldı; ana harita da Türkiye-kilitli (Türkiye-only uygulama).
   void _resetMapStateForMain() {
-    MapViewMapLibre.clearMaxBounds();
     MapViewMapLibre.setInteractive(true);
   }
 
@@ -533,11 +532,10 @@ class _LandingMapState extends State<_LandingMap> {
 
   @override
   void dispose() {
-    // 2026-06-02: Landing, harita etkileşimini kapatıp Türkiye sınırı koyuyor.
-    // Bu durum JS global'lerinde saklanıyor ve style.load'da yeniden uygulanıyor.
-    // /map sayfasına geçerken sıfırlanmazsa, ana harita kilitli + sınırlı açılır.
-    // Bu yüzden landing'den çıkarken varsayılana (serbest + sınırsız) döndürülür.
-    MapViewMapLibre.clearMaxBounds();
+    // 2026-06-05 (TÜRKİYE-ONLY bounds): Landing harita etkileşimini KAPATIYOR
+    // (dekoratif arka plan). /map'e geçerken etkileşim AÇILMALI. Sınır (maxBounds)
+    // ARTIK her zaman Türkiye — JS default'u her style.load'da uyguluyor, burada
+    // dokunmuyoruz (eski clearMaxBounds kaldırıldı; harita Türkiye-kilitli kalır).
     MapViewMapLibre.setInteractive(true);
     super.dispose();
   }
@@ -548,11 +546,11 @@ class _LandingMapState extends State<_LandingMap> {
       if (!mounted || _initialized) return;
       _initialized = true;
 
-      // 1. Etkileşimi kapat (sürüklenemez, zoom yapılamaz)
+      // 1. Etkileşimi kapat (dekoratif arka plan — sürüklenemez, zoom yapılamaz)
       MapViewMapLibre.setInteractive(false);
 
-      // 2. Türkiye sınırları (harita dışına kaydırılamaz)
-      MapViewMapLibre.setMaxBounds(24.0, 34.0, 46.0, 44.0);
+      // 2. (Türkiye sınırı artık JS default'unda — her style.load'da otomatik
+      //    uygulanıyor; burada ayrıca setMaxBounds çağırmaya gerek yok.)
 
       // 3. Vitrin pinlerini yükle (tema-duyarlı renklerle)
       bool isDark = true;
