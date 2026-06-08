@@ -184,7 +184,7 @@
               instance.setMaxBounds(
                 window._srrpDesiredMaxBounds ||
                 window._SRRP_TR_BOUNDS ||
-                [[25.0, 35.3], [45.6, 42.6]]
+                [[23.0, 33.8], [47.5, 43.5]]
               );
             }
             window.srrpSetMapInteractive(window._mapInteractive !== false);
@@ -2108,8 +2108,10 @@
     // _SRRP_TR_BOUNDS. Bu yüzden tarayıcı/timing fark etmez — harita Türkiye
     // dışına çıkamaz.
     // Kutu: [[SW lng, SW lat], [NE lng, NE lat]] — TR + adalar (Gökçeada) +
-    // Hatay güneyi dahil, hafif padding.
-    window._SRRP_TR_BOUNDS = [[25.0, 35.3], [45.6, 42.6]];
+    // Hatay güneyi + Hakkari/Iğdır doğusu dahil, BOL MARJ (kullanıcı: "tüm
+    // Türkiye max zoom-out'ta görünsün"). Komşu ülkelere serbest gezinti yok ama
+    // ülkeyi çerçeveleyecek kadar geniş → rahat tam-ülke görünümü + zoom-out.
+    window._SRRP_TR_BOUNDS = [[23.0, 33.8], [47.5, 43.5]];
     window._srrpDesiredMaxBounds = window._SRRP_TR_BOUNDS;
 
     window.srrpSetMaxBounds = function (swLng, swLat, neLng, neLat) {
