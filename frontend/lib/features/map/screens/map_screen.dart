@@ -96,8 +96,19 @@ class _MapScreenState extends State<MapScreen> {
       // göster (fetchPins misafirde zaten erken döner → srrp-pins ezilmez).
       // 2026-06-05: Türkiye sınırı artık JS default'unda (her style.load) →
       // burada setMaxBounds'a gerek yok; harita her hâlükârda Türkiye-kilitli.
-      final guest =
-          Provider.of<AuthViewModel>(context, listen: false).isLoggedIn != true;
+      // 2026-06-10 (ÇÖKME FIX): Misafir kararı ARTIK route argümanına bağlı.
+      // Eskiden sadece `isLoggedIn != true` bakılıyordu; ama auth token restore
+      // (FlutterSecureStorage) ASYNC → reload'da bu callback çalışırken
+      // isLoggedIn henüz true değil → giriş yapmış kullanıcı yanlışlıkla
+      // misafir sayılıp setShowcasePins ile 22 vitrin pini, kendi pinlerinin
+      // ÜSTÜNE yazılıyordu (dashboard kendi verisini gösterir ama harita
+      // Keşfet pinlerinde kalır — _syncPins diff guard'ı kurtaramaz).
+      // Keşfet'ten gelince landing `arguments:{'guest':true}` geçer; reload'da
+      // bu arg kaybolur → logged-in kullanıcı asla misafire düşmez.
+      final auth = Provider.of<AuthViewModel>(context, listen: false);
+      final routeArgs = ModalRoute.of(context)?.settings.arguments;
+      final routeGuest = routeArgs is Map && routeArgs['guest'] == true;
+      final guest = routeGuest && auth.isLoggedIn != true;
       if (guest) {
         MapViewMapLibre.setInteractive(true);
         final isDark =
@@ -252,8 +263,15 @@ class _MapScreenState extends State<MapScreen> {
                               choroplethTapData: mapViewModel.choroplethTapData,
                               choroplethTapDistrictLabel: mapViewModel.choroplethTapDistrict,
                               onClose: () {
-                                mapViewModel.clearAllSelection();
+                                // Kart X → seçimi temizle VE seçim modunu
+                                // (bölge/il/ilçe) tamamen kapat. Eskiden sadece
+                                // clearAllSelection çağrılıyordu → mod açık
+                                // kalıyordu (kullanıcı: "X'e bastım ama il modu
+                                // kapanmadı"). Panel toggle'ının kapatma yolu
+                                // ile aynı: VM closeSelectionMode + JS teardown.
+                                mapViewModel.closeSelectionMode();
                                 mapViewModel.clearChoroplethTap();
+                                MapViewMapLibre.clearSelectionMode();
                               },
                               onSelectRegion: (region) {
                                 mapViewModel.openRegionMode();

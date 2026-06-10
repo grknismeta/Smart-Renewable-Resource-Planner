@@ -1972,10 +1972,29 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
     }
 
     // 2. Pin source
+    // 2026-06-10 (Liberty pin fix): Source'u BOŞ kurup sonra updateGeoJsonSource
+    // ile doldurmak, basemap değişiminde (ValueKey ile harita yeniden yaratılır)
+    // GL worker'ının veriyi tile'lamamasına yol açıyordu → pinler Liberty'de
+    // görünmez/tıklanmazdı (sınırlar JS'te veriyle kurulduğu için sorunsuzdu).
+    // Çözüm: pin source'u sınırlar gibi MEVCUT pinlerle (inline) kur → worker
+    // doğru tile'lar. `_lastPins`'i de set ediyoruz ki _syncAll→_syncPins aynı
+    // veriyi kırılgan updateGeoJsonSource yoluyla tekrar push edip ezmesin
+    // (pinler sonradan değişirse normal push yine devreye girer).
+    List<Pin> initPins = const [];
+    try {
+      if (mounted) {
+        initPins =
+            Provider.of<MapViewModel>(context, listen: false).filteredPins;
+      }
+    } catch (_) {}
     try {
       await style.addSource(
-        ml.GeoJsonSource(id: _pinsSourceId, data: _pinsToGeoJson([])),
+        ml.GeoJsonSource(
+          id: _pinsSourceId,
+          data: _pinsToGeoJson(initPins, isDark: _lastDarkMode),
+        ),
       );
+      _lastPins = List.from(initPins);
     } catch (e) {
       debugPrint('[MapLibre] pin source eklenemedi: $e');
     }

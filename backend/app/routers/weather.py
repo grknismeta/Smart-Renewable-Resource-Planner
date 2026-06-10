@@ -988,9 +988,9 @@ def get_animation_frames(
 
     # 1.D: Daily mode için Redis cache (TTL 30 dk).
     # Hourly mode'da payload 50K+ satır ve veri tazeliği kritik — cache atlanır.
-    # `:v5` suffix — GADM-driven payload (polygon match %100).
+    # `:v6` suffix — daily ilçe-bazlı payload (2026-06-10; v5 il-bazlı yayım).
     cache_key = (
-        f"weather:animation:v5:{start}:{end}:{metric}:{interval}:{format}"
+        f"weather:animation:v6:{start}:{end}:{metric}:{interval}:{format}"
         if interval == "daily" else None
     )
     if cache_key:
@@ -1010,64 +1010,84 @@ def get_animation_frames(
                 )
 
             metric_col = _DAILY_METRIC_COL[metric]
-
-            # `WeatherData` (daily) tablosunda büyükşehirlerin **'Merkez'
-            # ilçesi yok** (Adana → Çukurova/Sarıçam, İstanbul → Kadıköy/...).
-            # Eski filter `district_name IS NULL OR Merkez` 10 büyükşehri
-            # tamamen düşürüyordu (Adana, Ankara, Bursa, Gaziantep, İstanbul,
-            # İzmir, Kayseri, Konya, K.Maraş, Gümüşhane).
-            #
-            # 1.A2.c-fix2: Filter kaldırıldı, **il × tarih bazlı AVG** alınır.
-            # Her ilin günlük ortalaması ilçelere yayılır (TURKEY_CITIES'ten
-            # ilçe listesi). Büyükşehirler artık görünür.
-            base_query = db.query(
-                WeatherData.date.label("date"),
-                WeatherData.province_name.label("province_name"),
-                func.avg(metric_col).label("val"),
-            ).filter(
-                WeatherData.date >= start_date,
-                WeatherData.date <= end_date,
-                metric_col.isnot(None),
-                WeatherData.province_name.isnot(None),
-            ).group_by(WeatherData.date, WeatherData.province_name)
-            rows = base_query.order_by(WeatherData.date).all()
-
             frames_vals = defaultdict(dict)   # ts → {"İl|İlçe": val}
             frames_pts = defaultdict(list)    # ts → [[lat, lon, val, name]]
             all_vals = []
-            for row in rows:
-                v = round(float(row.val), 3)
-                ts_key = row.date.isoformat()
-                if use_districts:
-                    # 1.A2.c-fix4: GADM-driven payload — backend key'leri
-                    # frontend MapLibre polygon source'undaki ad ile birebir.
-                    # DB province → GADM kanonik il adı (Adiyaman → Adıyaman),
-                    # her GADM ilçesine il değeri yayılır.
-                    from app.services.gadm_lookup import (
-                        resolve_province as _gadm_resolve_province,
-                        get_districts as _gadm_get_districts,
-                    )
+
+            if use_districts:
+                # 2026-06-10 (daily ilçe fix): Backfill sonrası `weather_data`
+                # ARTIK ilçe-bazlı satırlar içeriyor (`district_name` dolu, ~975
+                # GADM ilçesi). Eski kod il AVG'ini tüm ilçelere AYNI değerle
+                # yayıyordu → harita il-bazlı tek renk görünüyordu (kullanıcı:
+                # "günlük modda il olarak gösteriyor, ilçe olarak değil").
+                # Yeni: (date, province, district) bazlı AVG → gerçek ilçe değeri.
+                # İlçe satırı olmayan / GADM eşleşmeyen iller için il-ortalaması
+                # fallback ile tüm GADM ilçeleri doldurulur (renk boşluğu olmasın).
+                from app.services.gadm_lookup import (
+                    resolve_province as _gadm_resolve_province,
+                    resolve_district as _gadm_resolve_district,
+                    get_districts as _gadm_get_districts,
+                )
+                rows = db.query(
+                    WeatherData.date.label("date"),
+                    WeatherData.province_name.label("province_name"),
+                    WeatherData.district_name.label("district_name"),
+                    func.avg(metric_col).label("val"),
+                ).filter(
+                    WeatherData.date >= start_date,
+                    WeatherData.date <= end_date,
+                    metric_col.isnot(None),
+                    WeatherData.province_name.isnot(None),
+                ).group_by(
+                    WeatherData.date,
+                    WeatherData.province_name,
+                    WeatherData.district_name,
+                ).order_by(WeatherData.date).all()
+
+                # ts → gadm_prov → [değerler] (il-ortalaması fallback için)
+                prov_fallback = defaultdict(lambda: defaultdict(list))
+                for row in rows:
+                    v = round(float(row.val), 3)
+                    ts_key = row.date.isoformat()
                     gadm_prov = _gadm_resolve_province(row.province_name) or row.province_name
-                    gadm_districts = _gadm_get_districts(gadm_prov)
-                    if gadm_districts:
-                        for d in gadm_districts:
-                            frames_vals[ts_key][f"{gadm_prov}|{d}"] = v
-                    else:
-                        # GADM'de yoksa eski TURKEY_CITIES fallback'ini dene
-                        old_districts = _DISTRICTS_BY_PROVINCE.get(gadm_prov, [])
-                        if old_districts:
-                            for d in old_districts:
-                                frames_vals[ts_key][f"{gadm_prov}|{d}"] = v
-                        else:
-                            frames_vals[ts_key][f"{gadm_prov}|Merkez"] = v
-                else:
-                    # Legacy points format için lat/lon gerek; il merkezini
-                    # yaklaşık olarak vermek için ilk satırın koordinatını
-                    # bulmaya gerek yok — ham AVG yeterli (display amaçlı).
-                    frames_pts[ts_key].append([
-                        0.0, 0.0, v, row.province_name or "",
-                    ])
-                all_vals.append(v)
+                    if row.district_name and row.district_name != "Merkez":
+                        gadm_dist = _gadm_resolve_district(gadm_prov, row.district_name)
+                        if gadm_prov and gadm_dist:
+                            frames_vals[ts_key][f"{gadm_prov}|{gadm_dist}"] = v
+                            all_vals.append(v)
+                    # GADM eşleşse de eşleşmese de fallback havuzuna kat
+                    prov_fallback[ts_key][gadm_prov].append(v)
+
+                # Veri/eşleşme olmayan GADM ilçelerini il-ortalaması ile doldur
+                for ts_key, provs in prov_fallback.items():
+                    for gadm_prov, vals in provs.items():
+                        if not vals:
+                            continue
+                        fb = round(sum(vals) / len(vals), 3)
+                        for d in _gadm_get_districts(gadm_prov):
+                            key = f"{gadm_prov}|{d}"
+                            if key not in frames_vals[ts_key]:
+                                frames_vals[ts_key][key] = fb
+                                all_vals.append(fb)
+            else:
+                # Legacy points format — il × tarih AVG (display amaçlı, lat/lon 0)
+                rows = db.query(
+                    WeatherData.date.label("date"),
+                    WeatherData.province_name.label("province_name"),
+                    func.avg(metric_col).label("val"),
+                ).filter(
+                    WeatherData.date >= start_date,
+                    WeatherData.date <= end_date,
+                    metric_col.isnot(None),
+                    WeatherData.province_name.isnot(None),
+                ).group_by(
+                    WeatherData.date, WeatherData.province_name,
+                ).order_by(WeatherData.date).all()
+                for row in rows:
+                    v = round(float(row.val), 3)
+                    ts_key = row.date.isoformat()
+                    frames_pts[ts_key].append([0.0, 0.0, v, row.province_name or ""])
+                    all_vals.append(v)
 
         else:  # hourly
             # Saatlik mod için gün sınırı kontrolü
