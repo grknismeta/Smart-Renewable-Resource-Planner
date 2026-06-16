@@ -90,32 +90,36 @@ class _MapScreenState extends State<MapScreen> {
       // Harita pan/zoom event'inde pin anchor'ı yenile.
       MapViewMapLibre.registerAnchorListener(_onMapMovedRecomputeAnchor);
 
-      // 2026-06-04: MİSAFİR (Keşfet) salt-okunur keşif modu. Landing'den PUSH
-      // ile gelinir (landing dispose OLMAZ → onun kapattığı etkileşim JS
-      // global'inde kalır). Bu yüzden burada etkileşimi AÇ + vitrin pinlerini
-      // göster (fetchPins misafirde zaten erken döner → srrp-pins ezilmez).
-      // 2026-06-05: Türkiye sınırı artık JS default'unda (her style.load) →
-      // burada setMaxBounds'a gerek yok; harita her hâlükârda Türkiye-kilitli.
-      // 2026-06-10 (ÇÖKME FIX): Misafir kararı ARTIK route argümanına bağlı.
-      // Eskiden sadece `isLoggedIn != true` bakılıyordu; ama auth token restore
-      // (FlutterSecureStorage) ASYNC → reload'da bu callback çalışırken
-      // isLoggedIn henüz true değil → giriş yapmış kullanıcı yanlışlıkla
-      // misafir sayılıp setShowcasePins ile 22 vitrin pini, kendi pinlerinin
-      // ÜSTÜNE yazılıyordu (dashboard kendi verisini gösterir ama harita
-      // Keşfet pinlerinde kalır — _syncPins diff guard'ı kurtaramaz).
-      // Keşfet'ten gelince landing `arguments:{'guest':true}` geçer; reload'da
-      // bu arg kaybolur → logged-in kullanıcı asla misafire düşmez.
-      final auth = Provider.of<AuthViewModel>(context, listen: false);
-      final routeArgs = ModalRoute.of(context)?.settings.arguments;
-      final routeGuest = routeArgs is Map && routeArgs['guest'] == true;
-      final guest = routeGuest && auth.isLoggedIn != true;
-      if (guest) {
-        MapViewMapLibre.setInteractive(true);
-        final isDark =
-            Provider.of<ThemeViewModel>(context, listen: false).isDarkMode;
-        MapViewMapLibre.setShowcasePins(buildShowcaseGeoJson(isDark: isDark));
-      }
+      // Misafir/giriş pin modu kararı artık REAKTİF (_applyAuthPinMode) —
+      // build()'ten her auth değişiminde de çağrılır. Bkz. _applyAuthPinMode.
+      _applyAuthPinMode();
     });
+  }
+
+  /// Yalnızca BİR kez vitrin pinlerini uygula (misafir Keşfet) — auth false
+  /// olduğunda set edilir; tekrar tekrar yazmamak için bayrak.
+  bool _guestShowcaseApplied = false;
+
+  /// 2026-06-10 (ÇÖKME FIX): Auth durumuna göre pin modunu REAKTİF uygula.
+  /// `isLoggedIn` `bool?`: **null = restore sürüyor** (HİÇBİR ŞEY yapma — eski
+  /// kod `!= true` ile null'ı da misafir sayıp reload'da showcase'i kullanıcı
+  /// pinlerinin üstüne yazıyordu), **false = kesin misafir** (Keşfet vitrin
+  /// pinleri), **true = giriş** (harita katmanında showcase bastırılır;
+  /// null→true geçişinde kullanıcı pinleri zorla geri yüklenir).
+  /// Raporlar round-trip / async restore dahil HER yoldan gelen setShowcasePins
+  /// giriş yapmışken no-op olur → bir daha Keşfet pinlerine düşmez.
+  void _applyAuthPinMode() {
+    if (!mounted) return;
+    final logged =
+        Provider.of<AuthViewModel>(context, listen: false).isLoggedIn;
+    MapViewMapLibre.setLoggedIn(logged == true);
+    if (logged == false && !_guestShowcaseApplied) {
+      _guestShowcaseApplied = true;
+      MapViewMapLibre.setInteractive(true);
+      final isDark =
+          Provider.of<ThemeViewModel>(context, listen: false).isDarkMode;
+      MapViewMapLibre.setShowcasePins(buildShowcaseGeoJson(isDark: isDark));
+    }
   }
 
   @override
@@ -136,6 +140,9 @@ class _MapScreenState extends State<MapScreen> {
     final theme = Provider.of<ThemeViewModel>(context);
     final authVM = Provider.of<AuthViewModel>(context);
     final isAuthenticated = authVM.isLoggedIn == true;
+    // Auth durumu değiştikçe (null restore → false/true) misafir/giriş pin
+    // modunu REAKTİF uygula. build, authVM'i dinlediği için her geçişte çalışır.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _applyAuthPinMode());
     // 2026-05-25 (G10): Login olur olmaz chatbot status'u arka planda yükle —
     // kullanıcı butona basmadan önce hazır olsun (status indicator için).
     if (isAuthenticated) {

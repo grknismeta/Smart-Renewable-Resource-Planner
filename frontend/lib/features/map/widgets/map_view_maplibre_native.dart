@@ -287,6 +287,7 @@ class MapViewMapLibre extends StatefulWidget {
   }
   static void clearMaxBounds() {}
   static void setShowcasePins(String geojsonStr) {}
+  static void setLoggedIn(bool value) {}
 
   @override
   State<MapViewMapLibre> createState() => _MapViewMapLibreState();

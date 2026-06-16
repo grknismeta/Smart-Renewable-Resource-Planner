@@ -34,6 +34,7 @@ class MapViewMapLibre extends StatelessWidget {
       double swLng, double swLat, double neLng, double neLat) {}
   static void clearMaxBounds() {}
   static void setShowcasePins(String geojsonStr) {}
+  static void setLoggedIn(bool value) {}
   // 2026-05-08 Madde 1: Pin preview marker — stub.
   static void showPreviewPin(LatLng? point) {}
   // Madde 5+6+7 — stub.

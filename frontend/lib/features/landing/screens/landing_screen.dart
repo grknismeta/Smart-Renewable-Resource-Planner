@@ -561,6 +561,10 @@ class _LandingMapState extends State<_LandingMap> {
       }
       // 2026-06-04: Vitrin pin verisi paylaşımlı showcase_pins.dart'a taşındı
       // (misafir Keşfet modu da aynı kaynağı kullanıyor).
+      // 2026-06-10 (çökme fix): Landing dekoratif/misafir yüzey → showcase
+      // guard'ını aç (logout→landing sonrası _loggedIn stale-true kalıp vitrini
+      // bastırmasın). /map'e geçilince orada auth'a göre tekrar set edilir.
+      MapViewMapLibre.setLoggedIn(false);
       MapViewMapLibre.setShowcasePins(buildShowcaseGeoJson(isDark: isDark));
     });
   }

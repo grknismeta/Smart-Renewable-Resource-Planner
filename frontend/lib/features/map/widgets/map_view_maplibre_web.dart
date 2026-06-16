@@ -589,8 +589,26 @@ class MapViewMapLibre extends StatefulWidget {
     if (kIsWeb) _jsClearMaxBounds();
   }
 
-  /// Vitrin pinlerini GeoJSON olarak yükle (landing showcase).
+  /// 2026-06-10 (çökme fix): Giriş yapmış kullanıcının haritası ASLA vitrin
+  /// (Keşfet) pinlerine düşmesin diye paylaşımlı login state. MapScreen.build
+  /// her rebuild'de auth'a göre set eder. true iken setShowcasePins NO-OP olur
+  /// → showcase, srrp-pins source'unu hangi yoldan gelirse gelsin (Reports
+  /// round-trip, landing artığı, async auth restore) ezemez. Auth restore
+  /// tamamlanıp false/null → true geçince kullanıcının gerçek pinleri zorla
+  /// geri yüklenir (önceki kirlenme varsa düzelir).
+  static bool _loggedIn = false;
+  static _MapViewMapLibreState? _active;
+
+  static void setLoggedIn(bool value) {
+    if (value == _loggedIn) return;
+    _loggedIn = value;
+    if (value) _active?._restoreUserPins();
+  }
+
+  /// Vitrin pinlerini GeoJSON olarak yükle (landing + misafir Keşfet).
+  /// Giriş yapmışken bilinçli olarak yok sayılır (kullanıcı pinlerini ezmesin).
   static void setShowcasePins(String geojsonStr) {
+    if (_loggedIn) return;
     if (kIsWeb) _jsSetShowcasePins(geojsonStr);
   }
 
@@ -832,6 +850,8 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   @override
   void initState() {
     super.initState();
+    // Login-aware showcase guard için aktif State referansı (en son mount edilen).
+    MapViewMapLibre._active = this;
     // MapLibre GL JS lazy-load: script hazır olana kadar ml.MapLibreMap render edilmez
     if (kIsWeb) {
       _jsEnsureMapLibre(
@@ -886,6 +906,7 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
 
   @override
   void dispose() {
+    if (MapViewMapLibre._active == this) MapViewMapLibre._active = null;
     _styleLoadTimeout?.cancel();
     _vmRef?.removeListener(_onVmChanged);
     // JS callback'lerini temizle — dispose sonrası çağrılmasını engelle
@@ -2126,6 +2147,19 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
   }
 
   // ─── Pin Sync ─────────────────────────────────────────────────────
+
+  /// 2026-06-10: Login doğrulanınca (setLoggedIn true) showcase ile kirlenmiş
+  /// olabilecek pin source'unu kullanıcının gerçek pinlerine zorla döndür.
+  /// `_lastPins`'i resetleyerek _syncPins diff guard'ını aşar (aksi halde
+  /// filteredPins==_lastPins olunca re-push atlanır, showcase kalırdı).
+  void _restoreUserPins() {
+    if (!mounted) return;
+    _lastPins = const [];
+    try {
+      final vm = Provider.of<MapViewModel>(context, listen: false);
+      _syncPins(vm.filteredPins, vm.show3DTurbines, vm.showPinClusters);
+    } catch (_) {}
+  }
 
   Future<void> _syncPins(List<Pin> pins, bool is3D, bool cluster) async {
     final style = _style;
