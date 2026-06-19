@@ -237,7 +237,11 @@ mixin MapLayerMixin on BaseViewModel {
   // Tematik katmanın zaman penceresi modu — WeatherTimeModeProvider tarafından
   // yönetilir; UI panel seçiciyi değiştirdiğinde `setWeatherTimeMode()` çağrılır
   // ve choropleth verisi yeni mode/season ile refetch edilir.
-  String _apiMode = 'current';
+  // 2026-06-10 (default-period fix): WeatherTimeModeProvider default'u 'week'
+  // (chip "Hafta · son 7 gün"). Burası 'current' idi → ilk açılışta chip "Hafta"
+  // gösterirken veri son-saat snapshot'ı (gece/eksik saat = boşluklu) geliyordu.
+  // 'week' ile hizalandı: ilk fetch 7-gün ortalaması (solar=günlük peak avg).
+  String _apiMode = 'week';
   String? _apiSeason;
 
   String get apiMode => _apiMode;

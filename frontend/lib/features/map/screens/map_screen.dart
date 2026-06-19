@@ -681,27 +681,39 @@ class _MapScreenState extends State<MapScreen> {
     // Choropleth legends (sol alt)
     Widget? choroLegend;
     if (vm.choroplethMode == ChoroplethMode.solar) {
-      // Palet: 0 W/m² (gece/lacivert) → 50 (soluk sarı) → 800 (bordo).
-      // Sıralama index.html _choroplethBuildStops('solar') ve
-      // map_view_maplibre_native.dart solar stop listesiyle BİREBİR aynı olmalı.
+      // 2026-06-10: Solar choropleth artık GÖRELI normalize (5-95 persentil) —
+      // sabit 0-800 yerine verinin kendi aralığı (uzun pencerede gece-dahil
+      // düşük/dar değerler tüm haritayı kırmızı yapıyordu; index.html
+      // _applyChoropleth solar dalı). Legend de aynı p5-p95'i DİNAMİK gösterir
+      // ki renkler ↔ etiketler tutarlı kalsın. Palet sırası index.html ile aynı.
+      final solarVals = <double>[];
+      vm.choroplethData?.forEach((k, v) {
+        if (k != '_meta' && v is Map && v['solar'] is num) {
+          solarVals.add((v['solar'] as num).toDouble());
+        }
+      });
+      solarVals.sort();
+      double pct(double p) => solarVals.isEmpty
+          ? (p < 0.5 ? 0 : 800)
+          : solarVals[((solarVals.length - 1) * p).round()];
+      final lo = pct(0.05), hi = pct(0.95);
+      String tick(double f) => (lo + (hi - lo) * f).round().toString();
       choroLegend = LegendWidget(
         theme: theme, title: 'Güneş Işınımı (İlçe)', titleFontSize: 10, unit: 'W/m²', width: 210,
-        // 2026-05-19 — Renk skalası TERS ÇEVRİLDİ (sezgi: gece=koyu, çok güneş=parlak).
-        // index.html + map_view_maplibre_native.dart + map_layer_mixin.dart ile aynı.
         gradientColors: const [
-          Color(0xFF1A1A2E), // 0 — gece / lacivert
-          Color(0xFF4D0014), // 50 — çok düşük (şafak/akşam) koyu bordo
-          Color(0xFFBD0026), // 150
-          Color(0xFFE31A1C), // 250
-          Color(0xFFFC4E2A), // 350
-          Color(0xFFFD8D3C), // 450
-          Color(0xFFFEB24C), // 550
-          Color(0xFFFED976), // 650
-          Color(0xFFFFEDA0), // 750
-          Color(0xFFFFFFCC), // 800 — maksimum / parlak sarı
+          Color(0xFF1A1A2E), // düşük — gece / lacivert
+          Color(0xFF4D0014), // koyu bordo
+          Color(0xFFBD0026),
+          Color(0xFFE31A1C),
+          Color(0xFFFC4E2A),
+          Color(0xFFFD8D3C),
+          Color(0xFFFEB24C),
+          Color(0xFFFED976),
+          Color(0xFFFFEDA0),
+          Color(0xFFFFFFCC), // yüksek — parlak sarı
         ],
-        minLabel: '0', maxLabel: '800',
-        tickLabels: const ['0', '200', '400', '600', '800'],
+        minLabel: lo.round().toString(), maxLabel: hi.round().toString(),
+        tickLabels: [tick(0), tick(0.25), tick(0.5), tick(0.75), tick(1.0)],
       );
     } else if (vm.choroplethMode == ChoroplethMode.wind) {
       choroLegend = LegendWidget(

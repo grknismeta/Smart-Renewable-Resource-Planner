@@ -1196,18 +1196,38 @@
         return;
       }
 
-      // ── Sabit fiziksel skala — tüm modlar için ────────────────
       vals.sort(function(a, b) { return a - b; });
       console.log('[SRRP] Choropleth veri aralığı: ' + vals[0].toFixed(1) + '–' + vals[vals.length-1].toFixed(1) +
         ', n=' + vals.length + ', mode=' + mode);
 
-      // ── Renk rampası (sabit fiziksel değerler) ────────────
-      var stops = _choroplethBuildStops(mode);
-
+      // ── Renk rampası ──────────────────────────────────────────
+      var baseStops = _choroplethBuildStops(mode);
       var colorExpr = ['interpolate', ['linear'], ['get', '_cval']];
-      for (var s = 0; s < stops.length; s++) {
-        colorExpr.push(stops[s][0]);
-        colorExpr.push(stops[s][1]);
+      if (mode === 'solar') {
+        // 2026-06-10: SOLAR için GÖRELI normalizasyon (5-95 persentil).
+        // Solar uzun pencerelerde (6ay+) precompute gece-dahil ortalama
+        // döndürüyor (137-313 dar bant); sabit 0-800 skalası bunu düşük/bordo
+        // uca eziyordu → her yer kırmızı + ilçe ayrımı yok. Paleti verinin
+        // KENDİ aralığına yayınca palet tam kullanılır, ilçe farkları görünür,
+        // kısa/uzun pencere tutarlı olur. (wind/temp mutlak skalada KALIR —
+        // orada absolute değer anlamlı; ör. 20°C tek-tip harita sahte kontrast
+        // üretmesin. Legend de solar için dinamik p5-p95 gösterir.)
+        var solarPalette = baseStops.map(function(st){ return st[1]; });
+        var _pctV = function(p){ return vals[Math.round((vals.length - 1) * p)]; };
+        var slo = _pctV(0.05), shi = _pctV(0.95);
+        if (!(shi > slo)) { slo = vals[0]; shi = vals[vals.length - 1]; }
+        if (!(shi > slo)) shi = slo + 1;
+        for (var pi = 0; pi < solarPalette.length; pi++) {
+          var t = solarPalette.length > 1 ? (pi / (solarPalette.length - 1)) : 0;
+          colorExpr.push(slo + (shi - slo) * t);
+          colorExpr.push(solarPalette[pi]);
+        }
+      } else {
+        // wind / temp / ml — sabit fiziksel stop'lar (veya ML kendi min-max'i).
+        for (var s = 0; s < baseStops.length; s++) {
+          colorExpr.push(baseStops[s][0]);
+          colorExpr.push(baseStops[s][1]);
+        }
       }
 
       var fillColorExpr = [
