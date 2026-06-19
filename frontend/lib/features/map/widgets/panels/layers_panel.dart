@@ -311,27 +311,14 @@ class _MapLibreSectionState extends State<_MapLibreSection> {
         ),
         if (_projectionExpanded) ...[
           const SizedBox(height: 6),
+          // 2026-06-10: Global Projeksiyon "YAKINDA" → DEVRE DIŞI. Globe açıkken
+          // Türkiye maxBounds/zoom kilidi düzgün kalkmıyor (TR dışına çıkılamıyor)
+          // + stil yeniden yüklemelerinde kararsız (kullanıcı: "sürekli bozulan
+          // yapısı var"). Stabil olana dek toggle çağrılmaz; globeActive hep false
+          // kalır → diğer kontroller normal çalışır.
           _effectRow('Global Projeksiyon', Icons.public_outlined,
-              vm.showGlobe, Colors.deepPurpleAccent, vm.toggleShowGlobe),
-          if (globeActive) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.deepPurpleAccent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.deepPurpleAccent.withValues(alpha: 0.35)),
-              ),
-              child: Row(children: [
-                const Icon(Icons.lock_outline_rounded, size: 13, color: Colors.deepPurpleAccent),
-                const SizedBox(width: 6),
-                Expanded(child: Text(
-                  'Global projeksiyon açıkken Türkiye özellikleri devre dışı kalır. Kapattığınızda tüm ayarlar geri gelir.',
-                  style: TextStyle(color: Colors.deepPurpleAccent.withValues(alpha: 0.8), fontSize: 9.5),
-                )),
-              ]),
-            ),
-          ],
+              false, Colors.deepPurpleAccent, null,
+              badge: 'YAKINDA', disabled: true),
         ],
 
         // ── Kilit altındaki içerik ─────────────────────────────────────

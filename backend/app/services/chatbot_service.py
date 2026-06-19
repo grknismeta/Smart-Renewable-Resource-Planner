@@ -309,7 +309,33 @@ def chat(
             config=config,
             history=gemini_history,
         )
-        response = chat_session.send_message(user_message)
+
+        # 2026-06-10: Gemini ara sıra 503 "high demand"/overload döndürüyor
+        # (Google tarafı geçici aşırı yük). Kısa backoff ile yeniden dene;
+        # kalıcıysa üstteki except'e düşer ve kullanıcıya dostça mesaj döner.
+        import time as _time
+
+        def _send_with_retry(msg, attempts: int = 3):
+            last_err = None
+            for i in range(attempts):
+                try:
+                    return chat_session.send_message(msg)
+                except Exception as _e:  # noqa: BLE001
+                    last_err = _e
+                    s = str(_e).lower()
+                    transient = (
+                        "503" in s or "overload" in s or "unavailable" in s
+                        or "high demand" in s or "try again" in s
+                        or ("resource" in s and "exhaust" in s)
+                    )
+                    if transient and i < attempts - 1:
+                        _time.sleep(1.0 * (i + 1))
+                        continue
+                    raise
+            if last_err:
+                raise last_err
+
+        response = _send_with_retry(user_message)
 
         # Tool call var mı kontrol et — Gemini function calling
         tool_calls_made: list[dict] = []
@@ -330,7 +356,7 @@ def chat(
                             "result": result,
                         })
                         # Tool sonucunu modele geri gönder — yeni SDK Part API
-                        response = chat_session.send_message(
+                        response = _send_with_retry(
                             genai_types.Part.from_function_response(  # type: ignore
                                 name=fn_call.name,
                                 response={"result": result},
@@ -355,10 +381,19 @@ def chat(
 
     except Exception as e:
         logger.exception("[chatbot] Gemini çağrısı hatası")
+        s = str(e).lower()
+        if ("503" in s or "overload" in s or "unavailable" in s
+                or "high demand" in s):
+            err_msg = (
+                "Sohbet asistanı şu an çok yoğun (Gemini aşırı talep). "
+                "Lütfen birkaç saniye sonra tekrar deneyin."
+            )
+        else:
+            err_msg = f"Sohbet asistanı hatası: {e}"
         return ChatResponse(
             session_id=sid,
             message="",
-            error=f"Sohbet asistanı hatası: {e}",
+            error=err_msg,
         )
 
 

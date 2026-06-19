@@ -184,6 +184,13 @@ external void _jsClearMaxBounds();
 @JS('window.srrpSetShowcasePins')
 external void _jsSetShowcasePins(String geojsonStr);
 
+// 2026-06-10 (Liberty pin fix): Pinleri RAW JS ile render et (sınırlar gibi).
+// Dart maplibre plugin'inin GeoJsonSource'u basemap değişiminde (harita yeniden
+// yaratılır) tile'lamıyordu → Liberty'de pinler görünmüyordu. Raw map.addSource
+// ile kurulunca sorunsuz tile'lanır + hover/click yeniden bağlanır.
+@JS('window.srrpRenderPins')
+external void _jsRenderPins(String geojsonStr);
+
 @JS('window.srrpSetChoropleth')
 external void _jsSetChoropleth(String mode, String? dataJson);
 
@@ -1992,30 +1999,15 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       debugPrint('[MapLibre] heatmap grid source eklenemedi: $e');
     }
 
-    // 2. Pin source
-    // 2026-06-10 (Liberty pin fix): Source'u BOŞ kurup sonra updateGeoJsonSource
-    // ile doldurmak, basemap değişiminde (ValueKey ile harita yeniden yaratılır)
-    // GL worker'ının veriyi tile'lamamasına yol açıyordu → pinler Liberty'de
-    // görünmez/tıklanmazdı (sınırlar JS'te veriyle kurulduğu için sorunsuzdu).
-    // Çözüm: pin source'u sınırlar gibi MEVCUT pinlerle (inline) kur → worker
-    // doğru tile'lar. `_lastPins`'i de set ediyoruz ki _syncAll→_syncPins aynı
-    // veriyi kırılgan updateGeoJsonSource yoluyla tekrar push edip ezmesin
-    // (pinler sonradan değişirse normal push yine devreye girer).
-    List<Pin> initPins = const [];
-    try {
-      if (mounted) {
-        initPins =
-            Provider.of<MapViewModel>(context, listen: false).filteredPins;
-      }
-    } catch (_) {}
+    // 2. Pin source (boş başlatılır). Gerçek render WEB'de _syncPins →
+    // _jsRenderPins (raw JS) ile yapılır — plugin GeoJsonSource'u basemap
+    // değişiminde tile'lamadığı için (Liberty pin fix). Bu plugin source/layer
+    // başlangıçta var olsun ki hover/click setup'ı bir layer bulsun; srrpRenderPins
+    // sonra raw olarak yeniden kurar + handler'ları yeniden bağlar.
     try {
       await style.addSource(
-        ml.GeoJsonSource(
-          id: _pinsSourceId,
-          data: _pinsToGeoJson(initPins, isDark: _lastDarkMode),
-        ),
+        ml.GeoJsonSource(id: _pinsSourceId, data: _pinsToGeoJson([])),
       );
-      _lastPins = List.from(initPins);
     } catch (e) {
       debugPrint('[MapLibre] pin source eklenemedi: $e');
     }
@@ -2184,7 +2176,21 @@ class _MapViewMapLibreState extends State<MapViewMapLibre> {
       _jsClusterPinsClear();
     }
 
-    // Normal Flutter pin source güncelleme
+    // 2026-06-10 (Liberty pin fix): WEB'de pinleri RAW JS ile render et.
+    // Dart maplibre plugin'inin GeoJsonSource'u, basemap değişiminde (ValueKey
+    // ile harita yeniden yaratılır) veriyi GL worker'a tile'latmıyordu →
+    // Liberty'ye geçince pinler kayboluyordu (sınırlar JS'te raw eklendiği için
+    // sorunsuzdu). srrpRenderPins sınırlar gibi raw map.addSource kullanır +
+    // hover/click'i yeniden bağlar → her stilde tile'lanır. (3D türbin "Yakında"
+    // kapalı olduğu için web'de plugin 3D shadow path'ine gerek yok.)
+    if (kIsWeb) {
+      if (pinsChanged) {
+        _jsRenderPins(_pinsToGeoJson(pins, isDark: _lastDarkMode));
+      }
+      return;
+    }
+
+    // ── Native: plugin pin source güncelleme ──
     if (pinsChanged) {
       try {
         await style.updateGeoJsonSource(

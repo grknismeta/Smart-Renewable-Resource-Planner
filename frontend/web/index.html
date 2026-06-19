@@ -2167,6 +2167,55 @@
       } catch (e) { console.error('[SRRP] srrpSetShowcasePins:', e); }
     };
 
+    // ── Pinleri RAW JS ile render et (Liberty fix, 2026-06-10) ──────────
+    // Dart maplibre plugin'inin GeoJsonSource'u, basemap değişiminde (harita
+    // ValueKey ile yeniden yaratılır) veriyi GL worker'a tile'latmıyordu →
+    // Liberty'ye geçince pinler kayboluyordu (sınırlar JS'te raw eklendiği için
+    // sorunsuzdu). Sınırlar gibi raw map.addSource + addLayer kullanınca her
+    // stilde tile'lanır. Layer id'leri Dart ile AYNI ('srrp-pins-circles' vb.)
+    // → hover/click ve cluster gizleme mevcut kod değişmeden çalışır.
+    // text-font BİLİNÇLİ verilmez: Liberty (OpenFreeMap) 'Open Sans Bold'
+    // içermez; font belirtilmeyince stilin varsayılan glyph'i kullanılır.
+    window._srrpPinData = null;
+    window.srrpRenderPins = function (geojsonStr) {
+      window._srrpPinData = geojsonStr || null;
+      var map = window._srrpMap;
+      if (!map) { setTimeout(function(){ window.srrpRenderPins(window._srrpPinData); }, 400); return; }
+      if (!window._srrpStyleReady) { setTimeout(function(){ window.srrpRenderPins(window._srrpPinData); }, 300); return; }
+      if (!geojsonStr) return;
+      var data;
+      try { data = JSON.parse(geojsonStr); } catch(e){ console.error('[SRRP] srrpRenderPins JSON:', e); return; }
+      var SRC = 'srrp-pins';
+      var LAYERS = ['srrp-pins-city-labels','srrp-pins-labels','srrp-pins-circles','srrp-pins-shadow'];
+      LAYERS.forEach(function(id){ try { if (map.getLayer(id)) map.removeLayer(id); } catch(_){} });
+      try { if (map.getSource(SRC)) map.removeSource(SRC); } catch(_){}
+      try { map.addSource(SRC, { type:'geojson', data: data }); }
+      catch(e){ console.error('[SRRP] srrpRenderPins source:', e); return; }
+      try { map.addLayer({ id:'srrp-pins-shadow', type:'circle', source:SRC, paint:{
+        'circle-radius':12,'circle-color':'#000000','circle-opacity':0.0,'circle-blur':0.8,
+        'circle-translate':[0,4],'circle-pitch-alignment':'map' } }); } catch(_){}
+      try { map.addLayer({ id:'srrp-pins-circles', type:'circle', source:SRC, paint:{
+        'circle-radius':['interpolate',['linear'],['zoom'],4,9,10,14],
+        'circle-color':['get','color'],'circle-stroke-width':2,'circle-stroke-color':'#FFFFFF',
+        'circle-opacity':0.9,'circle-pitch-alignment':'map','circle-pitch-scale':'map' } }); } catch(_){}
+      try { map.addLayer({ id:'srrp-pins-labels', type:'symbol', source:SRC,
+        layout:{ 'text-field':['get','name'],'text-size':11,'text-offset':[0,-2.2],
+          'text-anchor':'bottom','text-allow-overlap':false },
+        paint:{ 'text-color':'#FFFFFF','text-halo-color':'#000000','text-halo-width':1.5 } }); } catch(_){}
+      try { map.addLayer({ id:'srrp-pins-city-labels', type:'symbol', source:SRC,
+        layout:{ 'text-field':['get','locationLabel'],'text-size':9,'text-offset':[0,1.4],
+          'text-anchor':'top','text-allow-overlap':false },
+        paint:{ 'text-color':'#E0E0E0','text-halo-color':'#000000','text-halo-width':1.0 } }); } catch(_){}
+      try { if (window.srrpSetupPinHover) window.srrpSetupPinHover(); } catch(_){}
+      try { if (window.srrpSetupPinClick) window.srrpSetupPinClick(); } catch(_){}
+      if (window._srrpClusterActive) {
+        ['srrp-pins-shadow','srrp-pins-circles','srrp-pins-labels','srrp-pins-city-labels'].forEach(function(id){
+          try { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none'); } catch(_){}
+        });
+      }
+      console.log('[SRRP] Pins raw-rendered:', (data.features||[]).length);
+    };
+
     // ── Pencere odak geri geldiğinde harita etkileşimini sıfırla ─────
     // Kullanıcı başka uygulamaya geçip döndüğünde interaktivite kilitli kalmasın.
     document.addEventListener('visibilitychange', function () {
